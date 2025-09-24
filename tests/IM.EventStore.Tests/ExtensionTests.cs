@@ -1,0 +1,26 @@
+﻿using Microsoft.EntityFrameworkCore;
+
+namespace IM.EventStore.Tests;
+
+public class ExtensionTests
+{
+    [Fact]
+    public void ResolvesEventStore()
+    {
+        var options = new DbContextOptionsBuilder<DbContext>()
+            .Options;
+        using var context = new DbContext(options);
+        var eventStore = context.Events;
+        Assert.NotNull(eventStore);
+        Assert.IsType<EventStore>(eventStore);
+    }
+
+    [Fact]
+    public void ThrowsIfDbContextIsNull()
+    {
+        DbContext? context = null;
+        Assert.Throws<ArgumentNullException>(() => context!.Events);
+    }
+
+
+}
