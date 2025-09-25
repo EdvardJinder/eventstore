@@ -20,10 +20,12 @@ public class EventStoreFixture : PostgresFixture, IAsyncLifetime
 
             modelBuilder.Entity<UserSnapshot>(e =>
             {
-                e.ToTable("user_snapshots");
+                e.HasKey(e => e.UserId);
+            });
 
-                e.HasKey(e => e.UserId)
-                    .HasName("pk_user_snapshots");
+            modelBuilder.Entity<BookPageSummary>(e =>
+            {
+                e.HasKey(e => e.Id);
             });
         }
     }

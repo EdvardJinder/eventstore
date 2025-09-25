@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
@@ -14,38 +15,67 @@ internal class ProjectionWrapper<TProjection, TSnapshot, TDbContext> : ISubscrip
         _serviceScopeFactory = serviceScopeFactory;
     }
     public async Task HandleBatchAsync(IEvent[] events, CancellationToken ct)
-    { 
+    {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var optionsFactory = scope.ServiceProvider.GetRequiredService<IOptionsFactory<SubscriptionOptions>>();
         using var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
         var projection = scope.ServiceProvider.GetRequiredService<TProjection>();
+        var options = optionsFactory.Create(this.GetType().AssemblyQualifiedName!);
 
-        foreach(var stream in events.GroupBy(e => e.StreamId))
+        foreach (var stream in events.GroupBy(e => e.StreamId))
         {
-            var snaphost = await dbContext
-                .Set<TSnapshot>()
-                .FindAsync([stream.Key], ct);
 
-            if (snaphost is null)
+            foreach (var @event in stream.OrderBy(e => e.Version))
             {
-                snaphost = new TSnapshot();
-                foreach (var @event in stream.OrderBy(e => e.Version))
+                var keySelector = options.GetKeySelector(@event.EventType);
+
+                var key = keySelector((IEvent<object>)@event);
+
+                var snaphost = await dbContext
+                    .Set<TSnapshot>()
+                    .FindAsync([key], ct);
+
+                if (snaphost is null)
+                {
+                    snaphost = new TSnapshot();
+                    await projection.Evolve(snaphost, @event, ct);
+                    dbContext.Add(snaphost);
+                }
+                else
                 {
                     await projection.Evolve(snaphost, @event, ct);
+                    dbContext.Update(snaphost);
                 }
-                dbContext.Add(snaphost);
+                await dbContext.SaveChangesAsync(ct);
+
+
             }
-            else
-            {
-                foreach (var @event in stream.OrderBy(e => e.Version))
-                {
-                    await projection.Evolve(snaphost, @event, ct);
-                }
-                dbContext.Update(snaphost);
-            }
-            await dbContext.SaveChangesAsync(ct);
+
+            //var snaphost = await dbContext
+            //    .Set<TSnapshot>()
+            //    .FindAsync([stream.Key], ct);
+
+            //if (snaphost is null)
+            //{
+            //    snaphost = new TSnapshot();
+            //    foreach (var @event in stream.OrderBy(e => e.Version))
+            //    {
+            //        await projection.Evolve(snaphost, @event, ct);
+            //    }
+            //    dbContext.Add(snaphost);
+            //}
+            //else
+            //{
+            //    foreach (var @event in stream.OrderBy(e => e.Version))
+            //    {
+            //        await projection.Evolve(snaphost, @event, ct);
+            //    }
+            //    dbContext.Update(snaphost);
+            //}
+            //await dbContext.SaveChangesAsync(ct);
         }
     }
 
-   
+
 }
 

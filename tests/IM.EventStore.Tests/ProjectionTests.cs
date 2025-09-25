@@ -42,8 +42,35 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     }
 
    
+    public class BookEvent
+    {
+        public int Page { get; set; }
+    }
+
+    public class BookPageSummary
+    {
+        public string Id { get; set; } = string.Empty;
+        public Guid BookId { get; set; }
+    }
+
+    public class BookProjection : IProjection<BookPageSummary>
+    {
+        public Task Evolve(BookPageSummary snapshot, IEvent @event, CancellationToken ct)
+        {
+            switch (@event)
+            {
+                case IEvent<BookEvent> e:
+                    snapshot.Id = $"{e.StreamId}-{e.Data.Page}";
+                    snapshot.BookId = e.StreamId;
+                    break;
+            }
+            return Task.FromResult(0);
+        }
+    }
+
+
     [Fact]
-    public async Task InlineProjectionWorks()
+    public async Task Projection()
     {
         var services = new ServiceCollection();
         services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
@@ -74,5 +101,34 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         Assert.Equal("Mary Jane", snapshot.Name);
     }
 
-    
+    [Fact]
+    public async Task ProjectionWithCompositeKey()
+    {
+        var services = new ServiceCollection();
+        services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
+        {
+            options.UseNpgsql(fixture.ConnectionString, npgsqlOptions =>
+            {
+                npgsqlOptions.EnableRetryOnFailure();
+            });
+        }).AddProjection<BookProjection, BookPageSummary>(c =>
+        {
+            c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
+        });
+       
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+
+        var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+        db.Database.EnsureCreated();
+        var eventStore = db.Streams();
+        var streamId = Guid.NewGuid();
+        eventStore.StartStream(streamId, events: [new BookEvent { Page = 1 }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var snapshot = await db.Set<BookPageSummary>().FirstOrDefaultAsync(x => x.Id == $"{streamId}-1", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(streamId, snapshot.BookId);
+    }
 }
