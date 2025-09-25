@@ -52,7 +52,11 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
             {
                 npgsqlOptions.EnableRetryOnFailure();
             });
-        }).AddProjection<UserProjection, UserSnapshot>();
+        }).AddProjection<UserProjection, UserSnapshot>(c =>
+        {
+            c.Handles<UserCreated>();
+            c.Handles<UserNameUpdated>();
+        });
 
         services.AddLogging();
         var provider = services.BuildServiceProvider();

@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
@@ -23,6 +24,7 @@ internal sealed class SubscriptionInterceptor(
             .ToList();
 
         using var scope = serviceScopeFactory.CreateScope();
+        var optionsFactory = scope.ServiceProvider.GetRequiredService<IOptionsFactory<SubscriptionOptions>>();
         // Get all subscriptions
         var subscriptions = scope.ServiceProvider.GetServices<ISubscription>();
 
@@ -41,7 +43,8 @@ internal sealed class SubscriptionInterceptor(
 
             foreach (var subscription in subscriptions)
             {
-                await subscription.HandleBatchAsync(events, cancellationToken);
+                var options = optionsFactory.Create(subscription.GetType().AssemblyQualifiedName!);
+                await subscription.HandleBatchAsync(events.Where(x => options.IsHandeled(x.EventType)).ToArray(), cancellationToken);
             }
         }
 

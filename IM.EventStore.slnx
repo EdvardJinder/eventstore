@@ -1,9 +1,9 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/IM.EventStore.MassTransit/IM.EventStore.MassTransit.csproj" Id="7fc7fc18-6453-480e-863a-5b8d44559ce1" />
     <Project Path="src/IM.EventStore/IM.EventStore.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="src/IM.EventStore.MassTransit/IM.EventStore.MassTransit.csproj" Id="7fc7fc18-6453-480e-863a-5b8d44559ce1" />
     <Project Path="tests/IM.EventStore.Tests/IM.EventStore.Tests.csproj" />
   </Folder>
 </Solution>

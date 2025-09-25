@@ -23,6 +23,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
     }
 
+    public class TestEvent2 { }
     public class TestEvent 
     {
         public string Name { get; set; } = "Default";
@@ -64,7 +65,10 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
             {
                 npgsqlOptions.EnableRetryOnFailure();
             });
-        }).AddSubscription<TestSub>();
+        }).AddSubscription<TestSub>(c =>
+        {
+            c.Handles<TestEvent>();
+        });
 
         services.AddLogging();
         var provider = services.BuildServiceProvider();
@@ -73,7 +77,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         db.Database.EnsureCreated();
         var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
-        eventStore.StartStream(streamId, events: [new TestEvent { Name = "Event 1" }, new TestEvent { Name = "Event 2" }]);
+        eventStore.StartStream(streamId, events: [new TestEvent { Name = "Event 1" }, new TestEvent { Name = "Event 2" }, new TestEvent2 { }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         // Check that events were handled
         Assert.Equal(2, TestSub.HandledEvents.Count);
