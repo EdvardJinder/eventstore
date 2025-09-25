@@ -123,5 +123,20 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.Equal("Mary Jane", stream.State.Name);
 
     }
+
+    [Fact]
+    public async Task GracefullyHandlesNonExistantStream()
+    {
+        var dbContext = eventStoreFixture.Context;
+        var eventStore = dbContext.Streams();
+        var stream = await eventStore.FetchForReadingAsync(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(stream);
+        var stream2 = await eventStore.FetchForWritingAsync(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(stream2);
+        var stream3 = await eventStore.FetchForReadingAsync<TestState>(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(stream3);
+        var stream4 = await eventStore.FetchForWritingAsync<TestState>(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(stream4);
+    }
 }
 
