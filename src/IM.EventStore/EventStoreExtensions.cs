@@ -33,45 +33,34 @@ public static class EventStoreExtensions
         {
             modelBuilder.Entity<DbStream>(entity =>
             {
-                entity.ToTable("streams");
+                entity.ToTable("Streams");
 
-                entity.HasKey(e => e.Id)
-                        .HasName("pk_streams");
+                entity.HasKey(e => e.Id);
 
                 entity.Property(e => e.Id)
-                        .HasColumnName("id")
                         .IsRequired();
 
-                entity.Property(e => e.CurrentVersion)
-                    .HasColumnName("version");
+                entity.Property(e => e.CurrentVersion);
 
                 entity.Property(e => e.CreatedTimestamp)
-                    .HasColumnName("created_timestamp")
                     .IsRequired();
 
                 entity.Property(e => e.UpdatedTimestamp)
-                    .HasColumnName("updated_timestamp")
                     .IsRequired();
 
                 entity.Property(e => e.TenantId)
-                    .HasColumnName("tenant_id")
                     .IsRequired();
 
-                entity.HasIndex(e => e.TenantId)
-                    .HasDatabaseName("ix_streams_tenant_id");
+                entity.HasIndex(e => e.TenantId);
 
                 entity.HasIndex(e => new { e.TenantId, e.Id })
-                    .IsUnique()
-                    .HasDatabaseName("ux_streams_tenant_id_id");
+                    .IsUnique();
 
-                entity.HasIndex(e => new { e.TenantId, e.CurrentVersion })
-                    .HasDatabaseName("ix_streams_tenant_id_version");
+                entity.HasIndex(e => new { e.TenantId, e.CurrentVersion });
 
-                entity.HasIndex(e => new { e.TenantId, e.UpdatedTimestamp })
-                    .HasDatabaseName("ix_streams_tenant_id_updated_timestamp");
+                entity.HasIndex(e => new { e.TenantId, e.UpdatedTimestamp });
 
-                entity.HasIndex(e => new { e.TenantId, e.CreatedTimestamp })
-                    .HasDatabaseName("ix_streams_tenant_id_created_timestamp");
+                entity.HasIndex(e => new { e.TenantId, e.CreatedTimestamp });
 
 
                 entity.HasMany(e => e.Events)
@@ -86,48 +75,36 @@ public static class EventStoreExtensions
             {
                 entity.ToTable("events");
 
-                entity.HasKey(e => new { e.StreamId, e.Version })
-                        .HasName("pk_events");
+                entity.HasKey(e => new { e.StreamId, e.Version });
 
                 entity.Property(e => e.StreamId)
-                        .HasColumnName("stream_id")
                         .IsRequired();
 
                 entity.Property(e => e.Sequence)
-                    .HasColumnName("sequence")
                     .UseIdentityColumn();
 
                 entity.Property(e => e.Version)
-                    .HasColumnName("version")
                     .IsRequired();
 
                 entity.Property(e => e.Type)
-                    .HasColumnName("type")
                     .IsRequired();
 
                 entity.Property(e => e.Data)
-                    .HasColumnName("data")
                     .IsRequired();
 
                 entity.Property(e => e.TenantId)
-                    .HasColumnName("tenant_id")
                     .IsRequired();
 
                 entity.Property(e => e.Timestamp)
-                    .HasColumnName("timestamp")
                     .IsRequired();
 
-                entity.HasIndex(e => e.TenantId)
-                    .HasDatabaseName("ix_events_tenant_id");
+                entity.HasIndex(e => e.TenantId);
 
-                entity.HasIndex(e => new { e.TenantId, e.StreamId })
-                    .HasDatabaseName("ix_events_tenant_id_stream_id");
+                entity.HasIndex(e => new { e.TenantId, e.StreamId });
 
-                entity.HasIndex(e => new { e.TenantId, e.Type })
-                    .HasDatabaseName("ix_events_tenant_id_type");
+                entity.HasIndex(e => new { e.TenantId, e.Type });
 
-                entity.HasIndex(e => new { e.TenantId, e.Timestamp })
-                    .HasDatabaseName("ix_events_tenant_id_timestamp");
+                entity.HasIndex(e => new { e.TenantId, e.Timestamp });
             });
 
         }
