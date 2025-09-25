@@ -7,13 +7,22 @@ public static class EventStoreExtensions
 {
     extension(DbContext dbContext)
     {
-        public IEventStore Events
+        public IEventStore Streams
         {
             get
             {
                 ArgumentNullException.ThrowIfNull(dbContext, nameof(dbContext));
                 EventStore eventStore = new(dbContext);
                 return eventStore;
+            }
+        }
+
+        public DbSet<DbEvent> Events
+        {
+            get
+            {
+                ArgumentNullException.ThrowIfNull(dbContext, nameof(dbContext));
+                return dbContext.Set<DbEvent>();
             }
         }
     }
@@ -121,80 +130,28 @@ public static class EventStoreExtensions
                     .HasDatabaseName("ix_events_tenant_id_timestamp");
             });
 
-            modelBuilder.Entity<DbSubscription>(entity =>
-            {
-
-                entity.ToTable("subscriptions");
-
-                entity.HasKey(x => x.Id)
-                    .HasName("pk_subscriptions");
-
-                entity.HasIndex(x => x.SubscriptionType)
-                    .IsUnique()
-                    .HasDatabaseName("ux_subscriptions_subscription_type");
-
-                entity.Property(x => x.Id)
-                    .HasColumnName("id")
-                    .IsRequired();
-
-                entity.Property(x => x.SubscriptionType)
-                    .HasColumnName("subscription_type");
-
-                entity.Property(x => x.CurrentSequence)
-                    .HasColumnName("current_sequence");
-
-                entity.Property(x => x.LeaseOwner)
-                    .HasColumnName("lease_owner");
-
-                entity.Property(x => x.LeaseExpiresUtc)
-                    .HasColumnName("lease_expires_utc");
-
-                entity.Property(x => x.Version)
-                    .HasColumnName("xmin")
-                    .IsRowVersion();
-
-            });
         }
 
     }
 
     extension(IServiceCollection services)
     {
-
-        public void AddSubscription<TDbContext, TSubscription>(Action<IConfigureSubscription> configure)
+        public IEventStoreBuilder AddEventStore<TDbContext>(
+            Action<IServiceProvider, DbContextOptionsBuilder> optionsAction
+            )
             where TDbContext : DbContext
-            where TSubscription : ISubscription
         {
-            services.AddOptions<SubscriptionOptions>($"{typeof(TDbContext).Name}{typeof(TSubscription).Name}").Configure(configure);
-            services.AddTransient(typeof(TSubscription));
-            services.AddSingleton<SubscriptionWrapper<TDbContext, TSubscription>>();
-            services.AddHostedService<SubscriptionWrapper<TDbContext, TSubscription>>(sp => sp.GetRequiredService<SubscriptionWrapper<TDbContext, TSubscription>>());
-        }
 
-        public void AddInlineProjection<TSnapshot, TProjection, TDbContext>()
-            where TDbContext : DbContext
-            where TProjection : IInlineProjection<TSnapshot>
-            where TSnapshot : class, new()
-        {
-            services.AddTransient(typeof(TProjection));
-            services.AddTransient(typeof(InlineProjection<TSnapshot, TProjection, TDbContext>));
+            services.AddSingleton<SubscriptionInterceptor>();
 
             services.AddDbContext<TDbContext>((sp, options) =>
             {
-                options.AddInterceptors(sp.GetRequiredService<InlineProjection<TSnapshot, TProjection, TDbContext>>());
+                optionsAction(sp, options);
+                options.AddInterceptors(sp.GetRequiredService<SubscriptionInterceptor>());
             });
 
+            return new EventStoreBuilder<TDbContext>(services);
         }
-
-        public void AddProjection<TSnapshot, TProjection, TDbContext>(Action<IConfigureSubscription> configure)
-            where TDbContext : DbContext
-            where TProjection : IProjection<TSnapshot>
-            where TSnapshot : class, new()
-        {
-            services.AddTransient(typeof(TProjection));
-            services.AddTransient(typeof(Projection<TSnapshot, TProjection, TDbContext>));
-            services.AddSubscription<TDbContext, Projection<TSnapshot, TProjection, TDbContext>>(configure);
-        }
-
     }
 }
+

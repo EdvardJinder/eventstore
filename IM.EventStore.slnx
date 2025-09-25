@@ -4,7 +4,6 @@
     <Project Path="src/IM.EventStore/IM.EventStore.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="src/IM.EventStore.Tests.WebAPI/IM.EventStore.Tests.WebAPI.csproj" Id="f4c417e1-6db1-4958-b9a7-c9c46fea8ac6" />
     <Project Path="tests/IM.EventStore.Tests/IM.EventStore.Tests.csproj" />
   </Folder>
 </Solution>

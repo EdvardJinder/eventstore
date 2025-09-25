@@ -1,23 +1,39 @@
 ﻿using MassTransit;
-using MassTransit.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace IM.EventStore.MassTransit;
 
 internal class MassTransitEventStoreSubscription(
-    IBus bus,
-    IOptions<MassTransitEventStoreSubscriptionOptions> options
+    IBus bus
     ) : ISubscription
 {
-    public async Task OnEventAsync(IEvent @event, CancellationToken cancellationToken)
+    public async Task HandleBatchAsync(IEvent[] events, CancellationToken ct)
     {
-        var handler = options.Value.Handlers.FirstOrDefault(h => h.InEvent == @event.EventType);
-        if (handler.OutEvent is null)
+       foreach(var @event in events)
         {
-            return;
+            var eventType = typeof(EventContext<>).MakeGenericType(@event.EventType);
+            var eventContext = Activator.CreateInstance(eventType)!;
+
+            eventType.GetProperty(nameof(EventContext<>.Data))?.SetValue(eventContext, @event.Data);
+            eventType.GetProperty(nameof(EventContext<>.EventId))?.SetValue(eventContext, @event.Id);
+            eventType.GetProperty(nameof(EventContext<>.StreamId))?.SetValue(eventContext, @event.StreamId);
+            eventType.GetProperty(nameof(EventContext<>.Version))?.SetValue(eventContext, @event.Version);
+            eventType.GetProperty(nameof(EventContext<>.Timestamp))?.SetValue(eventContext, @event.Timestamp);
+            eventType.GetProperty(nameof(EventContext<>.TenantId))?.SetValue(eventContext, @event.TenantId);
+
+            await bus.Publish(eventContext, ct);
         }
-        var transformed = handler.Transform((IEvent<object>)@event);
-        await bus.Publish(transformed, handler.OutEvent, cancellationToken);
     }
+
 }
 
+
+public class EventContext<T> where T : class
+{
+    public T Data { get; private set; }
+    public Guid EventId { get; private set; }
+    public Guid StreamId { get; private set; }
+    public long Version { get; private set; }
+    public DateTimeOffset Timestamp { get; private set; }
+    public Guid TenantId { get; private set; }
+
+}

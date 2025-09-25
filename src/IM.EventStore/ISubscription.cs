@@ -1,8 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-
-namespace IM.EventStore;
+﻿namespace IM.EventStore;
 
 public interface ISubscription
 {
-    Task OnEventAsync(IEvent @event, CancellationToken cancellationToken);
+    Task HandleBatchAsync(IEvent[] events, CancellationToken ct);
 }
+
