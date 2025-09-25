@@ -7,26 +7,25 @@ namespace IM.EventStore;
 
 internal sealed class EventStore(DbContext db) : IEventStore
 {
-    public async Task<IReadOnlyStream> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId)
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
-        if (stream is null) throw new InvalidOperationException($"Stream {streamId} not found");
+        if (stream is null) return null;
         return new Stream(stream, db);
     }
 
-    public async Task<IReadOnlyStream<T>> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
          .AsNoTracking()
          .Where(x => x.TenantId == tenantId)
          .Include(x => x.Events)
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
-        if (stream is null) throw new InvalidOperationException($"Stream {streamId} not found");
-        
+        if (stream is null) return null;
         return new Stream<T>(stream, db);
     }
 
