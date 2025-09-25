@@ -35,3 +35,23 @@ internal class Stream(DbStream dbStream, DbContext db) : IStream
         dbStream.UpdatedTimestamp = DateTimeOffset.UtcNow;
     }
 }
+
+internal class Stream<T>(DbStream dbStream, DbContext db) : Stream(dbStream, db), IStream<T> where T : IState, new()
+{
+    private T? _state;
+    public T State
+    {
+        get
+        {
+            if (_state is null)
+            {
+                _state = new T();
+                foreach (var @event in Events)
+                {
+                    _state.Apply(@event);
+                }
+            }
+            return _state;
+        }
+    }
+}

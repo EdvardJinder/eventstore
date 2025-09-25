@@ -13,6 +13,23 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     }
     public record TestRecordEvent(string Name = "Mary Jane");
 
+    public class TestState : IState
+    {
+        public string Name { get; private set; } = "Initial";
+        public void Apply(IEvent @event)
+        {
+            switch (@event)
+            {
+                case Event<TestEvent> e:
+                    Name = e.Data.Name;
+                    break;
+                case Event<TestRecordEvent> e:
+                    Name = e.Data.Name;
+                    break;
+            }
+        }
+    }
+
     [Fact]
     public async Task CanStartStream()
     {
@@ -71,6 +88,22 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.IsType<IEvent<TestRecordEvent>>(events[1], exactMatch: false);
         Assert.IsType<Event<TestRecordEvent>>(events[1]);
         Assert.IsType<TestRecordEvent>(events[1].Data);
+    }
+
+    [Fact]
+    async Task CanBuildState()
+    {
+        var dbContext = eventStoreFixture.Context;
+        var eventStore = dbContext.Streams();
+        var id = Guid.NewGuid();
+        eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync<TestState>(id, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(stream);
+        Assert.NotNull(stream.State);
+        Assert.Equal(2, stream.Version);
+        Assert.Equal("Mary Jane", stream.State.Name);
+
     }
 }
 

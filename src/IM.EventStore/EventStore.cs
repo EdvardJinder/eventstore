@@ -18,6 +18,19 @@ internal sealed class EventStore(DbContext db) : IEventStore
         return new Stream(stream, db);
     }
 
+    public async Task<IReadOnlyStream<T>> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    {
+        var stream = await db.Set<DbStream>()
+         .AsNoTracking()
+         .Where(x => x.TenantId == tenantId)
+         .Include(x => x.Events)
+         .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+        if (stream is null) throw new InvalidOperationException($"Stream {streamId} not found");
+        
+        return new Stream<T>(stream, db);
+    }
+
+
     public async Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
@@ -26,6 +39,16 @@ internal sealed class EventStore(DbContext db) : IEventStore
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
         return new Stream(stream, db);
+    }
+
+    public async Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    {
+        var stream = await db.Set<DbStream>()
+          .Where(x => x.TenantId == tenantId)
+          .Include(x => x.Events)
+          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+        if (stream is null) return null;
+        return new Stream<T>(stream, db);
     }
 
     public IStream StartStream(Guid streamId, Guid tenantId = default, params IEnumerable<object> events)
