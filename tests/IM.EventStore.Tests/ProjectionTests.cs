@@ -59,7 +59,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
         db.Database.EnsureCreated();
-        var eventStore = db.Streams;
+        var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane"}]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);

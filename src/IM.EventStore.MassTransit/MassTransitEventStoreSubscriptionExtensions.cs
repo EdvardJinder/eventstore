@@ -4,12 +4,9 @@ namespace IM.EventStore.MassTransit;
 
 public static class MassTransitEventStoreSubscriptionExtensions
 {
-    extension(IEventStoreBuilder builder)
+    public static IEventStoreBuilder AddMassTransitEventStoreSubscription(this IEventStoreBuilder builder)
     {
-        public IEventStoreBuilder AddMassTransitEventStoreSubscription()
-        {
-            builder.AddSubscription<MassTransitEventStoreSubscription>();
-            return builder;
-        }
+        builder.AddSubscription<MassTransitEventStoreSubscription>();
+        return builder;
     }
 }

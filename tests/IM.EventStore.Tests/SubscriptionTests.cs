@@ -70,7 +70,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
         db.Database.EnsureCreated();
-        var eventStore = db.Streams;
+        var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent { Name = "Event 1" }, new TestEvent { Name = "Event 2" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -116,7 +116,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var testHarness = provider.GetRequiredService<ITestHarness>();
         await testHarness.Start();
         var consumer = testHarness.GetConsumerHarness<TestEventConsumer>();
-        var eventStore = db.Streams;
+        var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent { Name = "Event 1" }, new TestEvent { Name = "Event 2" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
