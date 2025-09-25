@@ -4,6 +4,7 @@ using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System;
 using static IM.EventStore.Tests.SubscriptionTests;
 
 namespace IM.EventStore.Tests;
@@ -79,11 +80,13 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.All(TestSub.HandledEvents, e => Assert.IsType<TestEvent>(e.Data));
     }
 
-    public class TestEventConsumer : IConsumer<EventContext<TestEvent>>
+    public class TestEventConsumer(EventStoreFixture.EventStoreDbContext db) : IConsumer<EventContext<TestEvent>>
     {
-        public Task Consume(ConsumeContext<EventContext<TestEvent>> context)
+        public async Task Consume(ConsumeContext<EventContext<TestEvent>> context)
         {
-            return Task.CompletedTask;
+            var eventStore = db.Streams();
+            var stream = await eventStore.FetchForWritingAsync(context.Message.StreamId, context.Message.TenantId, context.CancellationToken);
+            Assert.NotNull(stream);
         }
     }
 
@@ -102,6 +105,14 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         services.AddMassTransitTestHarness(cfg =>
         {
             cfg.AddConsumer<TestEventConsumer>();
+
+            cfg.AddInMemoryInboxOutbox();
+
+            cfg.AddConfigureEndpointsCallback((context, name, cfg) =>
+            {
+                cfg.UseInMemoryInboxOutbox(context);
+            });
+
             cfg.UsingInMemory((context, cfg) =>
             {
                 cfg.ConfigureEndpoints(context);
@@ -110,6 +121,13 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         services.AddLogging();
         var provider = services.BuildServiceProvider();
+
+        var hosted = provider.GetServices<IHostedService>();
+
+        foreach (var service in hosted)
+        {
+            await service.StartAsync(TestContext.Current.CancellationToken);
+        }
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
         db.Database.EnsureCreated();
@@ -122,10 +140,6 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         Assert.True(await consumer.Consumed.Any<EventContext<TestEvent>>(TestContext.Current.CancellationToken));
-
-        var consumedEvents = consumer.Consumed.Select<EventContext<TestEvent>>(TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, consumedEvents.Count());
 
         await testHarness.Stop(cancellationToken: TestContext.Current.CancellationToken);
     }

@@ -1,4 +1,5 @@
 ﻿using MassTransit;
+using System.Text.Json.Serialization;
 
 namespace IM.EventStore.MassTransit;
 
@@ -29,11 +30,11 @@ internal class MassTransitEventStoreSubscription(
 
 public class EventContext<T> where T : class
 {
-    public T Data { get; private set; }
-    public Guid EventId { get; private set; }
-    public Guid StreamId { get; private set; }
-    public long Version { get; private set; }
-    public DateTimeOffset Timestamp { get; private set; }
-    public Guid TenantId { get; private set; }
+    [JsonInclude] public T Data { get; private set; }
+    [JsonInclude] public Guid EventId { get; private set; }
+    [JsonInclude] public Guid StreamId { get; private set; }
+    [JsonInclude] public long Version { get; private set; }
+    [JsonInclude] public DateTimeOffset Timestamp { get; private set; }
+    [JsonInclude] public Guid TenantId { get; private set; }
 
 }

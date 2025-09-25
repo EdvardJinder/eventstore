@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="MassTransit" Version="8.5.3" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
     <PackageReference Include="xunit.v3" Version="3.0.1" />

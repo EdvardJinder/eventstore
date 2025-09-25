@@ -5,6 +5,7 @@ namespace IM.EventStore;
 
 internal class Stream(DbStream dbStream, DbContext db) : IStream
 {
+    public Guid TenantId => dbStream.TenantId;
     public Guid Id => dbStream.Id;
     public long Version => dbStream.CurrentVersion;
     public IReadOnlyList<IEvent> Events => dbStream.Events
@@ -22,6 +23,7 @@ internal class Stream(DbStream dbStream, DbContext db) : IStream
         {
             var dbEvent = new DbEvent
             {
+                TenantId = dbStream.TenantId,
                 StreamId = dbStream.Id,
                 Version = ++dbStream.CurrentVersion,
                 Type = @event.GetType().AssemblyQualifiedName!,

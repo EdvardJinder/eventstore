@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace IM.EventStore;
 
 internal sealed class SubscriptionInterceptor(
-    IServiceProvider serviceProvider
+    IServiceScopeFactory serviceScopeFactory
     ) : SaveChangesInterceptor
 {
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -22,7 +22,7 @@ internal sealed class SubscriptionInterceptor(
             .Where(e => e.State is EntityState.Added or EntityState.Modified)
             .ToList();
 
-        await using var scope = serviceProvider.CreateAsyncScope();
+        using var scope = serviceScopeFactory.CreateScope();
         // Get all subscriptions
         var subscriptions = scope.ServiceProvider.GetServices<ISubscription>();
 

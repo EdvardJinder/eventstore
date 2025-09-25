@@ -65,6 +65,24 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.Equal(3, readStream!.Events.Count);
     }
 
+    [Fact]
+    public async Task CanAppendToStreamWithTenantId()
+    {
+        Guid tenantId = Guid.NewGuid();
+        var dbContext = eventStoreFixture.Context;
+        var eventStore = dbContext.Streams();
+        var id = Guid.NewGuid();
+        eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForWritingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(stream);
+        stream!.Append(new TestEvent { Name = "Jane Doe" });
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var readStream = await eventStore.FetchForReadingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(readStream);
+        Assert.Equal(3, readStream!.Events.Count);
+    }
+
     [Fact] 
     async Task CanReadEvents()
     {
