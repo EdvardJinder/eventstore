@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
@@ -26,6 +28,8 @@ public static class EventStoreExtensions
     //        }
     //    }
     //}
+
+    
     public static IEventStoreBuilder AddEventStore<TDbContext>(
         this IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder> optionsAction
@@ -33,7 +37,7 @@ public static class EventStoreExtensions
             where TDbContext : DbContext
     {
 
-        services.AddSingleton<SubscriptionInterceptor>();
+        services.AddScoped<SubscriptionInterceptor>();
 
         services.AddDbContext<TDbContext>((sp, options) =>
         {

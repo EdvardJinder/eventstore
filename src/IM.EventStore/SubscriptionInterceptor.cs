@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 namespace IM.EventStore;
 
 internal sealed class SubscriptionInterceptor(
-    IServiceScopeFactory serviceScopeFactory
+    IOptionsFactory<SubscriptionOptions> optionsFactory,
+    IServiceProvider serviceProvider
     ) : SaveChangesInterceptor
 {
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -19,14 +20,13 @@ internal sealed class SubscriptionInterceptor(
             return await base.SavingChangesAsync(eventData, result, cancellationToken);
         }
 
+
         var streams = db.ChangeTracker.Entries<DbStream>()
             .Where(e => e.State is EntityState.Added or EntityState.Modified)
             .ToList();
 
-        using var scope = serviceScopeFactory.CreateScope();
-        var optionsFactory = scope.ServiceProvider.GetRequiredService<IOptionsFactory<SubscriptionOptions>>();
         // Get all subscriptions
-        var subscriptions = scope.ServiceProvider.GetServices<ISubscription>();
+        var subscriptions = serviceProvider.GetServices<ISubscription>();
 
         foreach (var stream in streams)
         {
