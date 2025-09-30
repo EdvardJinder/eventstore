@@ -1,6 +1,6 @@
 ﻿namespace IM.EventStore;
 
-internal static class EventExtensions
+public static class EventExtensions
 {
     public static IEvent ToEvent(this DbEvent dbEvent)
     {

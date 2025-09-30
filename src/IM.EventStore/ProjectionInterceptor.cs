@@ -1,14 +1,15 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
-internal sealed class SubscriptionInterceptor(
-    IOptionsFactory<SubscriptionOptions> optionsFactory,
-    IServiceProvider serviceProvider
-    ) : SaveChangesInterceptor
+
+internal sealed class ProjectionInterceptor<TProjection, TSnapshot>(ProjectionOptions options) : SaveChangesInterceptor
+    where TProjection : IProjection<TSnapshot>, new()
+    where TSnapshot : class, new()
 {
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData,
@@ -17,16 +18,12 @@ internal sealed class SubscriptionInterceptor(
     {
         if (eventData.Context is not DbContext db)
         {
-            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+            return result;
         }
-
 
         var streams = db.ChangeTracker.Entries<DbStream>()
             .Where(e => e.State is EntityState.Added or EntityState.Modified)
             .ToList();
-
-        // Get all subscriptions
-        var subscriptions = serviceProvider.GetServices<ISubscription>();
 
         foreach (var stream in streams)
         {
@@ -34,6 +31,7 @@ internal sealed class SubscriptionInterceptor(
                 .Where(e => e.State is EntityState.Added && e.Entity.StreamId == stream.Entity.Id)
                 .OrderBy(e => e.Entity.Version)
                 .Select(e => e.Entity.ToEvent())
+                .Where(e => options.IsHandeled(e.EventType))
                 .ToArray();
 
             if (events is not { Length: > 0 })
@@ -41,14 +39,29 @@ internal sealed class SubscriptionInterceptor(
                 continue;
             }
 
-            foreach (var subscription in subscriptions)
+            foreach (var @event in events.OrderBy(e => e.Version))
             {
-                var options = optionsFactory.Create(subscription.GetType().AssemblyQualifiedName!);
-                await subscription.HandleBatchAsync(events.Where(x => options.IsHandeled(x.EventType)).ToArray(), cancellationToken);
+                var keySelector = options.GetKeySelector(@event.EventType);
+
+                var key = keySelector((IEvent<object>)@event);
+
+                var snaphost = await db
+                    .Set<TSnapshot>()
+                    .FindAsync([key], cancellationToken);
+
+                if (snaphost is null)
+                {
+                    snaphost = new TSnapshot();
+                    await TProjection.Evolve(snaphost, @event, db, cancellationToken);
+                    db.Add(snaphost);
+                }
+                else
+                {
+                    await TProjection.Evolve(snaphost, @event, db, cancellationToken);
+                }
             }
         }
-
-        return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        return result;
     }
 }
 

@@ -1,12 +1,23 @@
 ﻿
 
-namespace IM.EventStore.MassTransit;
+//using Microsoft.EntityFrameworkCore;
+//using Microsoft.Extensions.DependencyInjection;
+//using Microsoft.Extensions.DependencyInjection.Extensions;
 
-public static class MassTransitEventStoreSubscriptionExtensions
-{
-    public static IEventStoreBuilder AddMassTransitEventStoreSubscription(this IEventStoreBuilder builder)
-    {
-        builder.AddSubscription<MassTransitEventStoreSubscription>();
-        return builder;
-    }
-}
+//namespace IM.EventStore.MassTransit;
+
+//public static class MassTransitEventStoreSubscriptionExtensions
+//{
+//    public static IEventStoreBuilder AddMassTransitEventStoreSubscription(this IEventStoreBuilder builder)
+//    {
+//        builder.ConfigureServices(s =>
+//        {
+//            s.TryAddSingleton<MassTransitEventStoreInterceptor>();
+//        });
+//        builder.ConfigureDbContextOptionsBuilder((IServiceProvider sp, DbContextOptionsBuilder opts) =>
+//        {
+//            opts.AddInterceptors(sp.GetRequiredService<MassTransitEventStoreInterceptor>());
+//        });
+//        return builder;
+//    }
+//}

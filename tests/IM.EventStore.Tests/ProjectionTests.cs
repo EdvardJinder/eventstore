@@ -23,7 +23,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
     public class UserProjection : IProjection<UserSnapshot>
     {
-        public Task Evolve(UserSnapshot snapshot, IEvent @event, CancellationToken ct)
+        public static Task Evolve(UserSnapshot snapshot, IEvent @event, DbContext db, CancellationToken ct)
         {
 
             switch (@event)
@@ -41,7 +41,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         }
     }
 
-   
+
     public class BookEvent
     {
         public int Page { get; set; }
@@ -55,7 +55,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
     public class BookProjection : IProjection<BookPageSummary>
     {
-        public Task Evolve(BookPageSummary snapshot, IEvent @event, CancellationToken ct)
+        public static Task Evolve(BookPageSummary snapshot, IEvent @event, DbContext db, CancellationToken ct)
         {
             switch (@event)
             {
@@ -79,11 +79,15 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
             {
                 npgsqlOptions.EnableRetryOnFailure();
             });
-        }).AddProjection<UserProjection, UserSnapshot>(c =>
+        }, c =>
         {
-            c.Handles<UserCreated>();
-            c.Handles<UserNameUpdated>();
+            c.AddProjection<UserProjection, UserSnapshot>(c =>
+            {
+                c.Handles<UserCreated>();
+                c.Handles<UserNameUpdated>();
+            });
         });
+
 
         services.AddLogging();
         var provider = services.BuildServiceProvider();
@@ -92,7 +96,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         db.Database.EnsureCreated();
         var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
-        eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane"}]);
+        eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var snapshot = await db.Set<UserSnapshot>().FirstOrDefaultAsync(x => x.UserId == streamId, cancellationToken: TestContext.Current.CancellationToken);
@@ -111,11 +115,14 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
             {
                 npgsqlOptions.EnableRetryOnFailure();
             });
-        }).AddProjection<BookProjection, BookPageSummary>(c =>
+        }, c =>
         {
-            c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
+            c.AddProjection<BookProjection, BookPageSummary>(c =>
+             {
+                 c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
+             });
         });
-       
+
         services.AddLogging();
         var provider = services.BuildServiceProvider();
 

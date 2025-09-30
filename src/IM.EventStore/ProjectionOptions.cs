@@ -1,6 +1,6 @@
 ﻿namespace IM.EventStore;
 
-internal sealed class SubscriptionOptions : ISubscriptionOptions, IProjectionOptions
+internal sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
     private bool HandlesAllEvents = true;

@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using MassTransit;
+using Microsoft.EntityFrameworkCore;
 using static IM.EventStore.Tests.ProjectionTests;
 
 namespace IM.EventStore.Tests;
@@ -27,6 +28,7 @@ public class EventStoreFixture : PostgresFixture, IAsyncLifetime
             {
                 e.HasKey(e => e.Id);
             });
+
         }
     }
     public EventStoreDbContext Context { get; private set; }

@@ -1,6 +1,8 @@
 ﻿namespace IM.EventStore;
 
-public interface IProjectionOptions : ISubscriptionOptions
+public interface IProjectionOptions
 {
+    void Handles<T>() where T : class;
+    void HandlesAll();
     void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = default) where TEvent : class;
 }

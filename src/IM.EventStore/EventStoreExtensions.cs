@@ -1,51 +1,28 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
 public static class EventStoreExtensions
 {
-    //extension(DbContext dbContext)
-    //{
-    //    public IEventStore Streams
-    //    {
-    //        get
-    //        {
-    //            ArgumentNullException.ThrowIfNull(dbContext, nameof(dbContext));
-    //            EventStore eventStore = new(dbContext);
-    //            return eventStore;
-    //        }
-    //    }
-
-    //    public DbSet<DbEvent> Events
-    //    {
-    //        get
-    //        {
-    //            ArgumentNullException.ThrowIfNull(dbContext, nameof(dbContext));
-    //            return dbContext.Set<DbEvent>();
-    //        }
-    //    }
-    //}
-
     
-    public static IEventStoreBuilder AddEventStore<TDbContext>(
+    public static IServiceCollection AddEventStore<TDbContext>(
         this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> optionsAction
+        Action<IServiceProvider, DbContextOptionsBuilder> optionsAction,
+        Action<IEventStoreBuilder>? configure = null
             )
             where TDbContext : DbContext
     {
 
-        services.AddScoped<SubscriptionInterceptor>();
-
         services.AddDbContext<TDbContext>((sp, options) =>
         {
             optionsAction(sp, options);
-            options.AddInterceptors(sp.GetRequiredService<SubscriptionInterceptor>());
+
+            var builder = new EventStoreBuilder<TDbContext>(services, options);
+            configure?.Invoke(builder);
         });
 
-        return new EventStoreBuilder<TDbContext>(services);
+        return services;
     }
     public static IEventStore Streams(this DbContext dbContext)
     {

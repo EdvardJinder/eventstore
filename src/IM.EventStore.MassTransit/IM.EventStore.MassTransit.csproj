@@ -4,7 +4,7 @@
 		<TargetFrameworks>net9.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<Version>0.1.1</Version>
+		<Version>0.2.1</Version>
 		<Authors>Edvard Jinder</Authors>
 		<Company>Intromedia Digital AB</Company>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -12,6 +12,7 @@
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
 		<PackageReference Include="MassTransit.Abstractions" Version="8.5.3" />
+
 	</ItemGroup>
 
 	<ItemGroup>
@@ -22,4 +23,11 @@
 	<ItemGroup>
 		<InternalsVisibleTo Include="Im.EventStore.Tests" />
 	</ItemGroup>
+
+
+	<ItemGroup>
+	  <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.3" />
+	</ItemGroup>
+
+
 </Project>
