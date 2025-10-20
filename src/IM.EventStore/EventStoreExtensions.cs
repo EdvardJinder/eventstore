@@ -1,5 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Medallion.Threading;
+using Medallion.Threading.Postgres;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
 namespace IM.EventStore;
 
@@ -14,13 +18,16 @@ public static class EventStoreExtensions
             where TDbContext : DbContext
     {
 
+        EventStoreBuilder<TDbContext> builder = new EventStoreBuilder<TDbContext>(services);
+
+        configure?.Invoke(builder);
+
         services.AddDbContext<TDbContext>((sp, options) =>
         {
             optionsAction(sp, options);
-
-            var builder = new EventStoreBuilder<TDbContext>(services, options);
-            configure?.Invoke(builder);
+            builder.ConfigureProjections(options);
         });
+
 
         return services;
     }
@@ -78,7 +85,7 @@ public static class EventStoreExtensions
         });
         modelBuilder.Entity<DbEvent>(entity =>
         {
-            entity.ToTable("events");
+            entity.ToTable("Events");
 
             entity.HasKey(e => new { e.StreamId, e.Version });
 
@@ -110,6 +117,15 @@ public static class EventStoreExtensions
             entity.HasIndex(e => new { e.TenantId, e.Type });
 
             entity.HasIndex(e => new { e.TenantId, e.Timestamp });
+        });
+        modelBuilder.Entity<DbSubscription>(entity =>
+        {
+            entity.ToTable("Subscriptions");
+
+            entity.HasKey(e => e.SubscriptionAssemblyQualifiedName);
+
+            entity.Property(e => e.Sequence)
+                    .IsRequired();
         });
     }
 

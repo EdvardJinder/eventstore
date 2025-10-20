@@ -1,95 +1,62 @@
-﻿//using IM.EventStore.MassTransit;
-//using MassTransit;
-//using MassTransit.Testing;
-//using Microsoft.EntityFrameworkCore;
-//using Microsoft.Extensions.DependencyInjection;
-//using Microsoft.Extensions.Hosting;
-//using System;
-//using static IM.EventStore.Tests.SubscriptionTests;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using static IM.EventStore.Tests.EventStoreFixture;
 
-//namespace IM.EventStore.Tests;
-//public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
-//{
-//    public class TestSub(IPublishEndpoint publishEndpoint) : ISubscription
-//    {
-//        public static List<IEvent> HandledEvents { get; } = new();
-//        public async Task Handle(IEvent @event, CancellationToken ct)
-//        {
-//            HandledEvents.Add(@event);
-//            await publishEndpoint.Publish(new TestEvent2(), ct);
-//        }
-//    }
-//    public class TestEvent2 { }
-//    public class TestEvent 
-//    {
-//        public string Name { get; set; } = "Default";
-//    }
+namespace IM.EventStore.Tests;
 
+public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+{
+    public class TestSub : ISubscription
+    {
+        public static List<IEvent> HandledEvents { get; } = new();
+        public static Task Handle(IEvent @event, IServiceProvider sp, CancellationToken ct)
+        {
+            // Handle the event (e.g., log it, process it, etc.)
+            HandledEvents.Add(@event);
+            return Task.CompletedTask;
+        }
+    }
+    public class TestEvent
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+    }
 
-//    public class TestEventConsumer(EventStoreFixture.EventStoreDbContext db) : IConsumer<EventContext<TestEvent>>
-//    {
-//        public async Task Consume(ConsumeContext<EventContext<TestEvent>> context)
-//        {
-//            var eventStore = db.Streams();
-//            var stream = await eventStore.FetchForWritingAsync(context.Message.StreamId, context.Message.TenantId, context.CancellationToken);
-//            Assert.NotNull(stream);
-//        }
-//    }
+    [Fact]
+    public async Task should_handle_events()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddEventStore<EventStoreDbContext>((sp, options) =>
+        {
+            options.UseNpgsql(fixture.ConnectionString);
+        },
+        c =>
+        {
+            c.AddSubscriptionDaemon(fixture.ConnectionString);
+            c.AddSubscription<TestSub>();
+        });
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+        var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
+        eventStoreDbContext.Database.EnsureCreated();
 
-//    [Fact]
-//    async Task MassTransitSubscriptionPublishesAndCanBeConsumed()
-//    {
-//        var services = new ServiceCollection();
-//        services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
-//        {
-//            options.UseNpgsql(fixture.ConnectionString, npgsqlOptions =>
-//            {
-//                npgsqlOptions.EnableRetryOnFailure();
-//            });
-//        }, c =>
-//        {
-//            c.AddSubscription<TestSub>();
-//        });
+        var eventStore = eventStoreDbContext.Streams();
+        var streamId = Guid.NewGuid();
+        eventStore.StartStream(streamId, events: [new TestEvent()]);
+        await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-//        services.AddMassTransitTestHarness(cfg =>
-//        {
-//            cfg.AddConsumer<TestEventConsumer>();
+        var subscription = provider.GetRequiredService<Subscription<TestSub, EventStoreDbContext>>();
 
-//            cfg.AddInMemoryInboxOutbox();
+        var processed = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
 
-//            cfg.AddConfigureEndpointsCallback((context, name, cfg) =>
-//            {
-//                cfg.UseInMemoryInboxOutbox(context);
-//            });
+        var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
+            .FindAsync(new object[] { typeof(TestSub).AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
 
-//            cfg.UsingInMemory((context, cfg) =>
-//            {
-//                cfg.ConfigureEndpoints(context);
-//            });
-//        });
+        Assert.NotNull(subscriptionEntity);
+        Assert.Equal(1, subscriptionEntity.Sequence);
+        Assert.True(processed, "No event was processed");
+        Assert.Single(TestSub.HandledEvents);
+        Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
 
-//        services.AddLogging();
-//        var provider = services.BuildServiceProvider();
-
-//        var hosted = provider.GetServices<IHostedService>();
-
-//        foreach (var service in hosted)
-//        {
-//            await service.StartAsync(TestContext.Current.CancellationToken);
-//        }
-
-//        var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-//        db.Database.EnsureCreated();
-//        var testHarness = provider.GetRequiredService<ITestHarness>();
-//        await testHarness.Start();
-//        var consumer = testHarness.GetConsumerHarness<TestEventConsumer>();
-//        var eventStore = db.Streams();
-//        var streamId = Guid.NewGuid();
-//        eventStore.StartStream(streamId, events: [new TestEvent { Name = "Event 1" }, new TestEvent { Name = "Event 2" }]);
-//        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-//        Assert.True(await consumer.Consumed.Any<EventContext<TestEvent>>(TestContext.Current.CancellationToken));
-
-//        await testHarness.Stop(cancellationToken: TestContext.Current.CancellationToken);
-//    }
-//}
+    }
+}

@@ -33,6 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\IM.EventStore.CloudEvents\IM.EventStore.CloudEvents.csproj" />
+    <ProjectReference Include="..\..\src\IM.EventStore.EventGrid\IM.EventStore.EventGrid.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore.MassTransit\IM.EventStore.MassTransit.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore\IM.EventStore.csproj" />
   </ItemGroup>

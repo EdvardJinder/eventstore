@@ -75,9 +75,9 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var services = new ServiceCollection();
         services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
         {
-            options.UseNpgsql(fixture.ConnectionString, npgsqlOptions =>
+            options.UseNpgsql(fixture.ConnectionString, c =>
             {
-                npgsqlOptions.EnableRetryOnFailure();
+                c.EnableRetryOnFailure();
             });
         }, c =>
         {
@@ -111,9 +111,9 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var services = new ServiceCollection();
         services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
         {
-            options.UseNpgsql(fixture.ConnectionString, npgsqlOptions =>
+            options.UseNpgsql(fixture.ConnectionString, c =>
             {
-                npgsqlOptions.EnableRetryOnFailure();
+                c.EnableRetryOnFailure();
             });
         }, c =>
         {

@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <TargetFramework>net9.0</TargetFramework>
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <Version>0.4.0</Version>
+	  <Authors>Edvard Jinder</Authors>
+	  <Company>Intromedia Digital AB</Company>
+	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IM.EventStore.CloudEvents\IM.EventStore.CloudEvents.csproj" />
+    <ProjectReference Include="..\IM.EventStore\IM.EventStore.csproj" />
+  </ItemGroup>
+
+</Project>
