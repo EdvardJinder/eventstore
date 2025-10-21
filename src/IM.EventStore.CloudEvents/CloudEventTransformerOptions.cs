@@ -10,4 +10,26 @@ public sealed class CloudEventTransformerOptions
     {
         _mappings[typeof(TEvent)] = (ievent) => transform((IEvent<TEvent>)ievent);
     }
+
+    public void MapEvent<TEvent>(string type, string source, Func<IEvent<TEvent>, string> subject)
+       where TEvent : class
+    {
+        _mappings[typeof(TEvent)] = (ievent) =>
+        {
+            return new CloudEvent(
+                source: source,
+                type: type,
+                jsonSerializableData: ((IEvent<TEvent>)ievent).Data,
+                dataSerializationType: ievent.EventType
+                )
+            {
+                Time = ievent.Timestamp,
+                Subject = subject((IEvent<TEvent>)ievent),
+                ExtensionAttributes = 
+                {
+                   ["tenantid"] = ievent.TenantId.ToString()
+                }
+            };
+        };
+    }
 }

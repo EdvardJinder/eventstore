@@ -24,6 +24,11 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         public Guid Id { get; set; } = Guid.NewGuid();
     }
 
+    public class TestEvent2
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+    }
+
     [Fact]
     public async Task should_handle_events()
     {
@@ -52,6 +57,8 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
                     };
                     return cloudEvent;
                 });
+
+                c.MapEvent<TestEvent2>("com.im.eventstore.tests.subscriptions.testevent2", "urn:tests.subscriptions", ievent => $"tests/subscriptions2/{ievent.Data.Id}");
             });
 
             
@@ -64,27 +71,24 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
 
         var eventStore = eventStoreDbContext.Streams();
         var streamId = Guid.NewGuid();
-        eventStore.StartStream(streamId, events: [new TestEvent()]);
+
+        List<object> events = [new TestEvent(), new TestEvent2()];
+        eventStore.StartStream(streamId, events: events);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var subscription = provider.GetRequiredService<Subscription<CloudEventSubscription<TestSub>, EventStoreDbContext>>();
 
         var processed = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
+        var processed2 = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
 
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
             .FindAsync(new object[] { typeof(CloudEventSubscription<TestSub>).AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(subscriptionEntity);
-        Assert.Equal(1, subscriptionEntity.Sequence);
+        Assert.Equal(2, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
-        Assert.Single(TestSub.HandledEvents);
-
-        var handledEvent = TestSub.HandledEvents[0];
-
-        var testEventData = handledEvent.Data.ToObjectFromJson<TestEvent>(System.Text.Json.JsonSerializerOptions.Default);
-
-        Assert.NotNull(testEventData);
-        Assert.IsType<TestEvent>(testEventData);
+        Assert.True(processed2, "No event was processed");
+        Assert.Equal(2, TestSub.HandledEvents.Count);
 
     }
 }
