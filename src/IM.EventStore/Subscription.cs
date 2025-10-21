@@ -19,6 +19,7 @@ internal sealed class Subscription<TSubscription, TDbContext>(
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly IDistributedLockProvider _distributedLockProvider = distributedLockProvider;
 
+    public static string Name => typeof(TSubscription).AssemblyQualifiedName!;
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
@@ -44,19 +45,19 @@ internal sealed class Subscription<TSubscription, TDbContext>(
                         {
                             logger.LogInformation(
                                 "No new events to process for subscription {Subscription}",
-                                typeof(TSubscription).Name);
+                                Name);
 
                             await Task.Delay(TimeSpan.FromSeconds(LockAcquireRetryIntervalSeconds), stoppingToken);
                             continue;
                         }
                     }
 
-                    logger.LogInformation("Released lock for subscription {Subscription}", typeof(TSubscription).Name);
+                    logger.LogInformation("Released lock for subscription {Subscription}", Name);
                 }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error in subscription {Subscription}", typeof(TSubscription).Name);
+            logger.LogError(ex, "Error in subscription {Subscription}", Name);
         }
     }
 
@@ -67,19 +68,18 @@ internal sealed class Subscription<TSubscription, TDbContext>(
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
         // Find subscription entity by assembly-qualified name key
-        var key = typeof(TSubscription).AssemblyQualifiedName!;
         var subscription = await dbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { key }, stoppingToken);
+            .FindAsync(new object[] { Name }, stoppingToken);
 
         if (subscription is null)
         {
             subscription = new DbSubscription
             {
-                SubscriptionAssemblyQualifiedName = key,
+                SubscriptionAssemblyQualifiedName = Name,
             };
             dbContext.Set<DbSubscription>().Add(subscription);
             await dbContext.SaveChangesAsync(stoppingToken);
-            logger.LogInformation("Created new subscription entity for {Subscription}", typeof(TSubscription).Name);
+            logger.LogInformation("Created new subscription entity for {Subscription}", Name);
         }
 
         var nextEvent = await dbContext.Events()
@@ -106,17 +106,17 @@ internal sealed class Subscription<TSubscription, TDbContext>(
     internal async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(CancellationToken cancellationToken)
     {
         var acquired = await _distributedLockProvider
-            .AcquireLockAsync(typeof(TSubscription).AssemblyQualifiedName!, cancellationToken: cancellationToken);
+            .AcquireLockAsync(Name, cancellationToken: cancellationToken);
 
         if (acquired == null)
         {
             logger.LogInformation(
                 "Could not acquire lock for subscription {Subscription}, another instance may be running.",
-                typeof(TSubscription).Name);
+                Name);
             return null;
         }
 
-        logger.LogInformation("Acquired lock for subscription {Subscription}", typeof(TSubscription).Name);
+        logger.LogInformation("Acquired lock for subscription {Subscription}", Name);
         return acquired as IAsyncDisposable ?? acquired; // cast to IAsyncDisposable when possible
     }
 }

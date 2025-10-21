@@ -48,9 +48,8 @@ internal sealed class EventStoreBuilder<TDbContext>(
     }
     public IEventStoreBuilder AddSubscription<TSubscription>() where TSubscription : ISubscription
     {
-
         services.AddSingleton<Subscription<TSubscription, TDbContext>>();
-        services.AddHostedService(sp => sp.GetRequiredService<Subscription<TSubscription, TDbContext>>());
+        services.AddHostedService<Subscription<TSubscription, TDbContext>>(sp => sp.GetRequiredService<Subscription<TSubscription, TDbContext>>());
         return this;
     }
 
