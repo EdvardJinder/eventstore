@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Data;
 using System.Data.Common;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace IM.EventStore;
 
@@ -31,21 +32,6 @@ internal sealed class EventStoreBuilder<TDbContext>(
         return this;
     }
 
-    public IEventStoreBuilder AddSubscriptionDaemon(string connectionString)
-    {
-        services.TryAddSingleton<IDistributedLockProvider>(new PostgresDistributedSynchronizationProvider(connectionString));
-        return this;
-    }
-    public IEventStoreBuilder AddSubscriptionDaemon(DbDataSource dbDataSource)
-    {
-        services.TryAddSingleton<IDistributedLockProvider>(new PostgresDistributedSynchronizationProvider(dbDataSource));
-        return this;
-    }
-    public IEventStoreBuilder AddSubscriptionDaemon(IDbConnection dbConnection)
-    {
-        services.TryAddSingleton<IDistributedLockProvider>(new PostgresDistributedSynchronizationProvider(dbConnection));
-        return this;
-    }
     public IEventStoreBuilder AddSubscription<TSubscription>() where TSubscription : ISubscription
     {
         services.AddSingleton<Subscription<TSubscription, TDbContext>>();
@@ -61,4 +47,21 @@ internal sealed class EventStoreBuilder<TDbContext>(
         }
     }
 
+    public IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, string> factory)
+    {
+        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+        return this;
+    }
+
+    public IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, DbDataSource> factory)
+    {
+        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+        return this;
+    }
+
+    public IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, IDbConnection> factory)
+    {
+        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+        return this;
+    }
 }

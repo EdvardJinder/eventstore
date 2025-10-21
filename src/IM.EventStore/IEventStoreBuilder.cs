@@ -12,8 +12,8 @@ public interface IEventStoreBuilder
     IEventStoreBuilder AddSubscription<TSubscription>() 
         where TSubscription : ISubscription;
 
-    IEventStoreBuilder AddSubscriptionDaemon(string connectionString);
-    IEventStoreBuilder AddSubscriptionDaemon(System.Data.Common.DbDataSource dbDataSource);
-    IEventStoreBuilder AddSubscriptionDaemon(System.Data.IDbConnection dbConnection);
+    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, string> factory);
+    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, System.Data.Common.DbDataSource> factory);
+    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, System.Data.IDbConnection> factory);
 
 }

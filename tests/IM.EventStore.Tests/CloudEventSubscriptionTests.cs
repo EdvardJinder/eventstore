@@ -40,7 +40,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         },
         c =>
         {
-            c.AddSubscriptionDaemon(fixture.ConnectionString);
+            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
             c.AddCloudEventSubscription<TestSub>(c=>
             {
                 c.MapEvent<TestEvent>(ievent =>

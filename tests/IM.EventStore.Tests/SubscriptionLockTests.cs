@@ -29,7 +29,7 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
             options.UseNpgsql(fixture.ConnectionString);
         }, c =>
         {
-            c.AddSubscriptionDaemon(fixture.ConnectionString);
+            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
             c.AddSubscription<TestSub>();
         });
 
@@ -56,7 +56,7 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
             options.UseNpgsql(fixture.ConnectionString);
         }, c =>
         {
-            c.AddSubscriptionDaemon(fixture.ConnectionString);
+            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
             c.AddSubscription<TestSub>();
         });
         services1.AddLogging();
@@ -73,7 +73,7 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
             options.UseNpgsql(fixture.ConnectionString);
         }, c =>
         {
-            c.AddSubscriptionDaemon(fixture.ConnectionString);
+            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
             c.AddSubscription<TestSub>();
         });
         services2.AddLogging();
