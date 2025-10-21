@@ -1,10 +1,4 @@
 ﻿
-
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using System.Data;
-using System.Data.Common;
-
 namespace IM.EventStore;
 
 

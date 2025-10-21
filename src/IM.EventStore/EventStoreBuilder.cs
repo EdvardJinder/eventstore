@@ -50,7 +50,7 @@ internal sealed class EventStoreBuilder<TDbContext>(
     {
 
         services.AddSingleton<Subscription<TSubscription, TDbContext>>();
-        //services.AddHostedService<Subscription<TSubscription, TDbContext>>(sp => sp.GetRequiredService<Subscription<TSubscription, TDbContext>>());
+        services.AddHostedService(sp => sp.GetRequiredService<Subscription<TSubscription, TDbContext>>());
         return this;
     }
 

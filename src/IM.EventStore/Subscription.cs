@@ -19,7 +19,7 @@ internal sealed class Subscription<TSubscription, TDbContext>(
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly IDistributedLockProvider _distributedLockProvider = distributedLockProvider;
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
             {
