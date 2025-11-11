@@ -2,18 +2,19 @@
 
 namespace IM.EventStore;
 
-public interface IEventStoreBuilder
+public interface IEventStoreBuilder<TDbContext>
+    where TDbContext : Microsoft.EntityFrameworkCore.DbContext
 {
-    internal IServiceCollection Services { get; }
-    IEventStoreBuilder AddProjection<TProjection, TSnapshot>(Action<IProjectionOptions>? configure = null)
+    public IServiceCollection Services { get; }
+    IEventStoreBuilder<TDbContext> AddProjection<TProjection, TSnapshot>(Action<IProjectionOptions>? configure = null)
            where TProjection : IProjection<TSnapshot>, new()
            where TSnapshot : class, new();
 
-    IEventStoreBuilder AddSubscription<TSubscription>() 
+    IEventStoreBuilder<TDbContext> AddSubscription<TSubscription>() 
         where TSubscription : ISubscription;
 
-    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, string> factory);
-    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, System.Data.Common.DbDataSource> factory);
-    IEventStoreBuilder AddSubscriptionDaemon(Func<IServiceProvider, System.Data.IDbConnection> factory);
+    IEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, string> factory);
+    IEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, System.Data.Common.DbDataSource> factory);
+    IEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, System.Data.IDbConnection> factory);
 
 }

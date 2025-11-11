@@ -2,6 +2,7 @@
 
 namespace IM.EventStore.CloudEvents;
 
+
 public sealed class CloudEventTransformerOptions
 {
     internal Dictionary<Type, Func<IEvent, CloudEvent>> _mappings = new();
@@ -25,9 +26,9 @@ public sealed class CloudEventTransformerOptions
             {
                 Time = ievent.Timestamp,
                 Subject = subject((IEvent<TEvent>)ievent),
-                ExtensionAttributes = 
+                ExtensionAttributes =
                 {
-                   ["tenantid"] = ievent.TenantId.ToString()
+               ["tenantid"] = ievent.TenantId.ToString()
                 }
             };
         };

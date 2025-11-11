@@ -82,7 +82,7 @@ internal sealed class Subscription<TSubscription, TDbContext>(
             logger.LogInformation("Created new subscription entity for {Subscription}", Name);
         }
 
-        var nextEvent = await dbContext.Events()
+        var nextEvent = await dbContext.Events
             .Where(e => e.Sequence > subscription.Sequence)
             .FirstOrDefaultAsync(stoppingToken);
 

@@ -41,7 +41,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         c =>
         {
             c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
-            c.AddCloudEventSubscription<TestSub>(c=>
+            c.AddCloudEventSubscription<EventStoreDbContext, TestSub>(c=>
             {
                 c.MapEvent<TestEvent>(ievent =>
                 {
@@ -69,7 +69,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams();
+        var eventStore = eventStoreDbContext.Streams;
         var streamId = Guid.NewGuid();
 
         List<object> events = [new TestEvent(), new TestEvent2()];

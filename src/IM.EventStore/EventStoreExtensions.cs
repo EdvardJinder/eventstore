@@ -1,47 +1,10 @@
-﻿using Medallion.Threading;
-using Medallion.Threading.Postgres;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
 namespace IM.EventStore;
 
 public static class EventStoreExtensions
 {
-    
-    public static IServiceCollection AddEventStore<TDbContext>(
-        this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> optionsAction,
-        Action<IEventStoreBuilder>? configure = null
-            )
-            where TDbContext : DbContext
-    {
-
-        EventStoreBuilder<TDbContext> builder = new EventStoreBuilder<TDbContext>(services);
-
-        configure?.Invoke(builder);
-
-        services.AddDbContext<TDbContext>((sp, options) =>
-        {
-            optionsAction(sp, options);
-            builder.ConfigureProjections(options);
-        });
-
-
-        return services;
-    }
-    public static IEventStore Streams(this DbContext dbContext)
-    {
-        if (dbContext == null) throw new ArgumentNullException(nameof(dbContext));
-        EventStore eventStore = new(dbContext);
-        return eventStore;
-    }
-    public static DbSet<DbEvent> Events(this DbContext dbContext)
-    {
-        if (dbContext == null) throw new ArgumentNullException(nameof(dbContext));
-        return dbContext.Set<DbEvent>();
-    }
     public static void UseEventStore(this ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DbStream>(entity =>
@@ -129,4 +92,47 @@ public static class EventStoreExtensions
         });
     }
 
+    public static IServiceCollection AddEventStore<TDbContext>(
+       this IServiceCollection services,
+       Action<IServiceProvider, DbContextOptionsBuilder> optionsAction,
+       Action<IEventStoreBuilder<TDbContext>>? configure = null
+           )
+           where TDbContext : DbContext
+    {
+
+        EventStoreBuilder<TDbContext> builder = new EventStoreBuilder<TDbContext>(services);
+
+        configure?.Invoke(builder);
+
+        services.AddDbContext<TDbContext>((sp, options) =>
+        {
+            optionsAction(sp, options);
+            builder.ConfigureProjections(options);
+        });
+
+
+        return services;
+    }
+
+    extension<TDbContext>(TDbContext dbContext)
+        where TDbContext : DbContext
+    {
+        public IEventStore Streams
+        {
+            get
+            {
+                ArgumentNullException.ThrowIfNull(dbContext);
+                return new EventStore(dbContext);
+            }
+        }
+
+        public DbSet<DbEvent> Events
+        {
+            get
+            {
+                ArgumentNullException.ThrowIfNull(dbContext);
+                return dbContext.Set<DbEvent>();
+            }
+        }
+    }
 }
