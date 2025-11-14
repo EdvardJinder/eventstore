@@ -3,61 +3,78 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace IM.EventStore;
 
 internal sealed class Subscription<TSubscription, TDbContext>(
     ILogger<Subscription<TSubscription, TDbContext>> logger,
     IServiceProvider serviceProvider,
-    IDistributedLockProvider distributedLockProvider
+    IDistributedLockProvider distributedLockProvider,
+    IOptions<SubscriptionOptions> options // ✅ Inject options
     )
     : BackgroundService
     where TSubscription : ISubscription
     where TDbContext : DbContext
 {
-    private const int LockAcquireRetryIntervalSeconds = 10;
+    private readonly SubscriptionOptions _options = options.Value;
+    
+    // Use _options.PollingInterval instead of hardcoded value
+
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly IDistributedLockProvider _distributedLockProvider = distributedLockProvider;
 
     public static string Name => typeof(TSubscription).AssemblyQualifiedName!;
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                while (!stoppingToken.IsCancellationRequested)
+                var acquired = await AcquireSubscriptionLockAsync(stoppingToken);
+
+                if (acquired == null)
                 {
-                    var acquired = await AcquireSubscriptionLockAsync(stoppingToken);
-
-                    if (acquired == null)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(LockAcquireRetryIntervalSeconds), stoppingToken);
-                        continue;
-                    }
-
-                    // Use async disposal of the acquired lock (assumes the returned lock is IAsyncDisposable)
-                    await using (acquired)
-                    {
-                        using var scope = _serviceProvider.CreateScope();
-
-                        var processed = await ProcessNextEventAsync(scope, stoppingToken);
-
-                        if (!processed)
-                        {
-                            logger.LogInformation(
-                                "No new events to process for subscription {Subscription}",
-                                Name);
-
-                            await Task.Delay(TimeSpan.FromSeconds(LockAcquireRetryIntervalSeconds), stoppingToken);
-                            continue;
-                        }
-                    }
-
-                    logger.LogInformation("Released lock for subscription {Subscription}", Name);
+                    await Task.Delay(_options.LockTimeout, stoppingToken);
+                    continue;
                 }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in subscription {Subscription}", Name);
+
+                await using (acquired)
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var processed = await ProcessNextEventAsync(scope, stoppingToken);
+
+                    if (!processed)
+                    {
+                        logger.LogInformation(
+                            "No new events to process for subscription {Subscription}",
+                            Name);
+                        await Task.Delay(_options.PollingInterval, stoppingToken);
+                    }
+                }
+
+                logger.LogInformation("Released lock for subscription {Subscription}", Name);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                logger.LogInformation("Subscription {Subscription} stopping gracefully", Name);
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Error processing events for subscription {Subscription}. Retrying in {RetrySeconds} seconds",
+                    Name, _options.RetryDelay);
+
+                try
+                {
+                    await Task.Delay(_options.RetryDelay, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
         }
     }
 
@@ -67,38 +84,56 @@ internal sealed class Subscription<TSubscription, TDbContext>(
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        // Find subscription entity by assembly-qualified name key
-        var subscription = await dbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { Name }, stoppingToken);
-
-        if (subscription is null)
+        // Use explicit transaction for atomic processing
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
+        
+        try
         {
-            subscription = new DbSubscription
+            var subscription = await dbContext.Set<DbSubscription>().FindAsync([Name], stoppingToken);
+            if (subscription is null)
             {
-                SubscriptionAssemblyQualifiedName = Name,
-            };
-            dbContext.Set<DbSubscription>().Add(subscription);
+                subscription = new DbSubscription
+                {
+                    SubscriptionAssemblyQualifiedName = Name,
+                };
+                dbContext.Set<DbSubscription>().Add(subscription);
+                await dbContext.SaveChangesAsync(stoppingToken);
+                logger.LogInformation("Created new subscription entity for {Subscription}", Name);
+            }
+
+            var nextEvent = await dbContext.Events
+                .Where(e => e.Sequence > subscription.Sequence)
+                .OrderBy(e => e.Sequence) // ✅ Ensure ordering
+                .FirstOrDefaultAsync(stoppingToken);
+
+            if (nextEvent is null)
+            {
+                return false;
+            }
+
+            var @event = nextEvent.ToEvent();
+
+            // Handler executes within transaction
+            await TSubscription.Handle(@event, scope.ServiceProvider, stoppingToken);
+
+            subscription.Sequence = nextEvent.Sequence;
             await dbContext.SaveChangesAsync(stoppingToken);
-            logger.LogInformation("Created new subscription entity for {Subscription}", Name);
+            
+            await transaction.CommitAsync(stoppingToken);
+            
+            logger.LogInformation(
+                "Processed event {EventId} (Sequence {Sequence}) for subscription {Subscription}",
+                @event.Id, nextEvent.Sequence, Name);
+
+            return true;
         }
-
-        var nextEvent = await dbContext.Events
-            .Where(e => e.Sequence > subscription.Sequence)
-            .FirstOrDefaultAsync(stoppingToken);
-
-        if (nextEvent is null)
+        catch
         {
-            return false;
+            logger.LogWarning(
+                "Rolling back transaction for subscription {Subscription}",
+                Name);
+            throw; // Re-throw to trigger outer retry logic
         }
-
-        var @event = nextEvent.ToEvent();
-
-        await TSubscription.Handle(@event, scope.ServiceProvider, stoppingToken);
-
-        subscription.Sequence = nextEvent.Sequence;
-        await dbContext.SaveChangesAsync(stoppingToken);
-
-        return true;
     }
 
     // Extracted, testable unit: tries to acquire the distributed lock for this subscription.
