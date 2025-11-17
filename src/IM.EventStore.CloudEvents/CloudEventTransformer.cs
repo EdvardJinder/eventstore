@@ -1,4 +1,5 @@
 ﻿using Azure.Messaging;
+using IM.EventStore.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Diagnostics.CodeAnalysis;
 

@@ -1,4 +1,5 @@
-﻿using IM.EventStore.MassTransit;
+﻿using IM.EventStore.Abstractions;
+using IM.EventStore.MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

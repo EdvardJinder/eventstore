@@ -4,7 +4,7 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<Version>0.5.2</Version>
+		<Version>0.5.3</Version>
 		<Authors>Edvard Jinder</Authors>
 		<Company>Intromedia Digital AB</Company>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -21,6 +21,11 @@
 	<ItemGroup>
 		<InternalsVisibleTo Include="IM.EventStore.CloudEvents" />
 		<InternalsVisibleTo Include="IM.EventStore.Tests" />
+	</ItemGroup>
+
+
+	<ItemGroup>
+	  <ProjectReference Include="..\IM.EventStore.Abstractions\IM.EventStore.Abstractions.csproj" />
 	</ItemGroup>
 
 </Project>

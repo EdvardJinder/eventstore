@@ -10,8 +10,4 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\IM.EventStore\IM.EventStore.csproj" />
-  </ItemGroup>
-
 </Project>

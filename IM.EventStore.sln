@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36616.10
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11205.157 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 EndProject
@@ -16,6 +16,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.EventGrid", "src\IM.EventStore.EventGrid\IM.EventStore.EventGrid.csproj", "{5C432B63-17EF-6484-EBD2-75F135F2A6E9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.MassTransit", "src\IM.EventStore.MassTransit\IM.EventStore.MassTransit.csproj", "{6854491C-0354-9BD9-48B1-FC69B98B7BF4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Abstractions", "src\IM.EventStore.Abstractions\IM.EventStore.Abstractions.csproj", "{85FCBF25-8187-4821-B045-00D9E9A1F792}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -43,6 +45,10 @@ Global
 		{6854491C-0354-9BD9-48B1-FC69B98B7BF4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6854491C-0354-9BD9-48B1-FC69B98B7BF4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6854491C-0354-9BD9-48B1-FC69B98B7BF4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{85FCBF25-8187-4821-B045-00D9E9A1F792}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85FCBF25-8187-4821-B045-00D9E9A1F792}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85FCBF25-8187-4821-B045-00D9E9A1F792}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85FCBF25-8187-4821-B045-00D9E9A1F792}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -53,6 +59,7 @@ Global
 		{BBEC200C-A945-0F55-4EA0-DA93F123037C} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 		{5C432B63-17EF-6484-EBD2-75F135F2A6E9} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 		{6854491C-0354-9BD9-48B1-FC69B98B7BF4} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
+		{85FCBF25-8187-4821-B045-00D9E9A1F792} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0D6AF021-AA65-4366-A83C-06AC0BCE4FCC}

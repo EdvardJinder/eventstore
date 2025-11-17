@@ -1,4 +1,5 @@
-﻿using MassTransit;
+﻿using IM.EventStore.Abstractions;
+using MassTransit;
 using MassTransit.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

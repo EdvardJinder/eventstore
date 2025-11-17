@@ -1,7 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
-
-namespace IM.EventStore;
+﻿
+namespace IM.EventStore.Abstractions;
 
 public interface IEvent
 {

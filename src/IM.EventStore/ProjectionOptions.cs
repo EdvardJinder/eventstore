@@ -1,4 +1,6 @@
-﻿namespace IM.EventStore;
+﻿using IM.EventStore.Abstractions;
+
+namespace IM.EventStore;
 
 internal sealed class ProjectionOptions : IProjectionOptions
 {

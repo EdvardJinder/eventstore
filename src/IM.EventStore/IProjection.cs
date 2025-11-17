@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using IM.EventStore.Abstractions;
+using Microsoft.EntityFrameworkCore;
 
 namespace IM.EventStore;
 

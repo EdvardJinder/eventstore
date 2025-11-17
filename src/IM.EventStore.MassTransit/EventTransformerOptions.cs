@@ -1,4 +1,6 @@
-﻿namespace IM.EventStore.MassTransit;
+﻿using IM.EventStore.Abstractions;
+
+namespace IM.EventStore.MassTransit;
 
 internal class EventTransformerOptions : IEventTransformerOptions
 {
