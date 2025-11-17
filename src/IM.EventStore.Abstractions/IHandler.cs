@@ -1,6 +1,4 @@
-﻿using IM.EventStore.Abstractions;
-
-namespace IM.EventStore;
+﻿namespace IM.EventStore.Abstractions;
 
 public interface IHandler<TState, TCommand>
     where TState : IState, new()

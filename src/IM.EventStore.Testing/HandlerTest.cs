@@ -16,8 +16,9 @@ public abstract class HandlerTest<THandler, TState, TCommand>
 
     private readonly Guid _streamId = Guid.NewGuid();
     private readonly Guid _tenantId = Guid.NewGuid();
-    private readonly TimeProvider _timeProvider = TimeProvider.System;
     private readonly List<IEvent> _committedEvents = new List<IEvent>();
+   
+    protected readonly TimeProvider TimeProvider = TimeProvider.System;
     protected HandlerTest(
         TimeProvider? timeProvider = null,
         Guid? streamId = null,
@@ -26,7 +27,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
     {
         if (timeProvider is not null)
         {
-            _timeProvider = timeProvider;
+            TimeProvider = timeProvider;
         }
         if (streamId is not null)
         {
@@ -48,7 +49,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
                 EventId = Guid.NewGuid(),
                 StreamId = _streamId,
                 TenantId = _tenantId,
-                Timestamp = _timeProvider.GetUtcNow(),
+                Timestamp = TimeProvider.GetUtcNow(),
                 Type = @event.GetType().AssemblyQualifiedName!,
                 Version = _version + 1,
                 Sequence = 0
@@ -68,7 +69,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
                 EventId = Guid.NewGuid(),
                 StreamId = _streamId,
                 TenantId = _tenantId,
-                Timestamp = _timeProvider.GetUtcNow(),
+                Timestamp = TimeProvider.GetUtcNow(),
                 Type = @event.GetType().AssemblyQualifiedName!,
                 Version = _version + 1,
                 Sequence = 0
@@ -81,7 +82,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
     protected void Then(params object[] expectedEvents)
     {
         _committedEvents.Count.ShouldBe(expectedEvents.Length, "Number of events produced does not match expected.");
-        _committedEvents.Select(e => e.Data).ShouldBe(expectedEvents, "Produced events do not match expected events.");
+        _committedEvents.Select(e => e.Data).ToArray().ShouldBe(expectedEvents, "Produced events do not match expected events.");
     }
     protected void ThrowsWhen<TException>(TCommand command) where TException : Exception
     {
