@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace IM.EventStore;
 
 
+
 internal class Stream(DbStream dbStream, DbContext db) : IStream
 {
     public Guid TenantId => dbStream.TenantId;

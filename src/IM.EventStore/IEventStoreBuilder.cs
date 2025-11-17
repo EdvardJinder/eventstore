@@ -5,6 +5,7 @@ namespace IM.EventStore;
 public interface IEventStoreBuilder<TDbContext>
     where TDbContext : Microsoft.EntityFrameworkCore.DbContext
 {
+    public IEventStoreBuilder<TDbContext> AddEventStoreInterfaceToServiceProvider();
     public IServiceCollection Services { get; }
     IEventStoreBuilder<TDbContext> AddProjection<TProjection, TSnapshot>(Action<IProjectionOptions>? configure = null)
            where TProjection : IProjection<TSnapshot>, new()
