@@ -2,6 +2,7 @@
 using IM.EventStore.Abstractions;
 using Shouldly;
 using System;
+using System.Collections.Immutable;
 using static org.apache.zookeeper.Watcher;
 
 namespace IM.EventStore.Testing;
@@ -16,7 +17,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
 
     private readonly Guid _streamId = Guid.NewGuid();
     private readonly Guid _tenantId = Guid.NewGuid();
-    private readonly List<IEvent> _committedEvents = new List<IEvent>();
+    private readonly ICollection<IEvent> _committedEvents = new List<IEvent>();
    
     protected readonly TimeProvider TimeProvider = TimeProvider.System;
     protected HandlerTest(
@@ -79,10 +80,10 @@ public abstract class HandlerTest<THandler, TState, TCommand>
         }
     }
 
-    protected void Then(params object[] expectedEvents)
+    protected void Then(params ICollection<object> expectedEvents)
     {
-        _committedEvents.Count.ShouldBe(expectedEvents.Length, "Number of events produced does not match expected.");
-        _committedEvents.Select(e => e.Data).ToArray().ShouldBe(expectedEvents, "Produced events do not match expected events.");
+        _committedEvents.Count.ShouldBe(expectedEvents.Count, "Number of events produced does not match expected.");
+        _committedEvents.Select(e => e.Data).ToImmutableList().ShouldBe(expectedEvents.ToImmutableList(), "Produced events do not match expected events.");
     }
     protected void ThrowsWhen<TException>(TCommand command) where TException : Exception
     {
