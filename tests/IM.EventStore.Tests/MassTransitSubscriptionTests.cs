@@ -11,15 +11,16 @@ namespace IM.EventStore.Tests;
 
 public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
-    public class TestConsumer : IConsumer<EventContext<TestEvent>>
+    public class TestConsumer : IConsumer<TestIntegrationEvent>
     {
-        public static List<EventContext<TestEvent>> HandledEvents { get; } = new();
-        public Task Consume(ConsumeContext<EventContext<TestEvent>> context)
+        public static List<TestIntegrationEvent> HandledEvents { get; } = new();
+        public Task Consume(ConsumeContext<TestIntegrationEvent> context)
         {
             HandledEvents.Add(context.Message);
             return Task.CompletedTask;
         }
     }
+    public record TestIntegrationEvent(Guid Id);
     public class TestEvent
     {
         public Guid Id { get; set; } = Guid.NewGuid();
@@ -37,7 +38,10 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
             c =>
             {
                 c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
-                c.AddMassTransitEventStoreSubscription();
+                c.AddMassTransitEventStoreSubscription(t =>
+                {
+                    t.AddEvent<TestEvent, TestIntegrationEvent>(e => new TestIntegrationEvent(e.Data.Id));
+                });
             });
 
         services.RemoveAll<IHostedService>();
@@ -72,7 +76,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         
         var processed = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
 
-        Assert.True(await consumer.Consumed.Any<EventContext<TestEvent>>(TestContext.Current.CancellationToken));
+        Assert.True(await consumer.Consumed.Any<TestIntegrationEvent>(TestContext.Current.CancellationToken));
       
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
           .FindAsync([Subscription<MassTransitSubscription, EventStoreDbContext>.Name], TestContext.Current.CancellationToken);
@@ -81,7 +85,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         Assert.Equal(1, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
         Assert.Single(TestConsumer.HandledEvents);
-        Assert.IsType<TestEvent>(TestConsumer.HandledEvents[0].Data);
+        Assert.IsType<TestIntegrationEvent>(TestConsumer.HandledEvents[0]);
 
 
 
