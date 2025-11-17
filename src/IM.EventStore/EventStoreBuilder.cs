@@ -64,4 +64,13 @@ internal sealed class EventStoreBuilder<TDbContext>(
         services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
         return this;
     }
+    public IEventStoreBuilder<TDbContext> AddEventStoreInterfaceToServiceProvider()
+    {
+        services.AddScoped<IEventStore>(sp =>
+        {
+            var dbContext = sp.GetRequiredService<TDbContext>();
+            return new EventStore(dbContext);
+        });
+        return this;
+    }
 }

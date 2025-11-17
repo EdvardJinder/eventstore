@@ -52,6 +52,8 @@ public static class EventStoreExtensions
 
             entity.HasKey(e => new { e.StreamId, e.Version });
 
+            entity.HasAlternateKey(e => e.EventId);
+
             entity.Property(e => e.StreamId)
                     .IsRequired();
 
@@ -109,7 +111,6 @@ public static class EventStoreExtensions
             optionsAction(sp, options);
             builder.ConfigureProjections(options);
         });
-
 
         return services;
     }

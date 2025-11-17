@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;
 
 namespace IM.EventStore.Tests;
-
 public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
     public class TestSub : ICloudEventSubscription
