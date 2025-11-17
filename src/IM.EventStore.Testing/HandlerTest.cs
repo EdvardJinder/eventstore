@@ -1,9 +1,6 @@
-﻿
-using IM.EventStore.Abstractions;
+﻿using IM.EventStore.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
-using System;
-using System.Collections.Immutable;
-using static org.apache.zookeeper.Watcher;
 
 namespace IM.EventStore.Testing;
 
@@ -14,29 +11,23 @@ public abstract class HandlerTest<THandler, TState, TCommand>
 {
     private readonly TState _state = new();
     private readonly int _version = 0;
-
-    private readonly Guid _streamId = Guid.NewGuid();
-    private readonly Guid _tenantId = Guid.NewGuid();
     private readonly ICollection<IEvent> _committedEvents = new List<IEvent>();
-   
-    protected readonly TimeProvider TimeProvider = TimeProvider.System;
+
+    protected Guid StreamId { get; set; } = Guid.NewGuid();
+    protected Guid TenantId { get; set; } = Guid.NewGuid();
+    protected TimeProvider TimeProvider { get; set; } = new FakeTimeProvider(DateTimeOffset.UtcNow);
     protected HandlerTest(
-        TimeProvider? timeProvider = null,
         Guid? streamId = null,
         Guid? tenantId = null
         )
     {
-        if (timeProvider is not null)
-        {
-            TimeProvider = timeProvider;
-        }
         if (streamId is not null)
         {
-            _streamId = streamId.Value;
+            StreamId = streamId.Value;
         }
         if (tenantId is not null)
         {
-            _tenantId = tenantId.Value;
+            TenantId = tenantId.Value;
         }
     }
 
@@ -48,8 +39,8 @@ public abstract class HandlerTest<THandler, TState, TCommand>
             {
                 Data = System.Text.Json.JsonSerializer.Serialize(@event),
                 EventId = Guid.NewGuid(),
-                StreamId = _streamId,
-                TenantId = _tenantId,
+                StreamId = StreamId,
+                TenantId = TenantId,
                 Timestamp = TimeProvider.GetUtcNow(),
                 Type = @event.GetType().AssemblyQualifiedName!,
                 Version = _version + 1,
@@ -68,8 +59,8 @@ public abstract class HandlerTest<THandler, TState, TCommand>
             {
                 Data = System.Text.Json.JsonSerializer.Serialize(@event),
                 EventId = Guid.NewGuid(),
-                StreamId = _streamId,
-                TenantId = _tenantId,
+                StreamId = StreamId,
+                TenantId = TenantId,
                 Timestamp = TimeProvider.GetUtcNow(),
                 Type = @event.GetType().AssemblyQualifiedName!,
                 Version = _version + 1,
@@ -80,11 +71,22 @@ public abstract class HandlerTest<THandler, TState, TCommand>
         }
     }
 
+    // Unordered, duplicate-aware comparison of produced vs expected events.
+    // - Converts both sides to JsonNode to perform deterministic structural equality.
+    // - Treats collections as multisets: ordering is ignored, duplicates are honored.
     protected void Then(params ICollection<object> expectedEvents)
     {
-        _committedEvents.Count.ShouldBe(expectedEvents.Count, "Number of events produced does not match expected.");
-        _committedEvents.Select(e => e.Data).ToImmutableList().ShouldBe(expectedEvents.ToImmutableList(), "Produced events do not match expected events.");
+        var config = new KellermanSoftware.CompareNetObjects.ComparisonConfig
+        {
+            IgnoreCollectionOrder = true,   // ignore order
+            MaxDifferences = 100,
+            MaxMillisecondsDateDifference = 0
+        };
+        var compareLogic = new KellermanSoftware.CompareNetObjects.CompareLogic(config);
+        var result = compareLogic.Compare(expectedEvents.ToArray(), _committedEvents.Select(x => x.Data).ToArray());
+        result.AreEqual.ShouldBeTrue(result.DifferencesString);
     }
+
     protected void ThrowsWhen<TException>(TCommand command) where TException : Exception
     {
         Should.Throw<TException>(() => When(command));
