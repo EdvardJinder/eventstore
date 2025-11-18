@@ -3,8 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IM.EventStore;
 
-
-
 internal class Stream(DbStream dbStream, DbContext db) : IStream
 {
     public Guid TenantId => dbStream.TenantId;
@@ -33,7 +31,8 @@ internal class Stream(DbStream dbStream, DbContext db) : IStream
                 Timestamp = DateTimeOffset.UtcNow,
                 EventId = Guid.NewGuid()
             };
-            db.Set<DbEvent>().Add(dbEvent);
+            
+            dbStream.Events.Add(dbEvent);
         }
         
         dbStream.UpdatedTimestamp = DateTimeOffset.UtcNow;
