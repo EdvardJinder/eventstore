@@ -58,20 +58,3 @@ internal class Stream<T>(DbStream dbStream, DbContext db) : Stream(dbStream, db)
         }
     }
 }
-
-/* TODO: Source generator for Stream<TState> to add static extensions for handlers acting on IStream<TState>
-
-API Proposal:
-
-IStream<Account> stream = ...;
-
-stream.Deposit(cmd);
-
-Current API:
-
-IStream<Account> stream = ...;
-
-DepositHandler.Handle(stream);
-
-
- */

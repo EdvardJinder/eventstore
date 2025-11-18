@@ -1,5 +1,6 @@
 ﻿namespace IM.EventStore.Abstractions;
 
+
 public interface IStream : IReadOnlyStream
 {
     public void Append(params IEnumerable<object> events);

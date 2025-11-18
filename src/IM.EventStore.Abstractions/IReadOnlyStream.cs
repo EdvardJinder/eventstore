@@ -1,5 +1,6 @@
 ﻿namespace IM.EventStore.Abstractions;
 
+
 public interface IReadOnlyStream
 {
     public Guid Id { get; }

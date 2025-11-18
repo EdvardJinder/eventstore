@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net10.0</TargetFrameworks>
+		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<Version>0.6.0</Version>
@@ -24,6 +24,8 @@
 		<InternalsVisibleTo Include="IM.EventStore.Tests" />
 	</ItemGroup>
 
+
+	
 
 	<ItemGroup>
 	  <ProjectReference Include="..\IM.EventStore.Abstractions\IM.EventStore.Abstractions.csproj" />
