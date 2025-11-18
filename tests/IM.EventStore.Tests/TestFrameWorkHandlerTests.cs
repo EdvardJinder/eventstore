@@ -25,22 +25,24 @@ public class TestState : IState
 }
 public class TestHandler : IHandler<TestState, DecrementCommand>
 {
-    static IReadOnlyCollection<object> IHandler<TestState, DecrementCommand>.Handle(TestState state, DecrementCommand command)
+    public static void Handle(IStream<TestState> stream, DecrementCommand command)
     {
         if (command.Amount <= 0)
         {
             throw new InvalidOperationException("Amount cannot be negative or zero");
         }
 
-        if (state.Value - command.Amount < 0)
+        if (stream.State.Value - command.Amount < 0)
         {
             throw new InvalidOperationException("Insufficient funds");
         }
 
-        state.Value -= command.Amount;
-        return [new DecrementedEvent(command.Amount, command.Time)];
+        stream.State.Value -= command.Amount;
+
+        stream.Append(new DecrementedEvent(command.Amount, command.Time));
     }
 }
+
 
 public class TestFrameWorkHandlerTests : HandlerTest<TestHandler, TestState, DecrementCommand>
 {

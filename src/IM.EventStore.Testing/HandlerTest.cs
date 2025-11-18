@@ -1,4 +1,5 @@
 ﻿using IM.EventStore.Abstractions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -9,71 +10,37 @@ public abstract class HandlerTest<THandler, TState, TCommand>
     where TState : IState, new()
     where TCommand : class
 {
-    private readonly TState _state = new();
-    private readonly int _version = 0;
-    private readonly ICollection<IEvent> _committedEvents = new List<IEvent>();
-
-    protected Guid StreamId { get; set; } = Guid.NewGuid();
-    protected Guid TenantId { get; set; } = Guid.NewGuid();
     protected TimeProvider TimeProvider { get; set; } = new FakeTimeProvider(DateTimeOffset.UtcNow);
-    protected HandlerTest(
-        Guid? streamId = null,
-        Guid? tenantId = null
-        )
+
+    private readonly DbContext _dbContext = new TestDbContext();
+
+    private IStream<TState> _stream;
+    private long LastVersion { get; set; } = 0;
+
+    protected HandlerTest()
     {
-        if (streamId is not null)
+        _stream = new Stream<TState>(new DbStream()
         {
-            StreamId = streamId.Value;
-        }
-        if (tenantId is not null)
-        {
-            TenantId = tenantId.Value;
-        }
+            Id = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            CreatedTimestamp = TimeProvider.GetUtcNow(),
+            UpdatedTimestamp = TimeProvider.GetUtcNow(),
+            CurrentVersion = 0
+        }, _dbContext); 
     }
 
     protected void Given(params object[] events)
     {
-        foreach (var @event in events)
-        {
-            var evnt = new DbEvent
-            {
-                Data = System.Text.Json.JsonSerializer.Serialize(@event),
-                EventId = Guid.NewGuid(),
-                StreamId = StreamId,
-                TenantId = TenantId,
-                Timestamp = TimeProvider.GetUtcNow(),
-                Type = @event.GetType().AssemblyQualifiedName!,
-                Version = _version + 1,
-                Sequence = 0
-            };
-            _state.Apply(evnt.ToEvent());
-        }
+        _stream.Append(events);
+        LastVersion = _stream.Version;
     }
 
     protected void When(TCommand command)
     {
-        var events = THandler.Handle(_state, command);
-        foreach (var @event in events)
-        {
-            var evnt = new DbEvent
-            {
-                Data = System.Text.Json.JsonSerializer.Serialize(@event),
-                EventId = Guid.NewGuid(),
-                StreamId = StreamId,
-                TenantId = TenantId,
-                Timestamp = TimeProvider.GetUtcNow(),
-                Type = @event.GetType().AssemblyQualifiedName!,
-                Version = _version + 1,
-                Sequence = 0
-            };
-            _state.Apply(evnt.ToEvent());
-            _committedEvents.Add(evnt.ToEvent());
-        }
+        THandler.Handle(_stream, command);
+        
     }
 
-    // Unordered, duplicate-aware comparison of produced vs expected events.
-    // - Converts both sides to JsonNode to perform deterministic structural equality.
-    // - Treats collections as multisets: ordering is ignored, duplicates are honored.
     protected void Then(params ICollection<object> expectedEvents)
     {
         var config = new KellermanSoftware.CompareNetObjects.ComparisonConfig
@@ -83,7 +50,8 @@ public abstract class HandlerTest<THandler, TState, TCommand>
             MaxMillisecondsDateDifference = 0
         };
         var compareLogic = new KellermanSoftware.CompareNetObjects.CompareLogic(config);
-        var result = compareLogic.Compare(expectedEvents.ToArray(), _committedEvents.Select(x => x.Data).ToArray());
+        var committed = _stream.Events.Where(e => e.Version > LastVersion).ToList();
+        var result = compareLogic.Compare(expectedEvents.ToArray(), committed.Select(x => x.Data).ToArray());
         result.AreEqual.ShouldBeTrue(result.DifferencesString);
     }
 
