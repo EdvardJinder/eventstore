@@ -69,7 +69,6 @@ public abstract class HandlerTest<THandler, TState, TCommand>
     protected void When(TCommand command)
     {
         THandler.Handle(_stream, command);
-        
     }
 
     protected void Then(params ICollection<object> expectedEvents)

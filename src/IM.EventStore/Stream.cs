@@ -31,30 +31,26 @@ internal class Stream(DbStream dbStream, DbContext db) : IStream
                 Timestamp = DateTimeOffset.UtcNow,
                 EventId = Guid.NewGuid()
             };
-            
+
             dbStream.Events.Add(dbEvent);
         }
-        
+
         dbStream.UpdatedTimestamp = DateTimeOffset.UtcNow;
     }
 }
 
 internal class Stream<T>(DbStream dbStream, DbContext db) : Stream(dbStream, db), IStream<T> where T : IState, new()
 {
-    private T? _state;
     public T State
     {
         get
         {
-            if (_state is null)
+            var state = new T();
+            foreach (var @event in Events)
             {
-                _state = new T();
-                foreach (var @event in Events)
-                {
-                    _state.Apply(@event);
-                }
+                state.Apply(@event);
             }
-            return _state;
+            return state;
         }
     }
 }
