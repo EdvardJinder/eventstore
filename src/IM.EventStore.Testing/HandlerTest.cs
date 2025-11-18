@@ -14,10 +14,6 @@ public abstract class HandlerTest<THandler, TCommand>
     protected HandlerTest()
     {
     }
-    protected void Given(params object[] events)
-    {
-        _committedEvents.AddRange(events);
-    }
     protected void When(TCommand command)
     {
         _committedEvents.AddRange(THandler.Handle(command));
