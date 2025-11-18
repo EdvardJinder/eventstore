@@ -4,6 +4,8 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace IM.EventStore.Tests;
 
+public record OpenAccount(int AccountNumber);
+public record AccountOpened(int AccountNumber, int Balance);
 public record DecrementCommand(int Amount, DateTimeOffset Time);
 public record IncrementedEvent(int Amount);
 public record DecrementedEvent(int Amount, DateTimeOffset Time);
@@ -42,8 +44,36 @@ public class TestHandler : IHandler<TestState, DecrementCommand>
         stream.Append(new DecrementedEvent(command.Amount, command.Time));
     }
 }
+public class TestHandler2 : IHandler<OpenAccount>
+{
+    public static IReadOnlyCollection<object> Handle(OpenAccount command)
+    {
+        if(command.AccountNumber <= 0)
+        {
+            throw new InvalidOperationException("Account number must be positive");
+        }
 
+        return
+        [
+            new AccountOpened(command.AccountNumber, 0)
+        ];
+    }
+}
 
+public class TestFrameWorkHandler2Tests : HandlerTest<TestHandler2, OpenAccount>
+{
+    [Fact]
+    public void should_handle_command_and_produce_events()
+    {
+        When(new OpenAccount(12345));
+        Then(new AccountOpened(12345, 0));
+    }
+    [Fact]
+    public void should_throw_exception_on_invalid_account_number()
+    {
+        ThrowsWhen<InvalidOperationException>(new OpenAccount(-1));
+    }
+}
 public class TestFrameWorkHandlerTests : HandlerTest<TestHandler, TestState, DecrementCommand>
 {
 

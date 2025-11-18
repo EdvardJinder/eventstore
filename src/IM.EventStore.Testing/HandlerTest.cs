@@ -5,6 +5,41 @@ using Shouldly;
 
 namespace IM.EventStore.Testing;
 
+public abstract class HandlerTest<THandler, TCommand>
+    where THandler : IHandler<TCommand>
+    where TCommand : class
+{
+    protected TimeProvider TimeProvider { get; set; } = new FakeTimeProvider(DateTimeOffset.UtcNow);
+    private List<object> _committedEvents = new();
+    protected HandlerTest()
+    {
+    }
+    protected void Given(params object[] events)
+    {
+        _committedEvents.AddRange(events);
+    }
+    protected void When(TCommand command)
+    {
+        _committedEvents.AddRange(THandler.Handle(command));
+    }
+    protected void Then(params ICollection<object> expectedEvents)
+    {
+        var config = new KellermanSoftware.CompareNetObjects.ComparisonConfig
+        {
+            IgnoreCollectionOrder = true,   // ignore order
+            MaxDifferences = 100,
+            MaxMillisecondsDateDifference = 0
+        };
+        var compareLogic = new KellermanSoftware.CompareNetObjects.CompareLogic(config);
+        var result = compareLogic.Compare(expectedEvents.ToArray(), _committedEvents.ToArray());
+        result.AreEqual.ShouldBeTrue(result.DifferencesString);
+    }
+    protected void ThrowsWhen<TException>(TCommand command) where TException : Exception
+    {
+        Should.Throw<TException>(() => When(command));
+    }
+}
+
 public abstract class HandlerTest<THandler, TState, TCommand>
     where THandler : IHandler<TState, TCommand>
     where TState : IState, new()
