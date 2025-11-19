@@ -66,5 +66,21 @@ internal sealed class EventStore(DbContext db) : IEventStore
         stream.Append(events);
         return stream;
     }
+
+    public IStream<T> StartStream<T>(Guid streamId, Guid tenantId = default, params IEnumerable<object> events) where T : IState, new()
+    {
+        var dbStream = new DbStream
+        {
+            Id = streamId,
+            CurrentVersion = 0,
+            CreatedTimestamp = DateTime.UtcNow,
+            UpdatedTimestamp = DateTime.UtcNow,
+            TenantId = tenantId
+        };
+        db.Add(dbStream);
+        var stream = new Stream<T>(dbStream, db);
+        stream.Append(events);
+        return stream;
+    }
 }
 
