@@ -1,8 +1,5 @@
 ﻿using IM.EventStore.Abstractions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace IM.EventStore;
 
