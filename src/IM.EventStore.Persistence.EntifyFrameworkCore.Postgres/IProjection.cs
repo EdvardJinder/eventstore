@@ -1,7 +1,7 @@
 ﻿using IM.EventStore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore;
+namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 
 
 public interface IProjection<TSnapshot> 

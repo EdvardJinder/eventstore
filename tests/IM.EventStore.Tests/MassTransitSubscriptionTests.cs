@@ -1,4 +1,5 @@
 ﻿using IM.EventStore.MassTransit;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -31,13 +32,13 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
     {
         // Arrange
         var services = new ServiceCollection();
-        services.AddEventStore<EventStoreDbContext>((sp, options) =>
+        services.AddEventStore(c =>
+        {
+            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
             {
                 options.UseNpgsql(fixture.ConnectionString);
-            },
-            c =>
-            {
-                c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
+            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
+
                 c.AddMassTransitEventStoreSubscription(t =>
                 {
                     t.AddEvent<TestEvent, TestIntegrationEvent>(e => new TestIntegrationEvent(e.Data.Id));
@@ -72,14 +73,15 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
 
         var consumer = harness.GetConsumerHarness<TestConsumer>();
 
-        var subscription = provider.GetRequiredService<Subscription<MassTransitSubscription, EventStoreDbContext>>();
+        var daemon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
+        var subscription = provider.GetRequiredService<MassTransitSubscription>();
         
-        var processed = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
+        var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
         Assert.True(await consumer.Consumed.Any<TestIntegrationEvent>(TestContext.Current.CancellationToken));
       
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
-          .FindAsync([Subscription<MassTransitSubscription, EventStoreDbContext>.Name], TestContext.Current.CancellationToken);
+          .FindAsync([subscription.GetType().AssemblyQualifiedName], TestContext.Current.CancellationToken);
 
         Assert.NotNull(subscriptionEntity);
         Assert.Equal(1, subscriptionEntity.Sequence);

@@ -1,16 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	  <TargetFrameworks>net10.0</TargetFrameworks>
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  <Nullable>enable</Nullable>
-	  <Version>0.7.2</Version>
-	  <Authors>Edvard Jinder</Authors>
-	  <Company>Intromedia Digital AB</Company>
-	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IM.EventStore.Abstractions\IM.EventStore.Abstractions.csproj" />
     <ProjectReference Include="..\IM.EventStore\IM.EventStore.csproj" />
   </ItemGroup>
 
@@ -18,5 +15,6 @@
 		<InternalsVisibleTo Include="IM.EventStore.Testing" />
 		<InternalsVisibleTo Include="IM.EventStore.Tests" />
 	</ItemGroup>
+
 
 </Project>

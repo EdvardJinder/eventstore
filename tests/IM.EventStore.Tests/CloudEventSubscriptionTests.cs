@@ -1,6 +1,6 @@
 ﻿using Azure.Messaging;
 using IM.EventStore.CloudEvents;
-using IM.EventStore.EventGrid;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;
@@ -11,7 +11,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
     public class TestSub : ICloudEventSubscription
     {
         public static List<CloudEvent> HandledEvents { get; } = new();
-        public static Task Handle(CloudEvent @event, IServiceProvider sp, CancellationToken ct)
+        public Task Handle(CloudEvent @event, CancellationToken ct)
         {
             // Handle the event (e.g., log it, process it, etc.)
             HandledEvents.Add(@event);
@@ -33,14 +33,15 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
     {
         // Arrange
         var services = new ServiceCollection();
-        services.AddEventStore<EventStoreDbContext>((sp, options) =>
-        {
-            options.UseNpgsql(fixture.ConnectionString);
-        },
+        services.AddEventStore(
         c =>
         {
-            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
-            c.AddCloudEventSubscription<EventStoreDbContext, TestSub>(c=>
+            c.UsingPostgres<EventStoreDbContext>(
+                (sp, options) => options.UseNpgsql(fixture.ConnectionString),
+                c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString)
+                );
+
+            c.AddCloudEventSubscription<TestSub>(c =>
             {
                 c.MapEvent<TestEvent>(ievent =>
                 {
@@ -59,8 +60,6 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
 
                 c.MapEvent<TestEvent2>("com.im.eventstore.tests.subscriptions.testevent2", "urn:tests.subscriptions", ievent => $"tests/subscriptions2/{ievent.Data.Id}");
             });
-
-            
         });
 
         services.AddLogging();
@@ -75,10 +74,12 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         eventStore.StartStream(streamId, events: events);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var subscription = provider.GetRequiredService<Subscription<CloudEventSubscription<TestSub>, EventStoreDbContext>>();
+        var subscriptionDeamon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
 
-        var processed = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
-        var processed2 = await subscription.ProcessNextEventAsync(provider.CreateScope(), TestContext.Current.CancellationToken);
+        var subscription = provider.GetRequiredService<CloudEventSubscription<TestSub>>();
+
+        var processed = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+        var processed2 = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
             .FindAsync(new object[] { typeof(CloudEventSubscription<TestSub>).AssemblyQualifiedName! }, TestContext.Current.CancellationToken);

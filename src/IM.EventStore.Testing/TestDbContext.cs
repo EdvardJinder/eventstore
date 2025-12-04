@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using Microsoft.EntityFrameworkCore;
 
 namespace IM.EventStore.Testing;
 

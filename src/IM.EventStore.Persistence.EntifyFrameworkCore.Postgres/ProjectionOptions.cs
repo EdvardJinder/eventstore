@@ -1,6 +1,6 @@
 ﻿using IM.EventStore.Abstractions;
 
-namespace IM.EventStore;
+namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 
 internal sealed class ProjectionOptions : IProjectionOptions
 {

@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres.csproj" />
     <ProjectReference Include="..\IM.EventStore\IM.EventStore.csproj" />
   </ItemGroup>
 

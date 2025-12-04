@@ -7,7 +7,8 @@ namespace IM.EventStore.EventGrid;
 
 public class EventGridSubscription : ICloudEventSubscription
 {
-    public static Task Handle(CloudEvent @event, IServiceProvider sp, CancellationToken ct)
+    private readonly IServiceProvider sp;
+    public Task Handle(CloudEvent @event, CancellationToken ct)
     {
         var publisher = sp.GetRequiredService<EventGridPublisherClient>();
         return publisher.SendEventAsync(@event, ct);

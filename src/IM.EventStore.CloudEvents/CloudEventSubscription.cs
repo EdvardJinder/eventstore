@@ -1,17 +1,22 @@
 ﻿using IM.EventStore.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace IM.EventStore.CloudEvents;
 
-public abstract class CloudEventSubscription<TCloudEventSubscription> : ISubscription
+internal class CloudEventSubscription<TCloudEventSubscription> : ISubscription
     where TCloudEventSubscription : ICloudEventSubscription
 {
-    public static Task Handle(IEvent @event, IServiceProvider sp, CancellationToken ct)
+    private readonly CloudEventTransformer _transformer;
+    private readonly TCloudEventSubscription _cloudEventSubscription;
+    public CloudEventSubscription(CloudEventTransformer transformer, TCloudEventSubscription cloudEventSubscription)
     {
-        var transformer = sp.GetRequiredService<CloudEventTransformer>();
-        if(transformer.TryTransform(@event, out var cloudEvent))
+        _transformer = transformer;
+        _cloudEventSubscription = cloudEventSubscription;
+    }
+    public Task Handle(IEvent @event, CancellationToken ct)
+    {
+        if(_transformer.TryTransform(@event, out var cloudEvent))
         {
-            return TCloudEventSubscription.Handle(cloudEvent, sp,  ct);
+            return _cloudEventSubscription.Handle(cloudEvent,  ct);
         }
 
         return Task.CompletedTask;

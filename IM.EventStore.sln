@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Abstractions"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Testing", "src\IM.EventStore.Testing\IM.EventStore.Testing.csproj", "{E78D3F37-914E-4C75-B4DB-A33D2C3F4240}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Persistence.EntifyFrameworkCore.Postgres", "src\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres.csproj", "{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,10 @@ Global
 		{E78D3F37-914E-4C75-B4DB-A33D2C3F4240}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E78D3F37-914E-4C75-B4DB-A33D2C3F4240}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E78D3F37-914E-4C75-B4DB-A33D2C3F4240}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -67,6 +73,7 @@ Global
 		{6854491C-0354-9BD9-48B1-FC69B98B7BF4} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 		{85FCBF25-8187-4821-B045-00D9E9A1F792} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 		{E78D3F37-914E-4C75-B4DB-A33D2C3F4240} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
+		{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A} = {9DCBEBCC-27C7-43FB-8734-7C6BC92009D1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0D6AF021-AA65-4366-A83C-06AC0BCE4FCC}

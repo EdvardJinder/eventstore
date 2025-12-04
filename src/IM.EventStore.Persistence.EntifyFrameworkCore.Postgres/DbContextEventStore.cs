@@ -1,9 +1,10 @@
 ﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore;
+namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 
-internal sealed class EventStore(DbContext db) : IEventStore
+internal sealed class DbContextEventStore(DbContext db) : IEventStore
 {
     public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {
@@ -13,7 +14,7 @@ internal sealed class EventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new Stream(stream, db);
+        return new DbContextStream(stream, db);
     }
 
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
@@ -24,7 +25,7 @@ internal sealed class EventStore(DbContext db) : IEventStore
          .Include(x => x.Events)
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new Stream<T>(stream, db);
+        return new DbContextStream<T>(stream, db);
     }
 
 
@@ -35,7 +36,7 @@ internal sealed class EventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new Stream(stream, db);
+        return new DbContextStream(stream, db);
     }
 
     public async Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
@@ -45,7 +46,7 @@ internal sealed class EventStore(DbContext db) : IEventStore
           .Include(x => x.Events)
           .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new Stream<T>(stream, db);
+        return new DbContextStream<T>(stream, db);
     }
 
     public IStream StartStream(Guid streamId, Guid tenantId = default, params IEnumerable<object> events)
@@ -59,7 +60,7 @@ internal sealed class EventStore(DbContext db) : IEventStore
             TenantId = tenantId
         };
         db.Add(dbStream);
-        var stream = new Stream(dbStream, db);
+        var stream = new DbContextStream(dbStream, db);
         stream.Append(events);
         return stream;
     }
@@ -75,9 +76,8 @@ internal sealed class EventStore(DbContext db) : IEventStore
             TenantId = tenantId
         };
         db.Add(dbStream);
-        var stream = new Stream<T>(dbStream, db);
+        var stream = new DbContextStream<T>(dbStream, db);
         stream.Append(events);
         return stream;
     }
 }
-

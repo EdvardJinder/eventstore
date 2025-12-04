@@ -1,11 +1,7 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Xunit;
 
 namespace IM.EventStore.Tests;
 
@@ -13,7 +9,7 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
 {
     public class TestSub : ISubscription
     {
-        public static Task Handle(IEvent @event, IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
+        public Task Handle(IEvent @event, CancellationToken ct) => Task.CompletedTask;
     }
     public class TestDbContext : DbContext
     {
@@ -25,22 +21,24 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
     {
         var services = new ServiceCollection();
 
-        services.AddEventStore<TestDbContext>((sp, options) =>
+        services.AddEventStore(c =>
         {
-            options.UseNpgsql(fixture.ConnectionString);
-        }, c =>
-        {
-            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
+            c.UsingPostgres<TestDbContext>((sp, options) =>
+            {
+                options.UseNpgsql(fixture.ConnectionString);
+            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
+
             c.AddSubscription<TestSub>();
         });
 
         services.AddLogging();
 
         var provider = services.BuildServiceProvider();
+        
+        var daemon = provider.GetRequiredService<SubscriptionDaemon<TestDbContext>>();
+        var subscription = provider.GetRequiredService<TestSub>();
 
-        var subscription = provider.GetRequiredService<Subscription<TestSub, TestDbContext>>();
-
-        var handle = await subscription.AcquireSubscriptionLockAsync(CancellationToken.None);
+        var handle = await daemon.AcquireSubscriptionLockAsync<TestSub>(CancellationToken.None);
 
         Assert.NotNull(handle);
 
@@ -52,41 +50,25 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
     {
         // First service provider with a held lock
         var services1 = new ServiceCollection();
-        services1.AddEventStore<TestDbContext>((sp, options) =>
+        services1.AddEventStore(c =>
         {
-            options.UseNpgsql(fixture.ConnectionString);
-        }, c =>
-        {
-            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
+            c.UsingPostgres<TestDbContext>((sp, options) =>
+            {
+                options.UseNpgsql(fixture.ConnectionString);
+            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
+
             c.AddSubscription<TestSub>();
         });
         services1.AddLogging();
         var provider1 = services1.BuildServiceProvider();
-        var subscription1 = provider1.GetRequiredService<Subscription<TestSub, TestDbContext>>();
+        var daemon = provider1.GetRequiredService<SubscriptionDaemon<TestDbContext>>();
+        var subscription1 = provider1.GetRequiredService<TestSub>();
 
-        var handle1 = await subscription1.AcquireSubscriptionLockAsync(CancellationToken.None);
+        var handle1 = await daemon.AcquireSubscriptionLockAsync<TestSub>(CancellationToken.None);
         Assert.NotNull(handle1);
 
-        // Second service provider attempting to acquire the same lock
-        var services2 = new ServiceCollection();
-        services2.AddEventStore<TestDbContext>((sp, options) =>
-        {
-            options.UseNpgsql(fixture.ConnectionString);
-        }, c =>
-        {
-            c.AddSubscriptionDaemon(_ => fixture.ConnectionString);
-            c.AddSubscription<TestSub>();
-        });
-        services2.AddLogging();
-        var provider2 = services2.BuildServiceProvider();
-        var subscription2 = provider2.GetRequiredService<Subscription<TestSub, TestDbContext>>();
-
-        using var cts = new CancellationTokenSource(1_000); // cancel after 1s
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-        {
-            await subscription2.AcquireSubscriptionLockAsync(cts.Token);
-        });
+        var handle2 = await daemon.AcquireSubscriptionLockAsync<TestSub>(CancellationToken.None);
+        Assert.Null(handle2);
 
         await handle1.DisposeAsync();
     }

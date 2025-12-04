@@ -5,10 +5,9 @@ namespace IM.EventStore.EventGrid;
 
 public static class EventGridSubscriptionExtensions
 {
-    public static IEventStoreBuilder<TDbContext> AddEventGridSubscription<TDbContext>(this IEventStoreBuilder<TDbContext> builder, Action<CloudEventTransformerOptions> configureTransform)
-        where TDbContext : DbContext
+    public static IEventStoreBuilder AddEventGridSubscription(this IEventStoreBuilder builder, Action<CloudEventTransformerOptions> configureTransform)
     {
-        builder.AddCloudEventSubscription<TDbContext, EventGridSubscription>(configureTransform);
+        builder.AddCloudEventSubscription<EventGridSubscription>(configureTransform);
         return builder;
     }
 }

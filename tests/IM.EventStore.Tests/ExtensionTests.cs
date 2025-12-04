@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 
 namespace IM.EventStore.Tests;
 
@@ -12,7 +13,7 @@ public class ExtensionTests
         using var context = new DbContext(options);
         var eventStore = context.Streams;
         Assert.NotNull(eventStore);
-        Assert.IsType<EventStore>(eventStore);
+        Assert.IsType<DbContextEventStore>(eventStore);
     }
 
     [Fact]

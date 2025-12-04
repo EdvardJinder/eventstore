@@ -6,15 +6,13 @@ namespace IM.EventStore.CloudEvents;
 
 public static class EventStoreBuilderExtensions
 {
-    public static IEventStoreBuilder<TDbContext> AddCloudEventSubscription<TDbContext, TCloudEventSubscription>(this IEventStoreBuilder<TDbContext> builder, Action<CloudEventTransformerOptions> configureTransformer)
+    public static IEventStoreBuilder AddCloudEventSubscription<TCloudEventSubscription>(this IEventStoreBuilder builder, Action<CloudEventTransformerOptions> configureTransformer)
         where TCloudEventSubscription : ICloudEventSubscription
-        where TDbContext : DbContext
-
     {
         builder.Services.TryAddSingleton<CloudEventTransformer>();
         builder.Services.AddOptions<CloudEventTransformerOptions>()
             .Configure(configureTransformer);
-
+        builder.Services.TryAddSingleton(typeof(TCloudEventSubscription));
         builder.AddSubscription<CloudEventSubscription<TCloudEventSubscription>>();
         return builder;
     }

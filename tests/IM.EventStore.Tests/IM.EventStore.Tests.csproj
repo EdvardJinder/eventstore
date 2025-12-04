@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\src\IM.EventStore.CloudEvents\IM.EventStore.CloudEvents.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore.EventGrid\IM.EventStore.EventGrid.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore.MassTransit\IM.EventStore.MassTransit.csproj" />
+    <ProjectReference Include="..\..\src\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore.Testing\IM.EventStore.Testing.csproj" />
     <ProjectReference Include="..\..\src\IM.EventStore\IM.EventStore.csproj" />
   </ItemGroup>

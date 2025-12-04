@@ -1,4 +1,5 @@
 ﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -50,7 +51,7 @@ public abstract class HandlerTest<THandler, TState, TCommand>
 
     protected HandlerTest()
     {
-        _stream = new Stream<TState>(new DbStream()
+        _stream = new DbContextStream<TState>(new DbStream()
         {
             Id = Guid.NewGuid(),
             TenantId = Guid.NewGuid(),

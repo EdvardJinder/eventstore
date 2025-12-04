@@ -1,7 +1,9 @@
 ﻿using IM.EventStore.Abstractions;
 using IM.EventStore.MassTransit;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using static IM.EventStore.Tests.EventStoreFixture;
 
 namespace IM.EventStore.Tests;
 
@@ -74,18 +76,18 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     public async Task Projection()
     {
         var services = new ServiceCollection();
-        services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
+        services.AddEventStore(c =>
         {
-            options.UseNpgsql(fixture.ConnectionString, c =>
+            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
             {
-                c.EnableRetryOnFailure();
-            });
-        }, c =>
-        {
-            c.AddProjection<UserProjection, UserSnapshot>(c =>
+                options.UseNpgsql(fixture.ConnectionString);
+            }, c =>
             {
-                c.Handles<UserCreated>();
-                c.Handles<UserNameUpdated>();
+                c.AddProjection<UserProjection, UserSnapshot>(c =>
+                {
+                    c.Handles<UserCreated>();
+                    c.Handles<UserNameUpdated>();
+                });
             });
         });
 
@@ -110,18 +112,19 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     public async Task ProjectionWithCompositeKey()
     {
         var services = new ServiceCollection();
-        services.AddEventStore<EventStoreFixture.EventStoreDbContext>((sp, options) =>
+       
+        services.AddEventStore(c =>
         {
-            options.UseNpgsql(fixture.ConnectionString, c =>
+            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
             {
-                c.EnableRetryOnFailure();
+                options.UseNpgsql(fixture.ConnectionString);
+            }, c =>
+            {
+                c.AddProjection<BookProjection, BookPageSummary>(c =>
+                {
+                    c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
+                });
             });
-        }, c =>
-        {
-            c.AddProjection<BookProjection, BookPageSummary>(c =>
-             {
-                 c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
-             });
         });
 
         services.AddLogging();

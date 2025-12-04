@@ -20,4 +20,9 @@
     <ProjectReference Include="..\IM.EventStore\IM.EventStore.csproj" />
   </ItemGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="IM.EventStore.Testing" />
+		<InternalsVisibleTo Include="IM.EventStore.Tests" />
+	</ItemGroup>
+
 </Project>

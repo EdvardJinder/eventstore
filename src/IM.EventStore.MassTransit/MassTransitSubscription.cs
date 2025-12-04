@@ -16,7 +16,15 @@ internal class MassTransitSubscription : ISubscription
         public Guid EventId { get; set; }
 
     }
-    public static async Task Handle(IEvent @event, IServiceProvider sp, CancellationToken ct)
+
+    private readonly IServiceProvider sp;
+
+    public MassTransitSubscription(IServiceProvider sp)
+    {
+        this.sp = sp;
+    }
+
+    public async Task Handle(IEvent @event, CancellationToken ct)
     {
         var scope = sp.CreateScope();
 

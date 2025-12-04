@@ -1,11 +1,12 @@
 ﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace IM.EventStore;
+namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 
 
 internal sealed class ProjectionInterceptor<TProjection, TSnapshot>(ProjectionOptions options) : SaveChangesInterceptor

@@ -1,4 +1,4 @@
-﻿using MassTransit;
+﻿using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using static IM.EventStore.Tests.ProjectionTests;
 
