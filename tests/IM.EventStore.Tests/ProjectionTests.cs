@@ -1,6 +1,6 @@
 ﻿using IM.EventStore.Abstractions;
 using IM.EventStore.MassTransit;
-using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;

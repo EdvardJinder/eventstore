@@ -1,5 +1,5 @@
 ﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Medallion.Threading;
 using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Data;
 using System.Data.Common;
 
-namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
 
 internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(

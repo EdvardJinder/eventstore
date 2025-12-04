@@ -1,8 +1,8 @@
 ﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
 internal sealed class DbContextEventStore(DbContext db) : IEventStore
 {

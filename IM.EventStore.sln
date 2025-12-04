@@ -21,7 +21,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Abstractions"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Testing", "src\IM.EventStore.Testing\IM.EventStore.Testing.csproj", "{E78D3F37-914E-4C75-B4DB-A33D2C3F4240}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Persistence.EntifyFrameworkCore.Postgres", "src\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres\IM.EventStore.Persistence.EntifyFrameworkCore.Postgres.csproj", "{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IM.EventStore.Persistence.EntityFrameworkCore.Postgres", "src\IM.EventStore.Persistence.EntityFrameworkCore.Postgres\IM.EventStore.Persistence.EntityFrameworkCore.Postgres.csproj", "{1BBE1CF3-CD7F-4D66-A331-4D95C0E83F1A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,4 +1,4 @@
-﻿using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+﻿using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
 internal sealed class SubscriptionDaemon<TDbContext>(
     ILogger<SubscriptionDaemon<TDbContext>> logger,

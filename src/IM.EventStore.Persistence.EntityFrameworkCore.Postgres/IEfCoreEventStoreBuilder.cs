@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 
-namespace IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
 public interface IEfCoreEventStoreBuilder<TDbContext> 
     where TDbContext : Microsoft.EntityFrameworkCore.DbContext

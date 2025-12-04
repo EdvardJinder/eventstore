@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using IM.EventStore.Abstractions;
 
 namespace IM.EventStore.Tests;

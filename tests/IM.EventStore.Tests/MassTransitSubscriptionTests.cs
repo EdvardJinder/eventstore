@@ -1,5 +1,5 @@
 ﻿using IM.EventStore.MassTransit;
-using IM.EventStore.Persistence.EntifyFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
