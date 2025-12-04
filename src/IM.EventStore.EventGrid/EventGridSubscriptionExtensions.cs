@@ -1,5 +1,4 @@
 ﻿using IM.EventStore.CloudEvents;
-using Microsoft.EntityFrameworkCore;
 
 namespace IM.EventStore.EventGrid;
 
