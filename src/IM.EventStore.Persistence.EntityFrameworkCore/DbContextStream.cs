@@ -1,10 +1,9 @@
-﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using IM.EventStore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore;
 
-internal class DbContextStream(DbStream dbStream, DbContext db) : IStream
+public class DbContextStream(DbStream dbStream, DbContext db) : IStream
 {
     public Guid TenantId => dbStream.TenantId;
     public Guid Id => dbStream.Id;
@@ -40,7 +39,7 @@ internal class DbContextStream(DbStream dbStream, DbContext db) : IStream
     }
 }
 
-internal class DbContextStream<T>(DbStream dbStream, DbContext db) : DbContextStream(dbStream, db), IStream<T> where T : IState, new()
+public class DbContextStream<T>(DbStream dbStream, DbContext db) : DbContextStream(dbStream, db), IStream<T> where T : IState, new()
 {
     public T State
     {

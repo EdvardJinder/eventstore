@@ -1,6 +1,8 @@
-﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Abstractions;
 using IM.EventStore.MassTransit;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;
@@ -26,7 +28,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
     public class UserProjection : IProjection<UserSnapshot>
     {
-        public static Task Evolve(UserSnapshot snapshot, IEvent @event, DbContext db, CancellationToken ct)
+        public static Task Evolve(UserSnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct)
         {
 
             switch (@event)
@@ -58,7 +60,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
     public class BookProjection : IProjection<BookPageSummary>
     {
-        public static Task Evolve(BookPageSummary snapshot, IEvent @event, DbContext db, CancellationToken ct)
+        public static Task Evolve(BookPageSummary snapshot, IEvent @event, IProjectionContext context, CancellationToken ct)
         {
             switch (@event)
             {
@@ -76,18 +78,14 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     public async Task Projection()
     {
         var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddEventStore(c =>
         {
-            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddProjection<EventStoreDbContext, UserProjection, UserSnapshot>(ProjectionMode.Inline, p =>
             {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c =>
-            {
-                c.AddProjection<UserProjection, UserSnapshot>(c =>
-                {
-                    c.Handles<UserCreated>();
-                    c.Handles<UserNameUpdated>();
-                });
+                p.Handles<UserCreated>();
+                p.Handles<UserNameUpdated>();
             });
         });
 
@@ -97,7 +95,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
         db.Database.EnsureCreated();
-        var eventStore = db.Streams;
+        var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -112,18 +110,13 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     public async Task ProjectionWithCompositeKey()
     {
         var services = new ServiceCollection();
-       
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddEventStore(c =>
         {
-            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddProjection<EventStoreDbContext, BookProjection, BookPageSummary>(ProjectionMode.Inline, p =>
             {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c =>
-            {
-                c.AddProjection<BookProjection, BookPageSummary>(c =>
-                {
-                    c.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
-                });
+                p.Handles<BookEvent>(e => $"{e.StreamId}-{e.Data.Page}");
             });
         });
 
@@ -132,7 +125,7 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
         db.Database.EnsureCreated();
-        var eventStore = db.Streams;
+        var eventStore = db.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new BookEvent { Page = 1 }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -141,5 +134,47 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         Assert.NotNull(snapshot);
         Assert.Equal(streamId, snapshot.BookId);
+    }
+
+    [Fact]
+    public async Task EventualProjectionProcessesViaDaemon()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddSubscriptionDaemon<EventStoreDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
+            c.AddProjection<EventStoreDbContext, UserProjection, UserSnapshot>(ProjectionMode.Eventual, p =>
+            {
+                p.Handles<UserCreated>();
+                p.Handles<UserNameUpdated>();
+            });
+        });
+
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+
+        var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+        db.Database.EnsureCreated();
+        var eventStore = db.Streams();
+        var streamId = Guid.NewGuid();
+        eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var daemon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
+        var subscription = provider.GetServices<ISubscription>()
+            .OfType<EventualProjectionSubscription<EventStoreDbContext, UserProjection, UserSnapshot>>()
+            .Single();
+
+        // process both events
+        await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+        await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+
+        var snapshot = await db.Set<UserSnapshot>().FirstOrDefaultAsync(x => x.UserId == streamId, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal("Mary Jane", snapshot.Name);
     }
 }

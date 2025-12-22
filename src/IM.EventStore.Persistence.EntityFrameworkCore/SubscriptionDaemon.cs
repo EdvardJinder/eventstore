@@ -1,5 +1,4 @@
-﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using IM.EventStore.Abstractions;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,9 +6,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore;
 
-internal sealed class SubscriptionDaemon<TDbContext>(
+public sealed class SubscriptionDaemon<TDbContext>(
     ILogger<SubscriptionDaemon<TDbContext>> logger,
     IServiceProvider serviceProvider,
     IDistributedLockProvider distributedLockProvider,
@@ -90,7 +89,6 @@ internal sealed class SubscriptionDaemon<TDbContext>(
 
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        // Use explicit transaction for atomic processing
         await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
 
         try
@@ -107,9 +105,9 @@ internal sealed class SubscriptionDaemon<TDbContext>(
                 logger.LogInformation("Created new subscription entity for {Subscription}", name);
             }
 
-            var nextEvent = await dbContext.Events
+            var nextEvent = await dbContext.Events()
                 .Where(e => e.Sequence > subscription.Sequence)
-                .OrderBy(e => e.Sequence) // ✅ Ensure ordering
+                .OrderBy(e => e.Sequence) // Ensure ordering
                 .FirstOrDefaultAsync(stoppingToken);
 
             if (nextEvent is null)
@@ -119,8 +117,14 @@ internal sealed class SubscriptionDaemon<TDbContext>(
 
             var @event = nextEvent.ToEvent();
 
-            // Handler executes within transaction
-            await subscriptionImpl.Handle(@event, stoppingToken);
+            if (subscriptionImpl is IScopedSubscription scoped)
+            {
+                await scoped.HandleAsync(dbContext, @event, stoppingToken);
+            }
+            else
+            {
+                await subscriptionImpl.Handle(@event, stoppingToken);
+            }
 
             subscription.Sequence = nextEvent.Sequence;
             await dbContext.SaveChangesAsync(stoppingToken);
@@ -138,18 +142,16 @@ internal sealed class SubscriptionDaemon<TDbContext>(
             logger.LogWarning(
                 "Rolling back transaction for subscription {Subscription}",
                 name);
-            throw; // Re-throw to trigger outer retry logic
+            throw;
         }
     }
 
-
-    // Extracted, testable unit: tries to acquire the distributed lock for this subscription.
-    // Returns the acquired lock as IAsyncDisposable when successful; null when not acquired.
     internal async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync<TSub>(CancellationToken cancellationToken)
         where TSub : ISubscription
     {
         return await AcquireSubscriptionLockAsync(typeof(TSub), cancellationToken);
     }
+
     private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(Type subType, CancellationToken cancellationToken)
     {
         var name = subType.AssemblyQualifiedName!;
@@ -169,7 +171,7 @@ internal sealed class SubscriptionDaemon<TDbContext>(
             }
 
             logger.LogInformation("Acquired lock for subscription {Subscription}", name);
-            return acquired as IAsyncDisposable ?? acquired; // cast to IAsyncDisposable when possible
+            return acquired as IAsyncDisposable ?? acquired;
         }
         catch (TimeoutException)
         {

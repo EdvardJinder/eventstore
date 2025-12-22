@@ -1,4 +1,4 @@
-﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Abstractions;
 using IM.EventStore.Testing;
 using Microsoft.Extensions.Time.Testing;
 

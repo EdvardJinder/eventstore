@@ -1,5 +1,7 @@
-﻿using IM.EventStore.MassTransit;
+using IM.EventStore.MassTransit;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using Medallion.Threading.Postgres;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -32,12 +34,11 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddEventStore(c =>
         {
-            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
-            {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddSubscriptionDaemon<EventStoreDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
 
                 c.AddMassTransitEventStoreSubscription(t =>
                 {
@@ -63,7 +64,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
 
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams;
+        var eventStore = eventStoreDbContext.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);

@@ -1,8 +1,8 @@
-﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Abstractions;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore;
 
-internal sealed class ProjectionOptions : IProjectionOptions
+public sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
     private bool HandlesAllEvents = true;

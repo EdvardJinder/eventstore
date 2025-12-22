@@ -1,5 +1,5 @@
-﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using Medallion.Threading;
 using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
@@ -10,60 +10,60 @@ using System.Data.Common;
 
 namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
-
 internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
     IServiceCollection services
-    ) : IEfCoreEventStoreBuilder<TDbContext>
+    ) : IEfCoreEventStoreBuilder<TDbContext>, IProjectionRegistrar, ISubscriptionDaemonRegistrar
     where TDbContext : DbContext
 {
     public IServiceCollection Services => services;
 
-    private readonly List<Action<DbContextOptionsBuilder>> dbContextOptionsBuilders = new();
-    public IEfCoreEventStoreBuilder<TDbContext> AddProjection<TProjection, TSnapshot>(Action<IProjectionOptions>? configure = null)
-        where TProjection : IProjection<TSnapshot>, new()
-        where TSnapshot : class, new()
+    private readonly List<Action<IServiceProvider, DbContextOptionsBuilder>> dbContextOptionsBuilders = new();
+
+    public void AddProjection<TProjection, TSnapshot>(ProjectionMode mode, Action<IProjectionOptions>? configure) where TProjection : IProjection<TSnapshot>, new() where TSnapshot : class, new()
     {
         var options = new ProjectionOptions();
         configure?.Invoke(options);
 
-        dbContextOptionsBuilders.Add(dbContextOptionsBuilder =>
+        if (mode == ProjectionMode.Inline)
         {
-            dbContextOptionsBuilder.AddInterceptors(new ProjectionInterceptor<TProjection, TSnapshot>(options));
-        });
-
-        return this;
-    }
-
-    internal void ConfigureProjections(DbContextOptionsBuilder dbContextOptionsBuilder)
-    {
-        foreach (var configure in dbContextOptionsBuilders)
+            dbContextOptionsBuilders.Add((sp, dbContextOptionsBuilder) =>
+            {
+                dbContextOptionsBuilder.AddInterceptors(new ProjectionInterceptor<TProjection, TSnapshot>(options, sp));
+            });
+        }
+        else
         {
-            configure(dbContextOptionsBuilder);
+            services.AddSingleton<ISubscription>(sp => new EventualProjectionSubscription<TDbContext, TProjection, TSnapshot>(options, sp));
         }
     }
 
-    public IEfCoreEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, string> factory)
+    internal void ConfigureProjections(IServiceProvider serviceProvider, DbContextOptionsBuilder dbContextOptionsBuilder)
     {
-        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
-        services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
-        services.AddHostedService(sp => sp.GetRequiredService<SubscriptionDaemon<TDbContext>>());
-        return this;
+        foreach (var configure in dbContextOptionsBuilders)
+        {
+            configure(serviceProvider, dbContextOptionsBuilder);
+        }
     }
 
-    public IEfCoreEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, DbDataSource> factory)
+    public void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory)
     {
-        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+        services.TryAddSingleton(factory);
         services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
         services.AddHostedService(sp => sp.GetRequiredService<SubscriptionDaemon<TDbContext>>());
-        return this;
     }
 
-    public IEfCoreEventStoreBuilder<TDbContext> AddSubscriptionDaemon(Func<IServiceProvider, IDbConnection> factory)
+    public void AddSubscriptionDaemon(Func<IServiceProvider, string> factory)
     {
-        services.TryAddSingleton<IDistributedLockProvider>(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
-        services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
-        services.AddHostedService(sp => sp.GetRequiredService<SubscriptionDaemon<TDbContext>>());
-        return this;
+        AddSubscriptionDaemon(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
     }
-    
+
+    public void AddSubscriptionDaemon(Func<IServiceProvider, DbDataSource> factory)
+    {
+        AddSubscriptionDaemon(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+    }
+
+    public void AddSubscriptionDaemon(Func<IServiceProvider, IDbConnection> factory)
+    {
+        AddSubscriptionDaemon(sp => new PostgresDistributedSynchronizationProvider(factory(sp)));
+    }
 }

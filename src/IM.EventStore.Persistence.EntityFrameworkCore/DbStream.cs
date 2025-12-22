@@ -1,4 +1,5 @@
-﻿namespace IM.EventStore;
+
+namespace IM.EventStore;
 
 public sealed class DbStream
 {
@@ -7,7 +8,6 @@ public sealed class DbStream
     public long CurrentVersion { get; set; }
     public DateTimeOffset CreatedTimestamp { get; set; }
     public DateTimeOffset UpdatedTimestamp { get; set; }
-
 
     public ICollection<DbEvent> Events { get; set; } = new List<DbEvent>();
 }

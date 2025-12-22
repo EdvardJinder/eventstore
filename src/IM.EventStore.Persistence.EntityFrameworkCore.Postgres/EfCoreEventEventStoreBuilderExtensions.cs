@@ -6,22 +6,23 @@ namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 
 public static class EfCoreEventEventStoreBuilderExtensions
 {
-    public static IEfCoreEventStoreBuilder<TDbContext> UsingPostgres<TDbContext>(this IEventStoreBuilder builder,
-           Action<IServiceProvider, DbContextOptionsBuilder> optionsAction,
-          Action<IEfCoreEventStoreBuilder<TDbContext>>? configure = null)
+    /// <summary>
+    /// Wire EventStore to an already configured DbContext. Only projections/subscriptions are added; provider configuration is assumed to be done elsewhere.
+    /// </summary>
+    public static IEfCoreEventStoreBuilder<TDbContext> ExistingDbContext<TDbContext>(this IEventStoreBuilder builder)
         where TDbContext : DbContext
     {
-
         var efBuilder = new EfCoreEventEventStoreBuilder<TDbContext>(builder.Services);
 
-        configure?.Invoke(efBuilder);
-
+        // Attach projections/interceptors without altering provider configuration.
         efBuilder.Services.AddDbContext<TDbContext>((sp, options) =>
         {
-            optionsAction(sp, options);
-            efBuilder.ConfigureProjections(options);
+            efBuilder.ConfigureProjections(sp, options);
         });
+
+        builder.UseProvider(efBuilder);
 
         return efBuilder;
     }
+
 }

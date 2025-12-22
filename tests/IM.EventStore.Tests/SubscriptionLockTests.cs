@@ -1,5 +1,7 @@
 using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,14 +22,13 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
     public async Task AcquireSubscriptionLockAsync_ReturnsHandle_WhenLockFree()
     {
         var services = new ServiceCollection();
+        services.AddDbContext<TestDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
 
         services.AddEventStore(c =>
         {
-            c.UsingPostgres<TestDbContext>((sp, options) =>
-            {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
+            c.ExistingDbContext<TestDbContext>();
 
+            c.AddSubscriptionDaemon<TestDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
             c.AddSubscription<TestSub>();
         });
 
@@ -50,13 +51,11 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
     {
         // First service provider with a held lock
         var services1 = new ServiceCollection();
+        services1.AddDbContext<TestDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services1.AddEventStore(c =>
         {
-            c.UsingPostgres<TestDbContext>((sp, options) =>
-            {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
-
+            c.ExistingDbContext<TestDbContext>();
+            c.AddSubscriptionDaemon<TestDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
             c.AddSubscription<TestSub>();
         });
         services1.AddLogging();

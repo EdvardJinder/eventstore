@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using IM.EventStore.Abstractions;
 
@@ -37,7 +38,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
 
         var dbContext = eventStoreFixture.Context;
 
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
 
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
@@ -53,7 +54,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     public async Task CanAppendToStream()
     {
         var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -71,7 +72,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     {
         Guid tenantId = Guid.NewGuid();
         var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
         var id = Guid.NewGuid();
         eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -88,7 +89,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     async Task CanReadEvents()
     {
         var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
 
@@ -113,7 +114,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     async Task CanBuildState()
     {
         var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -129,7 +130,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     public async Task GracefullyHandlesNonExistantStream()
     {
         var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
+        var eventStore = dbContext.Streams();
         var stream = await eventStore.FetchForReadingAsync(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Null(stream);
         var stream2 = await eventStore.FetchForWritingAsync(Guid.NewGuid(), cancellationToken: TestContext.Current.CancellationToken);

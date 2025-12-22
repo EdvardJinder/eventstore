@@ -1,4 +1,5 @@
-﻿using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using IM.EventStore.Persistence.EntityFrameworkCore;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using static IM.EventStore.Tests.ProjectionTests;
 

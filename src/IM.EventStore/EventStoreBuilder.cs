@@ -9,6 +9,11 @@ internal sealed class EventStoreBuilder(
     ) : IEventStoreBuilder
 {
     public IServiceCollection Services => services;
+    public object? Provider { get; private set; }
+    public void UseProvider(object provider)
+    {
+        Provider = provider;
+    }
 
     public IEventStoreBuilder AddSubscription<TSubscription>() where TSubscription : ISubscription
     {

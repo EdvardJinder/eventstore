@@ -1,6 +1,8 @@
-﻿using Azure.Messaging;
+using Azure.Messaging;
 using IM.EventStore.CloudEvents;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;
@@ -33,13 +35,12 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddEventStore(
         c =>
         {
-            c.UsingPostgres<EventStoreDbContext>(
-                (sp, options) => options.UseNpgsql(fixture.ConnectionString),
-                c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString)
-                );
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddSubscriptionDaemon<EventStoreDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
 
             c.AddCloudEventSubscription<TestSub>(c =>
             {
@@ -67,7 +68,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams;
+        var eventStore = eventStoreDbContext.Streams();
         var streamId = Guid.NewGuid();
 
         List<object> events = [new TestEvent(), new TestEvent2()];

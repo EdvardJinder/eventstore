@@ -5,6 +5,7 @@
     <Project Path="src/IM.EventStore.EventGrid/IM.EventStore.EventGrid.csproj" />
     <Project Path="src/IM.EventStore.MassTransit/IM.EventStore.MassTransit.csproj" />
     <Project Path="src/IM.EventStore.Persistence.EntityFrameworkCore.Postgres/IM.EventStore.Persistence.EntityFrameworkCore.Postgres.csproj" />
+    <Project Path="src/IM.EventStore.Persistence.EntityFrameworkCore/IM.EventStore.Persistence.EntityFrameworkCore.csproj" />
     <Project Path="src/IM.EventStore.Testing/IM.EventStore.Testing.csproj" />
     <Project Path="src/IM.EventStore/IM.EventStore.csproj" />
   </Folder>
