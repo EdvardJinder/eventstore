@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	  <Version>0.8.0</Version>
+	  <PackageId>EJ.EventStore.Persistence.EntityFrameworkCore</PackageId>
+	  <Authors>Edvard Jinder</Authors>
+	  <Company>Intromedia Digital AB</Company>
+	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EJ.EventStore.Abstractions\EJ.EventStore.Abstractions.csproj" />
+    <ProjectReference Include="..\EJ.EventStore\EJ.EventStore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EJ.EventStore.Tests" />
+    <InternalsVisibleTo Include="EJ.EventStore.Testing" />
+    <InternalsVisibleTo Include="EJ.EventStore.Persistence.EntityFrameworkCore.Postgres" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Version>0.8.0</Version>
+		<PackageId>EJ.EventStore</PackageId>
+		<Authors>Edvard Jinder</Authors>
+		<Company>Intromedia Digital AB</Company>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+	</PropertyGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+		<PackageReference Include="DistributedLock" Version="2.7.1" />
+	</ItemGroup>
+
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="EJ.EventStore.CloudEvents" />
+		<InternalsVisibleTo Include="EJ.EventStore.Testing" />
+		<InternalsVisibleTo Include="EJ.EventStore.Tests" />
+	</ItemGroup>
+
+
+	
+
+	<ItemGroup>
+	  <ProjectReference Include="..\EJ.EventStore.Abstractions\EJ.EventStore.Abstractions.csproj" />
+	</ItemGroup>
+
+</Project>

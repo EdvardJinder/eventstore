@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EJ.EventStore.Abstractions/EJ.EventStore.Abstractions.csproj" />
+    <Project Path="src/EJ.EventStore.CloudEvents/EJ.EventStore.CloudEvents.csproj" />
+    <Project Path="src/EJ.EventStore.EventGrid/EJ.EventStore.EventGrid.csproj" />
+    <Project Path="src/EJ.EventStore.MassTransit/EJ.EventStore.MassTransit.csproj" />
+    <Project Path="src/EJ.EventStore.Persistence.EntityFrameworkCore.Postgres/EJ.EventStore.Persistence.EntityFrameworkCore.Postgres.csproj" />
+    <Project Path="src/EJ.EventStore.Persistence.EntityFrameworkCore/EJ.EventStore.Persistence.EntityFrameworkCore.csproj" />
+    <Project Path="src/EJ.EventStore.Testing/EJ.EventStore.Testing.csproj" />
+    <Project Path="src/EJ.EventStore/EJ.EventStore.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EJ.EventStore.Tests/EJ.EventStore.Tests.csproj" />
+  </Folder>
+</Solution>
