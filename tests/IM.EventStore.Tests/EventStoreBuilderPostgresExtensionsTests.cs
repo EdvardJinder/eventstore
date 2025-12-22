@@ -4,17 +4,12 @@ using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using IM.EventStore.Testing;
 using Medallion.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace IM.EventStore.Tests;
 
 public class EventStoreBuilderPostgresExtensionsTests
 {
-    private sealed class FakeDistributedLockProvider : IDistributedLockProvider
-    {
-        public IDistributedSynchronizationHandle? TryAcquireLock(string name, TimeoutValue timeout = default) => null;
-        public ValueTask<IDistributedSynchronizationHandle?> TryAcquireLockAsync(string name, TimeoutValue timeout = default, CancellationToken cancellationToken = default) => new((IDistributedSynchronizationHandle?)null);
-    }
-
     private sealed class FakeProjectionOptions : IProjectionOptions
     {
         public bool HandlesAllCalled { get; private set; }
@@ -47,7 +42,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         var services = new ServiceCollection();
         var builder = new EventStoreBuilder(services);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => builder.AddSubscriptionDaemon<TestDbContext>(_ => new FakeDistributedLockProvider()));
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.AddSubscriptionDaemon<Tests.EventStoreFixture.EventStoreDbContext>(_ => Substitute.For<IDistributedLockProvider>()));
 
         Assert.Equal("No EF Core provider is registered. Call ExistingDbContext<TDbContext>() first.", exception.Message);
     }
@@ -58,7 +53,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         var services = new ServiceCollection();
         var builder = new EventStoreBuilder(services);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => builder.AddProjection<TestDbContext, DummyProjection, DummySnapshot>());
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.AddProjection<EventStoreFixture.EventStoreDbContext, DummyProjection, DummySnapshot>());
 
         Assert.Equal("No EF Core provider is registered. Call ExistingDbContext<TDbContext>() first.", exception.Message);
     }
@@ -71,7 +66,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         var registrar = new FakeRegistrar();
         builder.UseProvider(registrar);
 
-        var returned = builder.AddSubscriptionDaemon<TestDbContext>(_ => new FakeDistributedLockProvider());
+        var returned = builder.AddSubscriptionDaemon<EventStoreFixture.EventStoreDbContext>(_ => Substitute.For<IDistributedLockProvider>());
 
         Assert.Same(builder, returned);
         Assert.NotNull(registrar.AddedFactory);
@@ -85,7 +80,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         var registrar = new FakeRegistrar();
         builder.UseProvider(registrar);
 
-        var returned = builder.AddProjection<TestDbContext, DummyProjection, DummySnapshot>(ProjectionMode.Eventual, options => options.HandlesAll());
+        var returned = builder.AddProjection<EventStoreFixture.EventStoreDbContext, DummyProjection, DummySnapshot>(ProjectionMode.Eventual, options => options.HandlesAll());
 
         Assert.Same(builder, returned);
         Assert.Equal(ProjectionMode.Eventual, registrar.AddedMode);
@@ -98,7 +93,7 @@ public class EventStoreBuilderPostgresExtensionsTests
 
     private class DummyProjection : IProjection<DummySnapshot>
     {
-        public Task Apply(IEvent @event, DummySnapshot state, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public static Task Evolve(DummySnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct) => Task.CompletedTask;   
     }
 
     private class DummySnapshot
