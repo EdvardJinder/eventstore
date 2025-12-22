@@ -1,0 +1,12 @@
+using EventStoreCore.CloudEvents;
+
+namespace EventStoreCore.EventGrid;
+
+public static class EventGridSubscriptionExtensions
+{
+    public static IEventStoreBuilder AddEventGridSubscription(this IEventStoreBuilder builder, Action<CloudEventTransformerOptions> configureTransform)
+    {
+        builder.AddCloudEventSubscription<EventGridSubscription>(configureTransform);
+        return builder;
+    }
+}

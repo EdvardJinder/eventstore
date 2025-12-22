@@ -1,19 +1,19 @@
-# EJ.EventStore
+# EventStoreCore
 
 ## Install
 
 ```bash
-dotnet add package EJ.EventStore
-dotnet add package EJ.EventStore.Persistence.EntityFrameworkCore
-dotnet add package EJ.EventStore.Persistence.EntityFrameworkCore.Postgres
+dotnet add package EventStoreCore
+dotnet add package EventStoreCore.Persistence.EntityFrameworkCore
+dotnet add package EventStoreCore.Persistence.EntityFrameworkCore.Postgres
 ```
 
 ## Quick start
 
 ```csharp
-using EJ.EventStore;
-using EJ.EventStore.Persistence.EntityFrameworkCore;
-using EJ.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using EventStoreCore;
+using EventStoreCore.Persistence.EntityFrameworkCore;
+using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

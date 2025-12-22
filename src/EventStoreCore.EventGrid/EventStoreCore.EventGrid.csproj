@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <TargetFrameworks>net10.0</TargetFrameworks>
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <Version>0.8.0</Version>
+	  <PackageId>EventStoreCore.EventGrid</PackageId>
+	  <Authors>Edvard Jinder</Authors>
+	  <Company>Intromedia Digital AB</Company>
+	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
+    <ProjectReference Include="..\EventStoreCore.CloudEvents\EventStoreCore.CloudEvents.csproj" />
+    <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="EventStoreCore.Testing" />
+		<InternalsVisibleTo Include="EventStoreCore.Tests" />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	  <Version>0.8.0</Version>
+	  <PackageId>EventStoreCore.Persistence.EntityFrameworkCore.Postgres</PackageId>
+	  <Authors>Edvard Jinder</Authors>
+	  <Company>Intromedia Digital AB</Company>
+	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DistributedLock.Postgres" Version="1.3.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
+    <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
+    <ProjectReference Include="..\EventStoreCore.Persistence.EntityFrameworkCore\EventStoreCore.Persistence.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="EventStoreCore.Testing" />
+		<InternalsVisibleTo Include="EventStoreCore.Tests" />
+	</ItemGroup>
+
+
+</Project>
