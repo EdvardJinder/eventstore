@@ -31,4 +31,27 @@ services.AddEventStore(builder =>
 });
 ```
 
+## Testing
 
+Install the test helpers:
+
+```bash
+dotnet add package EventStoreCore.Testing
+```
+
+Behavior-style tests call your stream extension methods directly. `Given` seeds history, `When` appends new events, and `Then` asserts only the new events in order.
+
+```csharp
+using EventStoreCore.Testing;
+
+public sealed class ItemTypeTests : StreamBehaviorTest<ItemTypeState>
+{
+    [Fact]
+    public void create_emits_created()
+    {
+        When(s => s.Create(itemTypeId, mspId, clientId, "Widget", "desc"));
+
+        Then(new ItemTypeCreated(itemTypeId, mspId, clientId, "Widget", "desc"));
+    }
+}
+```
