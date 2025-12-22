@@ -26,12 +26,12 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --configuration Release
+        run: dotnet build --configuration Release /p:GeneratePackageOnBuild=false
 
       - name: Pack
-        run: dotnet pack --configuration Release --no-build /p:PackageVersion=${{ inputs.version }} /p:ContinuousIntegrationBuild=true
+        run: dotnet pack --configuration Release --no-build /p:PackageVersion=${{ inputs.version }} /p:ContinuousIntegrationBuild=true /p:GeneratePackageOnBuild=false -o ./artifacts
 
       - name: Push to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: dotnet nuget push "**/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
