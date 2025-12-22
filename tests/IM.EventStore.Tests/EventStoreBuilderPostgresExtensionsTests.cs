@@ -101,5 +101,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         public Task Apply(IEvent @event, DummySnapshot state, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private class DummySnapshot;
+    private class DummySnapshot
+    {
+    }
 }

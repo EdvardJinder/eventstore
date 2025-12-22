@@ -11,6 +11,7 @@ public class CloudEventTransformerOptionsTests
         public Guid Id { get; } = id;
         public long Version => 1;
         public object Data => TypedData;
+        public new T Data => TypedData;
         public Guid StreamId => Guid.Empty;
         public DateTimeOffset Timestamp { get; } = timestamp;
         public Guid TenantId { get; } = tenantId;
