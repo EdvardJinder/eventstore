@@ -1,4 +1,5 @@
-﻿using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

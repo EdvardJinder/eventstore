@@ -1,7 +1,6 @@
 ﻿
-using IM.EventStore.Abstractions;
 
-namespace IM.EventStore;
+namespace IM.EventStore.Abstractions;
 
 
 
