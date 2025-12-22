@@ -1,4 +1,5 @@
-﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;

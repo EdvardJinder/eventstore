@@ -1,4 +1,4 @@
-﻿using Medallion.Threading;
+using Medallion.Threading;
 using Medallion.Threading.Postgres;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

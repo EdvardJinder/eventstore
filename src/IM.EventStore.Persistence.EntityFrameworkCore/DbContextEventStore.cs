@@ -1,10 +1,9 @@
-﻿using IM.EventStore.Abstractions;
-using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using IM.EventStore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore;
 
-internal sealed class DbContextEventStore(DbContext db) : IEventStore
+public sealed class DbContextEventStore(DbContext db) : IEventStore
 {
     public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {

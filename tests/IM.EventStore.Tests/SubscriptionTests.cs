@@ -1,5 +1,7 @@
-﻿using IM.EventStore.Abstractions;
+using IM.EventStore.Abstractions;
+using IM.EventStore.Persistence.EntityFrameworkCore;
 using IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static IM.EventStore.Tests.EventStoreFixture;
@@ -13,7 +15,6 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         public static List<IEvent> HandledEvents { get; } = new();
         public Task Handle(IEvent @event, CancellationToken ct)
         {
-            // Handle the event (e.g., log it, process it, etc.)
             HandledEvents.Add(@event);
             return Task.CompletedTask;
         }
@@ -26,15 +27,15 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
     [Fact]
     public async Task should_handle_events()
     {
-        // Arrange
         var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options =>
+        {
+            options.UseNpgsql(fixture.ConnectionString);
+        });
         services.AddEventStore(c =>
         {
-            c.UsingPostgres<EventStoreDbContext>((sp, options) =>
-            {
-                options.UseNpgsql(fixture.ConnectionString);
-            }, c => c.AddSubscriptionDaemon(_ => fixture.ConnectionString));
-
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddSubscriptionDaemon<EventStoreDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
             c.AddSubscription<TestSub>();
         });
         services.AddLogging();
@@ -42,7 +43,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams;
+        var eventStore = eventStoreDbContext.Streams();
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -60,6 +61,5 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.True(processed, "No event was processed");
         Assert.Single(TestSub.HandledEvents);
         Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
-
     }
 }

@@ -1,6 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
+namespace IM.EventStore.Persistence.EntityFrameworkCore;
 
 public static class ModelBuilderExtensions
 {
@@ -57,7 +57,7 @@ public static class ModelBuilderExtensions
                     .IsRequired();
 
             entity.Property(e => e.Sequence)
-                .UseIdentityColumn();
+                .ValueGeneratedOnAdd();
 
             entity.Property(e => e.Version)
                 .IsRequired();

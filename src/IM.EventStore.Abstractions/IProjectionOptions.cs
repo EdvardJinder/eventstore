@@ -1,7 +1,8 @@
-﻿using IM.EventStore.Abstractions;
+namespace IM.EventStore.Abstractions;
 
-namespace IM.EventStore.Persistence.EntityFrameworkCore.Postgres;
-
+/// <summary>
+/// Options for configuring which events a projection handles and how keys are derived.
+/// </summary>
 public interface IProjectionOptions
 {
     void Handles<T>() where T : class;
