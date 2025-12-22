@@ -25,8 +25,11 @@ jobs:
       - name: Restore
         run: dotnet restore
 
+      - name: Build
+        run: dotnet build --configuration Release
+
       - name: Pack
-        run: dotnet pack --configuration Release /p:PackageVersion=${{ inputs.version }} /p:ContinuousIntegrationBuild=true
+        run: dotnet pack --configuration Release --no-build /p:PackageVersion=${{ inputs.version }} /p:ContinuousIntegrationBuild=true
 
       - name: Push to NuGet
         env:
