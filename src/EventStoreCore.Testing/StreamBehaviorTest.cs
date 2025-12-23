@@ -5,12 +5,21 @@ using Shouldly;
 
 namespace EventStoreCore.Testing;
 
+/// <summary>
+///     Base class for behavior-style tests of event-sourced streams.
+///     Provides Given/When/Then helpers for asserting emitted events and state.
+/// </summary>
+/// <typeparam name="TState">State type rebuilt by applying stream events.</typeparam>
 public abstract class StreamBehaviorTest<TState> : IDisposable
     where TState : IState, new()
 {
     private readonly DbContext _dbContext;
     private readonly IStream<TState> _stream;
     private long LastVersion { get; set; } = 0;
+    /// <summary>
+    ///     Maximum allowed difference (in milliseconds) for date comparisons when asserting events.
+    ///     Override to tolerate clock or serialization differences.
+    /// </summary>
     protected virtual int MaxMillisecondsDateDifference => 0;
 
     protected StreamBehaviorTest()
@@ -26,6 +35,10 @@ public abstract class StreamBehaviorTest<TState> : IDisposable
         }, _dbContext);
     }
 
+    /// <summary>
+    ///     Seeds the stream with historical events that should not be asserted in <see cref="Then"/>.
+    /// </summary>
+    /// <param name="events">Events to append to the stream before the test action.</param>
     protected void Given(params object[] events)
     {
         _stream.Append(events);
@@ -33,12 +46,22 @@ public abstract class StreamBehaviorTest<TState> : IDisposable
         LastVersion = _stream.Version;
     }
 
+    /// <summary>
+    ///     Executes the test action that appends events to the stream.
+    /// </summary>
+    /// <param name="act">Action that appends events to the stream.</param>
     protected void When(Action<IStream<TState>> act)
     {
         act(_stream);
         _dbContext.SaveChanges();
     }
 
+    /// <summary>
+    ///     Executes a test action and asserts it throws the expected exception type.
+    /// </summary>
+    /// <typeparam name="TException">Expected exception type.</typeparam>
+    /// <param name="act">Action that is expected to throw.</param>
+    /// <returns>The thrown exception for further assertions.</returns>
     protected TException Throws<TException>(Action<IStream<TState>> act)
         where TException : Exception
     {
@@ -50,6 +73,10 @@ public abstract class StreamBehaviorTest<TState> : IDisposable
         return exception;
     }
 
+    /// <summary>
+    ///     Asserts that the events appended after <see cref="Given"/> match the expected events, in order.
+    /// </summary>
+    /// <param name="expectedEvents">Expected events appended by the test action.</param>
     protected void Then(params object[] expectedEvents)
     {
         var config = new KellermanSoftware.CompareNetObjects.ComparisonConfig
@@ -69,6 +96,10 @@ public abstract class StreamBehaviorTest<TState> : IDisposable
         }
     }
 
+    /// <summary>
+    ///     Asserts against the current state rebuilt from all stream events.
+    /// </summary>
+    /// <param name="assert">Assertion action on the current state.</param>
     protected void ThenState(Action<TState> assert)
     {
         assert(_stream.State);
