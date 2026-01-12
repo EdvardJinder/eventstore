@@ -610,3 +610,69 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }
+
+/// <summary>
+/// Tests demonstrating the new MapGroup pattern with route composition.
+/// </summary>
+public class AdminEndpointRouteGroupTests : IAsyncLifetime
+{
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private IProjectionManager _mockManager = null!;
+
+    public async ValueTask InitializeAsync()
+    {
+        _mockManager = Substitute.For<IProjectionManager>();
+        _mockManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<ProjectionStatusDto>());
+
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRouting();
+                        services.AddSingleton(_mockManager);
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
+                        {
+                            // Demonstrate new pattern: MapGroup -> MapEventStoreAdmin
+                            // Users can chain .RequireAuthorization() after this call
+                            endpoints.MapGroup("/v1/admin")
+                                .MapEventStoreAdmin();
+                        });
+                    });
+            })
+            .Build();
+
+        await _host.StartAsync();
+        _client = _host.GetTestClient();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    [Fact]
+    public async Task MapGroup_AllowsChainingWithMapEventStoreAdmin()
+    {
+        // This test demonstrates that the new API pattern works correctly
+        // with MapGroup for route prefix, and returns a RouteGroupBuilder
+        // that can be further configured (e.g., with .RequireAuthorization())
+        
+        // Act - Request to the composed route
+        var response = await _client.GetAsync("/v1/admin/projections",
+            TestContext.Current.CancellationToken);
+
+        // Assert - Should successfully access the endpoint
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+}
