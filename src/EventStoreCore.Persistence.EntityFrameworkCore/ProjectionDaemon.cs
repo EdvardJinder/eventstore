@@ -21,18 +21,21 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     private readonly ProjectionDaemonOptions _options;
     private readonly IReadOnlyList<ProjectionRegistration> _projections;
 
-    internal ProjectionDaemon(
+    internal IReadOnlyList<ProjectionRegistration> Projections => _projections;
+
+
+    public ProjectionDaemon(
         ILogger<ProjectionDaemon<TDbContext>> logger,
         IServiceProvider serviceProvider,
         IDistributedLockProvider distributedLockProvider,
-        IOptions<ProjectionDaemonOptions> options,
-        IEnumerable<ProjectionRegistration> projections)
+        IOptions<ProjectionDaemonOptions> options)
+
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _distributedLockProvider = distributedLockProvider;
         _options = options.Value;
-        _projections = projections.ToList();
+        _projections = serviceProvider.GetServices<ProjectionRegistration>().ToList();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

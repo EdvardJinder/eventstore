@@ -54,7 +54,8 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { subscription.GetType().AssemblyQualifiedName }, TestContext.Current.CancellationToken);
+            .FindAsync(new object[] { subscription.GetType().AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
+
 
         Assert.NotNull(subscriptionEntity);
         Assert.Equal(1, subscriptionEntity.Sequence);
