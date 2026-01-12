@@ -4,6 +4,7 @@ using EventStoreCore.Abstractions;
 using EventStoreCore.Admin;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -41,7 +42,8 @@ public class AdminEndpointTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin();
+                            endpoints.MapGroup("/api/eventstore/admin")
+                                .MapEventStoreAdmin();
                         });
                     });
             })
@@ -451,7 +453,7 @@ public class AdminEndpointTests : IAsyncLifetime
 }
 
 /// <summary>
-/// Tests for custom AdminOptions configuration.
+/// Tests for custom route prefix configuration.
 /// </summary>
 public class AdminEndpointOptionsTests : IAsyncLifetime
 {
@@ -480,10 +482,8 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin(options =>
-                            {
-                                options.RoutePrefix = "/custom/admin";
-                            });
+                            endpoints.MapGroup("/custom/admin")
+                                .MapEventStoreAdmin();
                         });
                     });
             })
@@ -554,9 +554,17 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin(options =>
+                            var group = endpoints.MapGroup("/api/eventstore/admin")
+                                .MapEventStoreAdmin();
+                            
+                            // Add custom authorization filter
+                            group.AddEndpointFilter(async (context, next) =>
                             {
-                                options.AuthorizeAsync = _ => Task.FromResult(_authorizationResult);
+                                if (!_authorizationResult)
+                                {
+                                    return Results.Unauthorized();
+                                }
+                                return await next(context);
                             });
                         });
                     });
@@ -575,7 +583,7 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AuthorizeAsync_AllowsRequest_WhenReturnsTrue()
+    public async Task EndpointFilter_AllowsRequest_WhenAuthorized()
     {
         // Arrange
         _authorizationResult = true;
@@ -589,7 +597,7 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AuthorizeAsync_ReturnsUnauthorized_WhenReturnsFalse()
+    public async Task EndpointFilter_ReturnsUnauthorized_WhenNotAuthorized()
     {
         // Arrange
         _authorizationResult = false;
