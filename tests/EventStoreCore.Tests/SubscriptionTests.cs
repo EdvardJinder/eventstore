@@ -43,7 +43,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams();
+        var eventStore = eventStoreDbContext.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);

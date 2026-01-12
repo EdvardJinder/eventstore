@@ -1,3 +1,4 @@
+using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.Persistence.EntityFrameworkCore;
@@ -90,6 +91,40 @@ public static class ModelBuilderExtensions
 
             entity.Property(e => e.Sequence)
                     .IsRequired();
+        });
+
+        modelBuilder.Entity<DbProjectionStatus>(entity =>
+        {
+            entity.ToTable("ProjectionStatuses");
+
+            entity.HasKey(e => e.ProjectionName);
+
+            entity.Property(e => e.ProjectionName)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(e => e.Version)
+                .IsRequired();
+
+            entity.Property(e => e.State)
+                .IsRequired();
+
+            entity.Property(e => e.Position)
+                .IsRequired();
+
+            entity.Property(e => e.TotalEvents);
+
+            entity.Property(e => e.LastProcessedAt);
+
+            entity.Property(e => e.LastError);
+
+            entity.Property(e => e.FailedEventSequence);
+
+            entity.Property(e => e.RebuildStartedAt);
+
+            entity.Property(e => e.RebuildCompletedAt);
+
+            entity.HasIndex(e => e.State);
         });
     }
 

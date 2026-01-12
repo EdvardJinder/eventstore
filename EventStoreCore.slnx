@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/EventStoreCore.Abstractions/EventStoreCore.Abstractions.csproj" />
+    <Project Path="src/EventStoreCore.Admin/EventStoreCore.Admin.csproj" />
+    <Project Path="src/EventStoreCore.Admin.Client/EventStoreCore.Admin.Client.csproj" />
     <Project Path="src/EventStoreCore.CloudEvents/EventStoreCore.CloudEvents.csproj" />
     <Project Path="src/EventStoreCore.EventGrid/EventStoreCore.EventGrid.csproj" />
     <Project Path="src/EventStoreCore.MassTransit/EventStoreCore.MassTransit.csproj" />

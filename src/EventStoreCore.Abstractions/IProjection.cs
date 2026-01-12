@@ -15,4 +15,11 @@ public interface IProjection<TSnapshot>
     /// <param name="context">Provider-specific context for projection execution.</param>
     /// <param name="ct">Cancellation token.</param>
     static abstract Task Evolve(TSnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct);
+
+    /// <summary>
+    /// Clears all projection data. Called at the start of a rebuild operation.
+    /// </summary>
+    /// <param name="context">Provider-specific context for projection execution.</param>
+    /// <param name="ct">Cancellation token.</param>
+    static abstract Task ClearAsync(IProjectionContext context, CancellationToken ct);
 }

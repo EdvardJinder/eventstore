@@ -1,5 +1,6 @@
 using EventStoreCore;
 using EventStoreCore.Abstractions;
+using EventStoreCore.Persistence.EntityFrameworkCore;
 using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
 using EventStoreCore.Testing;
 using Medallion.Threading;
@@ -18,11 +19,12 @@ public class EventStoreBuilderPostgresExtensionsTests
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;
     }
 
-    private sealed class FakeRegistrar : IProjectionRegistrar, ISubscriptionDaemonRegistrar
+    private sealed class FakeRegistrar : IProjectionRegistrar, ISubscriptionDaemonRegistrar, IProjectionDaemonRegistrar
     {
         public Func<IServiceProvider, IDistributedLockProvider>? AddedFactory { get; private set; }
         public ProjectionMode? AddedMode { get; private set; }
         public Action<IProjectionOptions>? AddedConfigure { get; private set; }
+        public bool ProjectionDaemonAdded { get; private set; }
 
         public void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory)
         {
@@ -33,6 +35,12 @@ public class EventStoreBuilderPostgresExtensionsTests
         {
             AddedMode = mode;
             AddedConfigure = configure;
+        }
+
+        public void AddProjectionDaemon(Func<IServiceProvider, IDistributedLockProvider> lockProviderFactory, Action<ProjectionDaemonOptions>? configure = null)
+        {
+            AddedFactory = lockProviderFactory;
+            ProjectionDaemonAdded = true;
         }
     }
 
@@ -93,7 +101,9 @@ public class EventStoreBuilderPostgresExtensionsTests
 
     private class DummyProjection : IProjection<DummySnapshot>
     {
-        public static Task Evolve(DummySnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct) => Task.CompletedTask;   
+        public static Task Evolve(DummySnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct) => Task.CompletedTask;
+
+        public static Task ClearAsync(IProjectionContext context, CancellationToken ct) => Task.CompletedTask;
     }
 
     private class DummySnapshot

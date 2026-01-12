@@ -6,11 +6,30 @@ public sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
     private bool HandlesAllEvents = true;
+    private int _version = 1;
+
+    /// <summary>
+    /// Gets the configured version for this projection.
+    /// </summary>
+    internal int ProjectionVersion => _version;
+
+    /// <summary>
+    /// Sets the version of the projection. When the version changes,
+    /// the projection daemon can automatically trigger a rebuild.
+    /// </summary>
+    /// <param name="version">The version number. Increment to trigger rebuild.</param>
+    public void Version(int version)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(version);
+        _version = version;
+    }
+
     public void Handles<T>() where T : class
     {
         HandlesAllEvents = false;
         _handledEventTypes.Add(typeof(T));
     }
+
     public void HandlesAll()
     {
         HandlesAllEvents = true;
@@ -35,6 +54,7 @@ public sealed class ProjectionOptions : IProjectionOptions
         }
         return e => e.StreamId;
     }
+
     public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class
     {
         Handles<TEvent>();

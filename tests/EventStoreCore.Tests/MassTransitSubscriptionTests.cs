@@ -64,7 +64,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
 
         eventStoreDbContext.Database.EnsureCreated();
 
-        var eventStore = eventStoreDbContext.Streams();
+        var eventStore = eventStoreDbContext.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);

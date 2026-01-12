@@ -5,13 +5,20 @@ namespace EventStoreCore.Persistence.EntityFrameworkCore;
 
 public static class DbContextExtensions
 {
-    public static IEventStore Streams(this DbContext dbContext)
+    extension(DbContext dbContext)
+    {
+        public IEventStore Streams => dbContext.Streams();
+
+        public DbSet<DbEvent> Events => dbContext.Events();
+
+    }
+    private static IEventStore Streams(this DbContext dbContext)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         return new DbContextEventStore(dbContext);
     }
 
-    public static DbSet<DbEvent> Events(this DbContext dbContext)
+    private static DbSet<DbEvent> Events(this DbContext dbContext)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         return dbContext.Set<DbEvent>();

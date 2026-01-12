@@ -105,7 +105,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 logger.LogInformation("Created new subscription entity for {Subscription}", name);
             }
 
-            var nextEvent = await dbContext.Events()
+            var nextEvent = await dbContext.Events
                 .Where(e => e.Sequence > subscription.Sequence)
                 .OrderBy(e => e.Sequence) // Ensure ordering
                 .FirstOrDefaultAsync(stoppingToken);
