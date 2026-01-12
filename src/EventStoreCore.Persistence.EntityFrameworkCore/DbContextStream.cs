@@ -3,9 +3,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.Persistence.EntityFrameworkCore;
 
-public class DbContextStream(DbStream dbStream, DbContext db) : IStream
+public class DbContextStream(DbStream dbStream) : IStream
 {
+    public DbContextStream(DbStream dbStream, DbContext db) : this(dbStream)
+    {
+        _ = db;
+    }
+
     public Guid TenantId => dbStream.TenantId;
+
     public Guid Id => dbStream.Id;
     public long Version => dbStream.CurrentVersion;
     public IReadOnlyList<IEvent> Events => dbStream.Events
@@ -39,10 +45,16 @@ public class DbContextStream(DbStream dbStream, DbContext db) : IStream
     }
 }
 
-public class DbContextStream<T>(DbStream dbStream, DbContext db) : DbContextStream(dbStream, db), IStream<T> where T : IState, new()
+public class DbContextStream<T>(DbStream dbStream) : DbContextStream(dbStream), IStream<T> where T : IState, new()
 {
+    public DbContextStream(DbStream dbStream, DbContext db) : this(dbStream)
+    {
+        _ = db;
+    }
+
     public T State
     {
+
         get
         {
             var state = new T();

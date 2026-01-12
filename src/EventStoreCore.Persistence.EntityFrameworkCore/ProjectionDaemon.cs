@@ -21,11 +21,15 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     private readonly ProjectionDaemonOptions _options;
     private readonly IReadOnlyList<ProjectionRegistration> _projections;
 
-    internal ProjectionDaemon(
+    internal IReadOnlyList<ProjectionRegistration> Projections => _projections;
+
+
+    public ProjectionDaemon(
         ILogger<ProjectionDaemon<TDbContext>> logger,
         IServiceProvider serviceProvider,
         IDistributedLockProvider distributedLockProvider,
         IOptions<ProjectionDaemonOptions> options)
+
     {
         _logger = logger;
         _serviceProvider = serviceProvider;

@@ -36,7 +36,9 @@ public class CloudEventTransformerOptionsTests
 
         Assert.Equal("type", cloudEvent.Type);
         Assert.Equal("source", cloudEvent.Source.ToString());
+        Assert.NotNull(cloudEvent.Data);
         Assert.Equivalent(fakeEvent.Data, cloudEvent.Data.ToObjectFromJson<TestEvent>());
+
     }
 
     [Fact]

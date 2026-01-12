@@ -32,7 +32,8 @@ public abstract class StreamBehaviorTest<TState> : IDisposable
             CreatedTimestamp = DateTimeOffset.UtcNow,
             UpdatedTimestamp = DateTimeOffset.UtcNow,
             CurrentVersion = 0
-        }, _dbContext);
+        });
+
     }
 
     /// <summary>

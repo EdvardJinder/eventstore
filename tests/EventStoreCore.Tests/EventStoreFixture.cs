@@ -32,7 +32,8 @@ public class EventStoreFixture : PostgresFixture, IAsyncLifetime
 
         }
     }
-    public EventStoreDbContext Context { get; private set; }
+    public EventStoreDbContext Context { get; private set; } = null!;
+
     public new async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
