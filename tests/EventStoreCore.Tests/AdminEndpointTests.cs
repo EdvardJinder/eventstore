@@ -4,6 +4,7 @@ using EventStoreCore.Abstractions;
 using EventStoreCore.Admin;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -41,7 +42,8 @@ public class AdminEndpointTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin();
+                            endpoints.MapGroup("/api/eventstore/admin")
+                                .MapEventStoreAdmin();
                         });
                     });
             })
@@ -451,7 +453,7 @@ public class AdminEndpointTests : IAsyncLifetime
 }
 
 /// <summary>
-/// Tests for custom AdminOptions configuration.
+/// Tests for custom route prefix configuration.
 /// </summary>
 public class AdminEndpointOptionsTests : IAsyncLifetime
 {
@@ -480,10 +482,8 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin(options =>
-                            {
-                                options.RoutePrefix = "/custom/admin";
-                            });
+                            endpoints.MapGroup("/custom/admin")
+                                .MapEventStoreAdmin();
                         });
                     });
             })
@@ -554,9 +554,17 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin(options =>
+                            var group = endpoints.MapGroup("/api/eventstore/admin")
+                                .MapEventStoreAdmin();
+                            
+                            // Add custom authorization filter
+                            group.AddEndpointFilter(async (context, next) =>
                             {
-                                options.AuthorizeAsync = _ => Task.FromResult(_authorizationResult);
+                                if (!_authorizationResult)
+                                {
+                                    return Results.Unauthorized();
+                                }
+                                return await next(context);
                             });
                         });
                     });
@@ -575,7 +583,7 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AuthorizeAsync_AllowsRequest_WhenReturnsTrue()
+    public async Task EndpointFilter_AllowsRequest_WhenAuthorized()
     {
         // Arrange
         _authorizationResult = true;
@@ -589,7 +597,7 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AuthorizeAsync_ReturnsUnauthorized_WhenReturnsFalse()
+    public async Task EndpointFilter_ReturnsUnauthorized_WhenNotAuthorized()
     {
         // Arrange
         _authorizationResult = false;
@@ -600,5 +608,71 @@ public class AdminEndpointAuthorizationTests : IAsyncLifetime
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+}
+
+/// <summary>
+/// Tests demonstrating the new MapGroup pattern with route composition.
+/// </summary>
+public class AdminEndpointRouteGroupTests : IAsyncLifetime
+{
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private IProjectionManager _mockManager = null!;
+
+    public async ValueTask InitializeAsync()
+    {
+        _mockManager = Substitute.For<IProjectionManager>();
+        _mockManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<ProjectionStatusDto>());
+
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRouting();
+                        services.AddSingleton(_mockManager);
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
+                        {
+                            // Demonstrate new pattern: MapGroup -> MapEventStoreAdmin
+                            // Users can chain .RequireAuthorization() after this call
+                            endpoints.MapGroup("/v1/admin")
+                                .MapEventStoreAdmin();
+                        });
+                    });
+            })
+            .Build();
+
+        await _host.StartAsync();
+        _client = _host.GetTestClient();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    [Fact]
+    public async Task MapGroup_AllowsChainingWithMapEventStoreAdmin()
+    {
+        // This test demonstrates that the new API pattern works correctly
+        // with MapGroup for route prefix, and returns a RouteGroupBuilder
+        // that can be further configured (e.g., with .RequireAuthorization())
+        
+        // Act - Request to the composed route
+        var response = await _client.GetAsync("/v1/admin/projections",
+            TestContext.Current.CancellationToken);
+
+        // Assert - Should successfully access the endpoint
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }
