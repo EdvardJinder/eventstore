@@ -4,18 +4,30 @@
 
 ```bash
 dotnet add package EventStoreCore
-dotnet add package EventStoreCore.Persistence.EntityFrameworkCore
-dotnet add package EventStoreCore.Persistence.EntityFrameworkCore.Postgres
+dotnet add package EventStoreCore.Postgres
+# or EventStoreCore.SqlServer
 ```
+
 
 ## Quick start
 
 ```csharp
 using EventStoreCore;
-using EventStoreCore.Persistence.EntityFrameworkCore;
-using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+using EventStoreCore.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+
+public sealed class MyEventStoreDbContext : DbContext
+{
+    public MyEventStoreDbContext(DbContextOptions<MyEventStoreDbContext> options) : base(options)
+    {
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.UseEventStore();
+    }
+}
 
 var services = new ServiceCollection();
 
@@ -31,7 +43,10 @@ services.AddEventStore(builder =>
 });
 ```
 
+Projection and subscription daemons require an `IDistributedLockProvider`. Register any implementation (Redis, SQL Server, Postgres, etc.) in DI.
+
 ## Testing
+
 
 Install the test helpers:
 

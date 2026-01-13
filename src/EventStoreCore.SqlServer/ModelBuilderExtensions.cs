@@ -1,7 +1,7 @@
 using EventStoreCore;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Postgres;
+namespace EventStoreCore.SqlServer;
 
 public static class ModelBuilderExtensions
 {
@@ -12,7 +12,7 @@ public static class ModelBuilderExtensions
         modelBuilder.Entity<DbEvent>(entity =>
         {
             entity.Property(e => e.Data)
-                .HasColumnType("jsonb");
+                .HasColumnType("nvarchar(max)");
         });
     }
 }

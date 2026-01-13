@@ -1,6 +1,7 @@
 using EventStoreCore.Abstractions;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 public sealed class ProjectionOptions : IProjectionOptions
 {

@@ -1,7 +1,8 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 public sealed class DbContextEventStore(DbContext db) : IEventStore
 {

@@ -1,7 +1,8 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Executes a projection in the subscription daemon scope (eventual consistency).

@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+namespace EventStoreCore;
 
 public interface IEfCoreEventStoreBuilder<TDbContext>
-    where TDbContext : Microsoft.EntityFrameworkCore.DbContext
+    where TDbContext : DbContext
+
 {
     IServiceCollection Services { get; }
 }

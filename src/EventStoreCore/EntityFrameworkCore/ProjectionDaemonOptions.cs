@@ -1,4 +1,5 @@
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Configuration options for the projection daemon.

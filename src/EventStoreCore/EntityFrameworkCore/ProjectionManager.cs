@@ -4,7 +4,8 @@ using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Implementation of IProjectionManager for managing projection state and operations.

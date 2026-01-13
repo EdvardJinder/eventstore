@@ -1,6 +1,7 @@
 using Medallion.Threading;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+namespace EventStoreCore;
+
 
 internal interface ISubscriptionDaemonRegistrar
 {

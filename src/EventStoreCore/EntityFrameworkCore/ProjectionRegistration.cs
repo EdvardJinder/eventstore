@@ -1,7 +1,8 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Internal registration information for a projection used by the daemon.

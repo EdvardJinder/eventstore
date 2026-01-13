@@ -1,5 +1,7 @@
-using EventStoreCore.Persistence.EntityFrameworkCore;
-using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+using EventStoreCore;
+
+using EventStoreCore.Postgres;
+
 using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.Tests;

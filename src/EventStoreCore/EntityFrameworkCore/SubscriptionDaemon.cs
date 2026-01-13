@@ -6,7 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 public sealed class SubscriptionDaemon<TDbContext>(
     ILogger<SubscriptionDaemon<TDbContext>> logger,

@@ -1,51 +1,29 @@
-using EventStoreCore.Abstractions;
+﻿using EventStoreCore.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
-namespace EventStoreCore.Admin;
+namespace EventStoreCore.Endpoints;
 
 /// <summary>
-/// Extension methods for mapping EventStore admin endpoints.
+/// Extension methods for mapping EventStore API endpoints.
 /// </summary>
-public static class EventStoreAdminExtensions
+public static class RouteBuilderExtensions
 {
     /// <summary>
     /// Maps the EventStore admin API endpoints.
+    /// Use MapGroup on the IEndpointRouteBuilder to set a custom route prefix before calling this method.
+    /// Call RequireAuthorization on the returned RouteGroupBuilder to add authorization.
     /// </summary>
     /// <param name="endpoints">The endpoint route builder.</param>
-    /// <param name="configure">Optional configuration for admin options.</param>
     /// <returns>The route group builder for further customization.</returns>
-    public static RouteGroupBuilder MapEventStoreAdmin(
-        this IEndpointRouteBuilder endpoints,
-        Action<AdminOptions>? configure = null)
+    public static RouteGroupBuilder MapEventStoreApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var options = new AdminOptions();
-        configure?.Invoke(options);
-
-        var group = endpoints.MapGroup(options.RoutePrefix);
-
-        // Add authorization if configured
-        if (options.AuthorizationPolicy != null)
-        {
-            group.RequireAuthorization(options.AuthorizationPolicy);
-        }
-
-        // Add custom authorization filter if configured
-        if (options.AuthorizeAsync != null)
-        {
-            group.AddEndpointFilter(async (context, next) =>
-            {
-                if (!await options.AuthorizeAsync(context.HttpContext))
-                {
-                    return Results.Unauthorized();
-                }
-                return await next(context);
-            });
-        }
+        var group = endpoints.MapGroup(string.Empty);
 
         // GET /projections - List all projections
-        group.MapGet("/projections", async (IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections", async ([FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             var statuses = await manager.GetAllStatusesAsync(ct);
             return Results.Ok(statuses);
@@ -55,7 +33,7 @@ public static class EventStoreAdminExtensions
         .Produces<IReadOnlyList<ProjectionStatusDto>>();
 
         // GET /projections/{name} - Get specific projection
-        group.MapGet("/projections/{name}", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections/{name}", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             var status = await manager.GetStatusAsync(name, ct);
             return status != null ? Results.Ok(status) : Results.NotFound();
@@ -66,7 +44,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /projections/{name}/rebuild - Trigger rebuild
-        group.MapPost("/projections/{name}/rebuild", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/rebuild", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             try
             {
@@ -84,7 +62,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/pause - Pause projection
-        group.MapPost("/projections/{name}/pause", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/pause", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             try
             {
@@ -102,7 +80,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/resume - Resume projection
-        group.MapPost("/projections/{name}/resume", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/resume", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             try
             {
@@ -120,7 +98,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // GET /projections/{name}/failed-event - Get failed event details
-        group.MapGet("/projections/{name}/failed-event", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections/{name}/failed-event", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             var failedEvent = await manager.GetFailedEventAsync(name, ct);
             return failedEvent != null ? Results.Ok(failedEvent) : Results.NotFound();
@@ -131,7 +109,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /projections/{name}/retry - Retry failed event
-        group.MapPost("/projections/{name}/retry", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/retry", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             try
             {
@@ -149,7 +127,7 @@ public static class EventStoreAdminExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/skip - Skip failed event
-        group.MapPost("/projections/{name}/skip", async (string name, IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/skip", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
         {
             try
             {

@@ -1,4 +1,5 @@
-namespace EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+namespace EventStoreCore;
+
 
 public enum ProjectionMode
 {

@@ -1,5 +1,6 @@
 using EventStoreCore.Abstractions;
-using EventStoreCore.Persistence.EntityFrameworkCore;
+using EventStoreCore;
+
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 

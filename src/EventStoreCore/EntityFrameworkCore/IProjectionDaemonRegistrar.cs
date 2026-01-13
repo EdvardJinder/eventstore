@@ -1,7 +1,7 @@
 using Medallion.Threading;
-using EventStoreCore.Persistence.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Interface for registering the projection daemon.

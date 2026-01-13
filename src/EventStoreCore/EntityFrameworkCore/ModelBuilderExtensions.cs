@@ -1,11 +1,11 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
 
-public static class ModelBuilderExtensions
+internal static class ModelBuilderExtensions
 {
-    public static void UseEventStore(this ModelBuilder modelBuilder)
+    internal static void ConfigureEventStoreModel(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DbStream>(entity =>
         {

@@ -1,7 +1,8 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore;
+namespace EventStoreCore;
+
 
 /// <summary>
 /// Extension methods for <see cref="IProjectionContext"/> when using Entity Framework Core.
@@ -26,6 +27,7 @@ public static class ProjectionContextExtensions
 
         throw new InvalidOperationException(
             "The projection context was not created with an Entity Framework Core provider. " +
-            "Ensure you are using the EF Core persistence package.");
+            "Ensure you are using the EF Core extensions in EventStoreCore.");
+
     }
 }

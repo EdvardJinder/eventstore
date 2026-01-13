@@ -1,6 +1,7 @@
 using EventStoreCore.Abstractions;
 
-namespace EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+namespace EventStoreCore;
+
 
 internal interface IProjectionRegistrar
 {

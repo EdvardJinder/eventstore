@@ -1,16 +1,19 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/EventStoreCore.Abstractions/EventStoreCore.Abstractions.csproj" />
-    <Project Path="src/EventStoreCore.Admin/EventStoreCore.Admin.csproj" />
-    <Project Path="src/EventStoreCore.Admin.Client/EventStoreCore.Admin.Client.csproj" />
-    <Project Path="src/EventStoreCore.CloudEvents/EventStoreCore.CloudEvents.csproj" />
-    <Project Path="src/EventStoreCore.EventGrid/EventStoreCore.EventGrid.csproj" />
-    <Project Path="src/EventStoreCore.MassTransit/EventStoreCore.MassTransit.csproj" />
-    <Project Path="src/EventStoreCore.Persistence.EntityFrameworkCore.Postgres/EventStoreCore.Persistence.EntityFrameworkCore.Postgres.csproj" />
-    <Project Path="src/EventStoreCore.Persistence.EntityFrameworkCore/EventStoreCore.Persistence.EntityFrameworkCore.csproj" />
+    <Project Path="src/EventStoreCore.SDK/EventStoreCore.SDK.csproj" />
+    <Project Path="src/EventStoreCore.Endpoints/EventStoreCore.Endpoints.csproj" />
+    <Project Path="src/EventStoreCore.Postgres/EventStoreCore.Postgres.csproj" />
+    <Project Path="src/EventStoreCore.SqlServer/EventStoreCore.SqlServer.csproj" />
     <Project Path="src/EventStoreCore.Testing/EventStoreCore.Testing.csproj" />
     <Project Path="src/EventStoreCore/EventStoreCore.csproj" />
   </Folder>
+  <Folder Name="/src/integrations/">
+    <Project Path="src/EventStoreCore.CloudEvents/EventStoreCore.CloudEvents.csproj" />
+    <Project Path="src/EventStoreCore.EventGrid/EventStoreCore.EventGrid.csproj" />
+    <Project Path="src/EventStoreCore.MassTransit/EventStoreCore.MassTransit.csproj" />
+  </Folder>
+
   <Folder Name="/tests/">
     <Project Path="tests/EventStoreCore.Tests/EventStoreCore.Tests.csproj" />
   </Folder>

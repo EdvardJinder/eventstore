@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using EventStoreCore.Abstractions;
-using EventStoreCore.Admin;
+using EventStoreCore.Endpoints;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -41,7 +42,7 @@ public class AdminEndpointTests : IAsyncLifetime
                         app.UseRouting();
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin();
+                            endpoints.MapGroup("/api/eventstore/admin/").MapEventStoreApiEndpoints();
                         });
                     });
             })
@@ -478,12 +479,12 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
                     .Configure(app =>
                     {
                         app.UseRouting();
+
+                       
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapEventStoreAdmin(options =>
-                            {
-                                options.RoutePrefix = "/custom/admin";
-                            });
+                            endpoints.MapGroup("/custom/admin")
+                                .MapEventStoreApiEndpoints();
                         });
                     });
             })
@@ -523,82 +524,3 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Tests for custom authorization configuration.
-/// </summary>
-public class AdminEndpointAuthorizationTests : IAsyncLifetime
-{
-    private IHost _host = null!;
-    private HttpClient _client = null!;
-    private IProjectionManager _mockManager = null!;
-    private bool _authorizationResult = true;
-
-    public async ValueTask InitializeAsync()
-    {
-        _mockManager = Substitute.For<IProjectionManager>();
-        _mockManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
-            .Returns(new List<ProjectionStatusDto>());
-
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRouting();
-                        services.AddSingleton(_mockManager);
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapEventStoreAdmin(options =>
-                            {
-                                options.AuthorizeAsync = _ => Task.FromResult(_authorizationResult);
-                            });
-                        });
-                    });
-            })
-            .Build();
-
-        await _host.StartAsync();
-        _client = _host.GetTestClient();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _client.Dispose();
-        await _host.StopAsync();
-        _host.Dispose();
-    }
-
-    [Fact]
-    public async Task AuthorizeAsync_AllowsRequest_WhenReturnsTrue()
-    {
-        // Arrange
-        _authorizationResult = true;
-
-        // Act
-        var response = await _client.GetAsync("/api/eventstore/admin/projections",
-            TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AuthorizeAsync_ReturnsUnauthorized_WhenReturnsFalse()
-    {
-        // Arrange
-        _authorizationResult = false;
-
-        // Act
-        var response = await _client.GetAsync("/api/eventstore/admin/projections",
-            TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-}

@@ -5,24 +5,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>1.0.0-beta.1</Version>
-
-    <PackageId>EventStoreCore.Endpoints</PackageId>
-
+    <PackageId>EventStoreCore.SqlServer</PackageId>
     <Authors>Edvard Jinder</Authors>
     <Company>Intromedia Digital AB</Company>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-
-    <Description>Admin API endpoints for EventStoreCore projection management</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
   </ItemGroup>
 

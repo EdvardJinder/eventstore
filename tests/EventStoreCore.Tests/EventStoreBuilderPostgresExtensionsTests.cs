@@ -1,11 +1,10 @@
 using EventStoreCore;
 using EventStoreCore.Abstractions;
-using EventStoreCore.Persistence.EntityFrameworkCore;
-using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
 using EventStoreCore.Testing;
 using Medallion.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+
 
 namespace EventStoreCore.Tests;
 

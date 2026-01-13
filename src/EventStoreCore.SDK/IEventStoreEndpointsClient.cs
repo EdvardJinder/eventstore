@@ -1,12 +1,13 @@
 using EventStoreCore.Abstractions;
 using Refit;
 
-namespace EventStoreCore.Admin.Client;
+namespace EventStoreCore.SDK;
+
 
 /// <summary>
-/// Refit interface for the EventStore admin API.
+/// Refit interface for the EventStore API.
 /// </summary>
-public interface IProjectionAdminClient
+public interface IEventStoreEndpointsClient
 {
     /// <summary>
     /// Gets the status of all registered projections.
