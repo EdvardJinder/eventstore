@@ -1,7 +1,8 @@
 using EventStoreCore;
 using EventStoreCore.Abstractions;
-using EventStoreCore.Persistence.EntityFrameworkCore;
-using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+using EventStoreCore.Postgres;
+
+
 using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

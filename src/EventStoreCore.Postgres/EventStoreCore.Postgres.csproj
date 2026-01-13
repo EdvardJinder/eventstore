@@ -1,12 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	  <TargetFrameworks>net10.0</TargetFrameworks>
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  <Nullable>enable</Nullable>
-  	  <Version>1.0.0-beta.1</Version>
-
-	  <PackageId>EventStoreCore.CloudEvents</PackageId>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	  <Version>1.0.0-beta.1</Version>
+	  <PackageId>EventStoreCore.Postgres</PackageId>
 	  <Authors>Edvard Jinder</Authors>
 	  <Company>Intromedia Digital AB</Company>
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -15,13 +14,17 @@
 
   </PropertyGroup>
 
+
   <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
   </ItemGroup>
 
-	<ItemGroup>
-		<InternalsVisibleTo Include="EventStoreCore.Testing" />
-		<InternalsVisibleTo Include="EventStoreCore.Tests" />
-	</ItemGroup>
+
 
 </Project>

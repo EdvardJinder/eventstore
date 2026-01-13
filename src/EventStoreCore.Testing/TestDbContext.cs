@@ -1,4 +1,5 @@
-using EventStoreCore.Persistence.EntityFrameworkCore;
+using EventStoreCore;
+
 using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.Testing;
@@ -21,6 +22,6 @@ internal class TestDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.UseEventStore();
+        ModelBuilderExtensions.ConfigureEventStoreModel(modelBuilder);
     }
 }

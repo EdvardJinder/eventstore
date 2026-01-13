@@ -1,6 +1,8 @@
 using EventStoreCore.MassTransit;
-using EventStoreCore.Persistence.EntityFrameworkCore;
-using EventStoreCore.Persistence.EntityFrameworkCore.Postgres;
+using EventStoreCore;
+
+using EventStoreCore.Postgres;
+
 using Medallion.Threading.Postgres;
 using MassTransit;
 using MassTransit.Testing;
