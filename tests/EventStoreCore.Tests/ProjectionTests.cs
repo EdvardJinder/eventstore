@@ -120,6 +120,55 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
     }
 
     [Fact]
+    public async Task InlineProjectionUpdatesStatus()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddProjection<EventStoreDbContext, UserProjection, UserSnapshot>(ProjectionMode.Inline, p =>
+            {
+                p.Handles<UserCreated>();
+                p.Handles<UserNameUpdated>();
+            });
+        });
+
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+
+        var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+        db.Database.EnsureCreated();
+
+        var projectionName = typeof(UserProjection).FullName!;
+        await db.Set<DbProjectionStatus>()
+            .Where(s => s.ProjectionName == projectionName)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+
+        var eventStore = db.Streams;
+        var streamId = Guid.NewGuid();
+        eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var maxSequence = await db.Set<DbEvent>()
+            .Where(e => e.StreamId == streamId)
+            .MaxAsync(e => e.Sequence, TestContext.Current.CancellationToken);
+
+        var status = await db.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(status);
+        Assert.Equal(maxSequence, status.Position);
+        Assert.Equal(ProjectionState.Active, status.State);
+        Assert.NotNull(status.LastProcessedAt);
+        Assert.Equal(1, status.Version);
+        Assert.Null(status.LastError);
+        Assert.Null(status.FailedEventSequence);
+    }
+
+
+    [Fact]
     public async Task ProjectionWithCompositeKey()
     {
         var services = new ServiceCollection();
