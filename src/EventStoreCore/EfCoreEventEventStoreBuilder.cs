@@ -36,7 +36,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         {
             dbContextOptionsBuilders.Add((sp, dbContextOptionsBuilder) =>
             {
-                dbContextOptionsBuilder.AddInterceptors(new ProjectionInterceptor<TProjection, TSnapshot>(options, sp));
+                dbContextOptionsBuilder.AddInterceptors(new ProjectionInterceptor<TProjection, TSnapshot>(options, sp, version));
             });
         }
         else
