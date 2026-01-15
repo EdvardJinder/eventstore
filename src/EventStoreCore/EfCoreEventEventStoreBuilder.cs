@@ -57,8 +57,17 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
     {
         services.TryAddSingleton(factory);
         services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
+        services.TryAddScoped<ISubscriptionManager>(sp =>
+        {
+            var dbContext = sp.GetRequiredService<TDbContext>();
+            var lockProvider = sp.GetRequiredService<IDistributedLockProvider>();
+            var subscriptions = sp.GetServices<ISubscription>();
+            var logger = sp.GetRequiredService<ILogger<SubscriptionManager<TDbContext>>>();
+            return new SubscriptionManager<TDbContext>(dbContext, lockProvider, subscriptions, logger);
+        });
         services.AddHostedService(sp => sp.GetRequiredService<SubscriptionDaemon<TDbContext>>());
     }
+
 
     public void AddProjectionDaemon(
         Func<IServiceProvider, IDistributedLockProvider> lockProviderFactory,

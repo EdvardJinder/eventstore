@@ -1,4 +1,4 @@
-﻿using EventStoreCore.Abstractions;
+using EventStoreCore.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -142,6 +142,50 @@ public static class RouteBuilderExtensions
         .WithName("SkipFailedEvent")
         .WithDescription("Skips the failed event and resumes processing")
         .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        // GET /subscriptions - List all subscriptions
+        group.MapGet("/subscriptions", async ([FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            var statuses = await manager.GetAllStatusesAsync(ct);
+            return Results.Ok(statuses);
+        })
+        .WithName("GetAllSubscriptions")
+        .WithDescription("Gets the status of all registered subscriptions")
+        .Produces<IReadOnlyList<SubscriptionStatusDto>>();
+
+        // GET /subscriptions/{name} - Get specific subscription
+        group.MapGet("/subscriptions/{name}", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            var status = await manager.GetStatusAsync(name, ct);
+            return status != null ? Results.Ok(status) : Results.NotFound();
+        })
+        .WithName("GetSubscription")
+        .WithDescription("Gets the status of a specific subscription")
+        .Produces<SubscriptionStatusDto>()
+        .Produces(StatusCodes.Status404NotFound);
+
+        // POST /subscriptions/{name}/replay - Trigger replay
+        group.MapPost("/subscriptions/{name}/replay", async (
+            [FromRoute] string name,
+            [FromServices] ISubscriptionManager manager,
+            [FromQuery] long? startSequence,
+            [FromQuery] DateTimeOffset? fromTimestamp,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                await manager.ReplayAsync(name, startSequence, fromTimestamp, ct);
+                return Results.Accepted();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("ReplaySubscription")
+        .WithDescription("Replays the subscription from a sequence or timestamp")
+        .Produces(StatusCodes.Status202Accepted)
         .Produces(StatusCodes.Status400BadRequest);
 
         return group;

@@ -56,4 +56,27 @@ public interface IEventStoreEndpointsClient
     /// </summary>
     [Post("/projections/{name}/skip")]
     Task SkipFailedEventAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the status of all registered subscriptions.
+    /// </summary>
+    [Get("/subscriptions")]
+    Task<IReadOnlyList<SubscriptionStatusDto>> GetAllSubscriptionsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the status of a specific subscription.
+    /// </summary>
+    [Get("/subscriptions/{name}")]
+    Task<SubscriptionStatusDto?> GetSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replays a subscription from a specific sequence or timestamp.
+    /// </summary>
+    [Post("/subscriptions/{name}/replay")]
+    Task ReplaySubscriptionAsync(
+        string name,
+        [Query] long? startSequence = null,
+        [Query] DateTimeOffset? fromTimestamp = null,
+        CancellationToken ct = default);
 }
+
