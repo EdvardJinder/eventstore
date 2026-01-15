@@ -18,7 +18,8 @@ internal sealed class EventStoreBuilder(
     public IEventStoreBuilder AddSubscription<TSubscription>() where TSubscription : ISubscription
     {
         services.TryAddSingleton(typeof(TSubscription));
-        services.TryAddSingleton(typeof(ISubscription), sp => sp.GetRequiredService<TSubscription>());
+        services.AddSingleton(typeof(ISubscription), sp => sp.GetRequiredService<TSubscription>());
         return this;
     }
+
 }
