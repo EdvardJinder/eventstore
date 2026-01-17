@@ -45,7 +45,17 @@ services.AddEventStore(builder =>
 
 Projection and subscription daemons require an `IDistributedLockProvider`. Register any implementation (Redis, SQL Server, Postgres, etc.) in DI.
 
+## Project guidelines
+
+- Keep public APIs small, composable, and backwards compatible.
+- Document all `public` types and members with XML docs.
+- Favor explicit configuration over magic defaults; surface options via builders.
+- Keep EF Core provider logic isolated to provider-specific projects.
+- Projections and subscriptions should be deterministic and idempotent.
+- Add tests for new behaviors using `EventStoreCore.Testing` helpers.
+
 ## Testing
+
 
 
 Install the test helpers:
