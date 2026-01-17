@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore;
 
-
 /// <summary>
 /// Extension methods for <see cref="IProjectionContext"/> when using Entity Framework Core.
 /// </summary>
@@ -31,3 +30,4 @@ public static class ProjectionContextExtensions
 
     }
 }
+

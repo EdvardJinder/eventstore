@@ -6,6 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore;
 
+/// <summary>
+/// Intercepts EF Core SaveChanges to execute inline projections.
+/// </summary>
+/// <typeparam name="TProjection">The projection implementation.</typeparam>
+/// <typeparam name="TSnapshot">The snapshot type.</typeparam>
 public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesInterceptor
     where TProjection : IProjection<TSnapshot>, new()
     where TSnapshot : class, new()
@@ -18,6 +23,12 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
     private readonly string _projectionName;
     private readonly int _projectionVersion;
 
+    /// <summary>
+    /// Creates a new projection interceptor.
+    /// </summary>
+    /// <param name="options">Projection options.</param>
+    /// <param name="serviceProvider">Service provider used to resolve dependencies.</param>
+    /// <param name="projectionVersion">The projection version for status tracking.</param>
     public ProjectionInterceptor(ProjectionOptions options, IServiceProvider serviceProvider, int projectionVersion)
     {
         _options = options;
@@ -26,6 +37,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         _projectionVersion = projectionVersion;
     }
 
+    /// <inheritdoc />
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData,
         InterceptionResult<int> result,
@@ -105,6 +117,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         return result;
     }
 
+    /// <inheritdoc />
     public override async ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData,
         int result,
@@ -182,6 +195,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         return result;
     }
 
+    /// <inheritdoc />
     public override Task SaveChangesFailedAsync(
         DbContextErrorEventData eventData,
         CancellationToken cancellationToken = default)
@@ -213,9 +227,26 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
     }
 }
 
+/// <summary>
+/// Projection context implementation for EF Core providers.
+/// </summary>
+/// <param name="dbContext">The EF Core DbContext.</param>
+/// <param name="services">Service provider for resolving dependencies.</param>
 internal sealed class ProjectionContext(DbContext dbContext, IServiceProvider services) : IProjectionContext
 {
+    /// <summary>
+    /// The EF Core DbContext associated with the projection.
+    /// </summary>
     public DbContext DbContext { get; } = dbContext;
+
+    /// <summary>
+    /// The service provider for resolving dependencies.
+    /// </summary>
     public IServiceProvider Services { get; } = services;
+
+    /// <summary>
+    /// Provider-specific state for the projection.
+    /// </summary>
     public object? ProviderState => DbContext;
 }
+

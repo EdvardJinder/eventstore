@@ -24,7 +24,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
     internal IReadOnlyList<ProjectionRegistration> Projections => _projections;
 
-
+    /// <summary>
+    /// Creates a new projection daemon.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceProvider">Service provider for resolving scoped services.</param>
+    /// <param name="distributedLockProvider">Distributed lock provider.</param>
+    /// <param name="options">Daemon options.</param>
     public ProjectionDaemon(
         ILogger<ProjectionDaemon<TDbContext>> logger,
         IServiceProvider serviceProvider,
@@ -39,6 +45,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         _projections = serviceProvider.GetServices<ProjectionRegistration>().ToList();
     }
 
+    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Projection daemon starting with {Count} registered projections", _projections.Count);
@@ -73,9 +80,16 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         }
     }
 
+
+    /// <summary>
+    /// Processes a single projection, including rebuild logic.
+    /// </summary>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="ct">Cancellation token.</param>
     private async Task ProcessProjectionAsync(ProjectionRegistration projection, CancellationToken ct)
     {
         var lockName = $"projection:{projection.Name}";
+
 
         IDistributedSynchronizationHandle? lockHandle = null;
         try
@@ -138,6 +152,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Gets or creates the projection status record.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The projection status record.</returns>
     private async Task<DbProjectionStatus> GetOrCreateStatusAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
@@ -145,6 +166,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     {
         var status = await dbContext.Set<DbProjectionStatus>()
             .FirstOrDefaultAsync(s => s.ProjectionName == projection.Name, ct);
+
 
         if (status == null)
         {
@@ -163,6 +185,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         return status;
     }
 
+    /// <summary>
+    /// Initiates a projection rebuild by clearing data and resetting status.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="status">The current projection status.</param>
+    /// <param name="ct">Cancellation token.</param>
     internal async Task InitiateRebuildAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
@@ -170,6 +199,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         CancellationToken ct)
     {
         _logger.LogInformation("Initiating rebuild for projection {Projection}", projection.Name);
+
 
         // Update status to rebuilding
         status.State = ProjectionState.Rebuilding;
@@ -194,6 +224,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             projection.Name, status.TotalEvents);
     }
 
+    /// <summary>
+    /// Continues a rebuild by processing the next batch of events.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="status">The current projection status.</param>
+    /// <param name="ct">Cancellation token.</param>
     private async Task ContinueRebuildAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
@@ -201,6 +238,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         CancellationToken ct)
     {
         var processed = await ProcessBatchAsync(dbContext, projection, status, ct);
+
 
         if (!processed)
         {
@@ -216,6 +254,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Processes new events for an active projection.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="status">The current projection status.</param>
+    /// <param name="ct">Cancellation token.</param>
     private async Task ProcessEventsAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
@@ -224,6 +269,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     {
         var processed = await ProcessBatchAsync(dbContext, projection, status, ct);
 
+
         if (!processed)
         {
             _logger.LogDebug("Projection {Projection} is caught up at position {Position}", 
@@ -231,6 +277,14 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Processes a batch of events for a projection.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="projection">The projection registration.</param>
+    /// <param name="status">The current projection status.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>True when events were processed; false when no events were available.</returns>
     private async Task<bool> ProcessBatchAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
@@ -242,6 +296,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             .OrderBy(e => e.Sequence)
             .Take(_options.BatchSize)
             .ToListAsync(ct);
+
 
         if (events.Count == 0)
         {

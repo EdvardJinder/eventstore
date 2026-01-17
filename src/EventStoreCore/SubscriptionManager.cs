@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace EventStoreCore;
 
 /// <summary>
-/// Implementation of ISubscriptionManager for managing subscription state and replay operations.
+/// Implementation of <see cref="ISubscriptionManager"/> for managing subscription state and replay operations.
 /// </summary>
 /// <typeparam name="TDbContext">The DbContext type.</typeparam>
 public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
@@ -17,6 +17,13 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
     private readonly IReadOnlyList<string> _subscriptionNames;
     private readonly ILogger<SubscriptionManager<TDbContext>> _logger;
 
+    /// <summary>
+    /// Creates a new subscription manager.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for subscription state.</param>
+    /// <param name="lockProvider">The distributed lock provider.</param>
+    /// <param name="subscriptions">Registered subscriptions.</param>
+    /// <param name="logger">The logger instance.</param>
     internal SubscriptionManager(
         TDbContext dbContext,
         IDistributedLockProvider lockProvider,
@@ -32,6 +39,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         _logger = logger;
     }
 
+    /// <inheritdoc />
     public async Task<SubscriptionStatusDto?> GetStatusAsync(string subscriptionName, CancellationToken ct = default)
     {
         var record = await _dbContext.Set<DbSubscription>()
@@ -65,6 +73,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             lastProcessedAt);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<SubscriptionStatusDto>> GetAllStatusesAsync(CancellationToken ct = default)
     {
         var records = await _dbContext.Set<DbSubscription>()
@@ -104,6 +113,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         return result;
     }
 
+    /// <inheritdoc />
     public async Task ReplayAsync(
         string subscriptionName,
         long? startSequence = null,
@@ -146,6 +156,13 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             record.Sequence);
     }
 
+    /// <summary>
+    /// Resolves the sequence position for a replay request.
+    /// </summary>
+    /// <param name="startSequence">Explicit start sequence, if provided.</param>
+    /// <param name="fromTimestamp">Timestamp to start from, if provided.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The sequence position to persist.</returns>
     private async Task<long> ResolveReplayPositionAsync(
         long? startSequence,
         DateTimeOffset? fromTimestamp,
@@ -177,6 +194,12 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         return 0;
     }
 
+    /// <summary>
+    /// Calculates progress percentage from position and total event count.
+    /// </summary>
+    /// <param name="position">The last processed position.</param>
+    /// <param name="totalEvents">The total number of events.</param>
+    /// <returns>The progress percentage or null when total is unknown.</returns>
     private static double? CalculateProgress(long position, long totalEvents)
     {
         if (totalEvents <= 0)
@@ -187,6 +210,12 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         return Math.Round((double)position / totalEvents * 100, 2);
     }
 
+    /// <summary>
+    /// Gets the timestamp of the last processed event at a given position.
+    /// </summary>
+    /// <param name="position">The event sequence position.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The timestamp of the event, or null when not available.</returns>
     private async Task<DateTimeOffset?> GetLastProcessedAtAsync(long position, CancellationToken ct)
     {
         if (position <= 0)
@@ -201,6 +230,12 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>
+    /// Builds a lookup for last processed timestamps by sequence number.
+    /// </summary>
+    /// <param name="records">Subscription records to inspect.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A lookup of sequence to timestamp.</returns>
     private async Task<Dictionary<long, DateTimeOffset>> GetLastProcessedLookupAsync(
         IReadOnlyCollection<DbSubscription> records,
         CancellationToken ct)
@@ -222,3 +257,4 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             .ToDictionaryAsync(e => e.Sequence, e => e.Timestamp, ct);
     }
 }
+

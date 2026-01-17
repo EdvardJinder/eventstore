@@ -8,7 +8,7 @@ namespace EventStoreCore;
 
 
 /// <summary>
-/// Implementation of IProjectionManager for managing projection state and operations.
+/// Implementation of <see cref="IProjectionManager"/> for managing projection state and operations.
 /// </summary>
 /// <typeparam name="TDbContext">The DbContext type.</typeparam>
 public sealed class ProjectionManager<TDbContext> : IProjectionManager
@@ -19,6 +19,13 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     private readonly IEnumerable<ProjectionRegistration> _projections;
     private readonly ILogger<ProjectionManager<TDbContext>> _logger;
 
+    /// <summary>
+    /// Creates a new projection manager.
+    /// </summary>
+    /// <param name="dbContext">The DbContext used for projection state.</param>
+    /// <param name="lockProvider">The distributed lock provider.</param>
+    /// <param name="projections">Registered projection metadata.</param>
+    /// <param name="logger">The logger instance.</param>
     internal ProjectionManager(
         TDbContext dbContext,
         IDistributedLockProvider lockProvider,
@@ -31,6 +38,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         _logger = logger;
     }
 
+    /// <inheritdoc />
     public async Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -64,6 +72,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         return status.ToDto();
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<ProjectionStatusDto>> GetAllStatusesAsync(CancellationToken ct = default)
     {
         var statuses = await _dbContext.Set<DbProjectionStatus>()
@@ -102,6 +111,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         return result;
     }
 
+    /// <inheritdoc />
     public async Task RebuildAsync(string projectionName, CancellationToken ct = default)
     {
         var registration = _projections.FirstOrDefault(p => p.Name == projectionName)
@@ -136,6 +146,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             projectionName, status.TotalEvents);
     }
 
+    /// <inheritdoc />
     public async Task PauseAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -153,6 +164,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         _logger.LogInformation("Paused projection {Projection}", projectionName);
     }
 
+    /// <inheritdoc />
     public async Task ResumeAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -170,6 +182,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         _logger.LogInformation("Resumed projection {Projection}", projectionName);
     }
 
+    /// <inheritdoc />
     public async Task RetryFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -191,6 +204,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         _logger.LogInformation("Retrying failed event for projection {Projection}", projectionName);
     }
 
+    /// <inheritdoc />
     public async Task SkipFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -214,6 +228,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             status.Position, projectionName);
     }
 
+    /// <inheritdoc />
     public async Task<FailedEventDto?> GetFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
         var status = await _dbContext.Set<DbProjectionStatus>()
@@ -267,3 +282,4 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         return status;
     }
 }
+

@@ -3,9 +3,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore;
 
-
+/// <summary>
+/// EF Core-backed implementation of <see cref="IEventStore" />.
+/// </summary>
+/// <param name="db">The DbContext used for persistence.</param>
 public sealed class DbContextEventStore(DbContext db) : IEventStore
 {
+    /// <inheritdoc />
     public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
@@ -17,6 +21,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return new DbContextStream(stream);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
@@ -28,7 +33,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return new DbContextStream<T>(stream);
     }
 
-
+    /// <inheritdoc />
     public async Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
@@ -39,6 +44,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return new DbContextStream(stream);
     }
 
+    /// <inheritdoc />
     public async Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
@@ -49,6 +55,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return new DbContextStream<T>(stream);
     }
 
+    /// <inheritdoc />
     public IStream StartStream(Guid streamId, Guid tenantId = default, params IEnumerable<object> events)
     {
         var dbStream = new DbStream
@@ -66,6 +73,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return stream;
     }
 
+    /// <inheritdoc />
     public IStream<T> StartStream<T>(Guid streamId, Guid tenantId = default, params IEnumerable<object> events) where T : IState, new()
     {
         var dbStream = new DbStream
@@ -83,3 +91,4 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return stream;
     }
 }
+
