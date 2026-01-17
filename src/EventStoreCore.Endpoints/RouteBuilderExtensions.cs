@@ -20,7 +20,9 @@ public static class RouteBuilderExtensions
     /// <returns>The route group builder for further customization.</returns>
     public static RouteGroupBuilder MapEventStoreApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        ArgumentNullException.ThrowIfNull(endpoints);
         var group = endpoints.MapGroup(string.Empty);
+
 
         // GET /projections - List all projections
         group.MapGet("/projections", async ([FromServices] IProjectionManager manager, CancellationToken ct) =>

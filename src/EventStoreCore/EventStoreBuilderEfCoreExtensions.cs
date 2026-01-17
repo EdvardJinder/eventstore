@@ -5,6 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore;
 
+/// <summary>
+/// Extension methods for configuring the EF Core event store provider.
+/// </summary>
 public static class EventStoreBuilderEfCoreExtensions
 {
     private static (IProjectionRegistrar Projections, ISubscriptionDaemonRegistrar Daemon, IProjectionDaemonRegistrar ProjectionDaemon) GetProvider<TDbContext>(IEventStoreBuilder builder)
@@ -19,6 +22,12 @@ public static class EventStoreBuilderEfCoreExtensions
         throw new InvalidOperationException("No EF Core provider is registered. Call ExistingDbContext<TDbContext>() first.");
     }
 
+    /// <summary>
+    /// Registers an existing DbContext and enables event store integrations.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <returns>The EF Core event store builder.</returns>
     public static IEfCoreEventStoreBuilder<TDbContext> ExistingDbContext<TDbContext>(this IEventStoreBuilder builder)
         where TDbContext : DbContext
     {
@@ -34,12 +43,25 @@ public static class EventStoreBuilderEfCoreExtensions
         return efBuilder;
     }
 
+    /// <summary>
+    /// Adds the subscription daemon using the default distributed lock provider.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddSubscriptionDaemon<TDbContext>(this IEventStoreBuilder builder)
         where TDbContext : DbContext
     {
         return builder.AddSubscriptionDaemon<TDbContext>(sp => sp.GetRequiredService<IDistributedLockProvider>());
     }
 
+    /// <summary>
+    /// Adds the subscription daemon using a custom distributed lock provider.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <param name="factory">Factory that returns the distributed lock provider.</param>
+    /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddSubscriptionDaemon<TDbContext>(
         this IEventStoreBuilder builder,
         Func<IServiceProvider, IDistributedLockProvider> factory)
@@ -50,6 +72,13 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Adds the projection daemon using the default distributed lock provider.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <param name="configure">Optional daemon configuration.</param>
+    /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddProjectionDaemon<TDbContext>(
         this IEventStoreBuilder builder,
         Action<ProjectionDaemonOptions>? configure = null)
@@ -58,6 +87,14 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder.AddProjectionDaemon<TDbContext>(sp => sp.GetRequiredService<IDistributedLockProvider>(), configure);
     }
 
+    /// <summary>
+    /// Adds the projection daemon using a custom distributed lock provider.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <param name="lockProviderFactory">Factory that returns the distributed lock provider.</param>
+    /// <param name="configure">Optional daemon configuration.</param>
+    /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddProjectionDaemon<TDbContext>(
         this IEventStoreBuilder builder,
         Func<IServiceProvider, IDistributedLockProvider> lockProviderFactory,
@@ -69,6 +106,16 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Registers a projection for the specified DbContext.
+    /// </summary>
+    /// <typeparam name="TDbContext">The DbContext type.</typeparam>
+    /// <typeparam name="TProjection">The projection implementation.</typeparam>
+    /// <typeparam name="TSnapshot">The snapshot entity type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <param name="mode">Whether to run inline or eventual projections.</param>
+    /// <param name="configure">Optional projection options configuration.</param>
+    /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddProjection<TDbContext, TProjection, TSnapshot>(
         this IEventStoreBuilder builder,
         ProjectionMode mode = ProjectionMode.Inline,
@@ -82,3 +129,4 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder;
     }
 }
+

@@ -50,10 +50,14 @@ public interface IEvent
 
 }
 
+/// <summary>
+/// Defines a strongly-typed event wrapper.
+/// </summary>
+/// <typeparam name="T">The event payload type.</typeparam>
 public interface IEvent<out T> : IEvent where T : class
 {
     /// <summary>
-    ///     The actual event data body
+    /// The event payload.
     /// </summary>
     new T Data { get; }
 }

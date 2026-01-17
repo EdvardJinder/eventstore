@@ -2,8 +2,17 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
+/// <summary>
+/// Extension helpers for translating persisted events.
+/// </summary>
 public static class EventExtensions
 {
+    /// <summary>
+    /// Converts a <see cref="DbEvent" /> record into a runtime <see cref="IEvent" /> instance.
+    /// </summary>
+    /// <param name="dbEvent">The persisted event record.</param>
+    /// <returns>The deserialized event wrapper.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the event type or payload cannot be loaded.</exception>
     public static IEvent ToEvent(this DbEvent dbEvent)
     {
         var eventType = Type.GetType(dbEvent.Type);
@@ -21,3 +30,4 @@ public static class EventExtensions
         return (IEvent)eventInstance;
     }
 }
+

@@ -3,13 +3,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore;
 
-
+/// <summary>
+/// EF Core extension helpers for event store access.
+/// </summary>
 public static class DbContextExtensions
 {
     extension(DbContext dbContext)
     {
+        /// <summary>
+        /// Gets an <see cref="IEventStore" /> wrapper for the current context.
+        /// </summary>
         public IEventStore Streams => dbContext.Streams();
 
+        /// <summary>
+        /// Gets the <see cref="DbEvent" /> DbSet for the current context.
+        /// </summary>
         public DbSet<DbEvent> Events => dbContext.Events();
 
     }
@@ -25,3 +33,4 @@ public static class DbContextExtensions
         return dbContext.Set<DbEvent>();
     }
 }
+
