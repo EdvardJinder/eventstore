@@ -24,6 +24,7 @@ public class EventStoreBuilderPostgresExtensionsTests
         public ProjectionMode? AddedMode { get; private set; }
         public Action<IProjectionOptions>? AddedConfigure { get; private set; }
         public bool ProjectionDaemonAdded { get; private set; }
+        public Action<ProjectionDaemonOptions>? AddedDaemonConfigure { get; private set; }
 
         public void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory)
         {
@@ -39,9 +40,11 @@ public class EventStoreBuilderPostgresExtensionsTests
         public void AddProjectionDaemon(Func<IServiceProvider, IDistributedLockProvider> lockProviderFactory, Action<ProjectionDaemonOptions>? configure = null)
         {
             AddedFactory = lockProviderFactory;
+            AddedDaemonConfigure = configure;
             ProjectionDaemonAdded = true;
         }
     }
+
 
     [Fact]
     public void AddSubscriptionDaemon_ThrowsWhenProviderMissing()
@@ -97,6 +100,67 @@ public class EventStoreBuilderPostgresExtensionsTests
         registrar.AddedConfigure!(projectionOptions);
         Assert.True(projectionOptions.HandlesAllCalled);
     }
+
+    [Fact]
+    public void AddSubscriptionDaemon_UsesDefaultLockProviderFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        var builder = new EventStoreBuilder(services);
+        var registrar = new FakeRegistrar();
+        builder.UseProvider(registrar);
+
+        var returned = builder.AddSubscriptionDaemon<EventStoreFixture.EventStoreDbContext>();
+
+        Assert.Same(builder, returned);
+        Assert.NotNull(registrar.AddedFactory);
+        Assert.Same(services, builder.Services);
+    }
+
+    [Fact]
+    public void AddProjectionDaemon_UsesDefaultLockProviderFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        var builder = new EventStoreBuilder(services);
+        var registrar = new FakeRegistrar();
+        builder.UseProvider(registrar);
+
+        var returned = builder.AddProjectionDaemon<EventStoreFixture.EventStoreDbContext>();
+
+        Assert.Same(builder, returned);
+        Assert.NotNull(registrar.AddedFactory);
+        Assert.True(registrar.ProjectionDaemonAdded);
+    }
+
+    [Fact]
+    public void AddProjectionDaemon_PassesConfigureCallback()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        var builder = new EventStoreBuilder(services);
+        var registrar = new FakeRegistrar();
+        builder.UseProvider(registrar);
+
+        var configureCalled = false;
+        var returned = builder.AddProjectionDaemon<EventStoreFixture.EventStoreDbContext>(options =>
+        {
+            configureCalled = true;
+            options.BatchSize = 123;
+        });
+
+        Assert.Same(builder, returned);
+        Assert.NotNull(registrar.AddedFactory);
+        Assert.True(registrar.ProjectionDaemonAdded);
+        Assert.NotNull(registrar.AddedDaemonConfigure);
+
+        var options = new ProjectionDaemonOptions();
+        registrar.AddedDaemonConfigure!(options);
+
+        Assert.True(configureCalled);
+        Assert.Equal(123, options.BatchSize);
+    }
+
 
     private class DummyProjection : IProjection<DummySnapshot>
     {

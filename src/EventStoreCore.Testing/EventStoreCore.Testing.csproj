@@ -26,5 +26,9 @@
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="EventStoreCore.Tests" />
+  </ItemGroup>
 
 </Project>
+
