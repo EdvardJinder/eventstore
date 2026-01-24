@@ -66,6 +66,10 @@ internal static class ModelBuilderExtensions
             entity.Property(e => e.Type)
                 .IsRequired();
 
+            entity.Property(e => e.TypeName)
+                .IsRequired()
+                .HasDefaultValue(string.Empty);
+
             entity.Property(e => e.Data)
                 .IsRequired();
 

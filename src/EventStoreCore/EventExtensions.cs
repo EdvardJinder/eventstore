@@ -1,3 +1,4 @@
+using System.Reflection;
 using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
@@ -12,22 +13,47 @@ public static class EventExtensions
     /// </summary>
     /// <param name="dbEvent">The persisted event record.</param>
     /// <returns>The deserialized event wrapper.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the event type or payload cannot be loaded.</exception>
+    /// <exception cref="EventMaterializationException">Thrown when the event type or payload cannot be loaded.</exception>
     public static IEvent ToEvent(this DbEvent dbEvent)
     {
-        var eventType = Type.GetType(dbEvent.Type);
-        if (eventType == null)
-            throw new InvalidOperationException($"Could not load event type {dbEvent.Type}");
-        var data = System.Text.Json.JsonSerializer.Deserialize(dbEvent.Data, eventType);
-        if (data == null)
-            throw new InvalidOperationException($"Could not deserialize event data to type {dbEvent.Type}");
+        return ToEventCore(dbEvent, null);
+    }
+
+    internal static IEvent ToEvent(this DbEvent dbEvent, EventTypeRegistry? registry)
+    {
+        return ToEventCore(dbEvent, registry);
+    }
+
+    private static IEvent ToEventCore(DbEvent dbEvent, EventTypeRegistry? registry)
+    {
+        ArgumentNullException.ThrowIfNull(dbEvent);
+
+        var eventType = EventTypeResolver.ResolveEventType(dbEvent, registry);
         var eventInstanceType = typeof(Event<>).MakeGenericType(eventType);
-        var eventInstance = Activator.CreateInstance(eventInstanceType, dbEvent);
 
-        if (eventInstance == null)
-            throw new InvalidOperationException($"Could not create instance of event type {eventInstanceType}");
+        try
+        {
+            var eventInstance = Activator.CreateInstance(eventInstanceType, dbEvent, eventType);
+            if (eventInstance is null)
+            {
+                throw new EventMaterializationException(
+                    $"Could not create instance of event type '{eventInstanceType}'.",
+                    dbEvent);
+            }
 
-        return (IEvent)eventInstance;
+            return (IEvent)eventInstance;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is EventMaterializationException inner)
+        {
+            throw inner;
+        }
+        catch (Exception ex)
+        {
+            throw new EventMaterializationException(
+                $"Could not create instance of event type '{eventInstanceType}'.",
+                dbEvent,
+                ex);
+        }
     }
 }
 

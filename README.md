@@ -45,6 +45,20 @@ services.AddEventStore(builder =>
 
 Projection and subscription daemons require an `IDistributedLockProvider`. Register any implementation (Redis, SQL Server, Postgres, etc.) in DI.
 
+## Event type names
+
+EventStore now persists a logical event type name in `DbEvent.TypeName`. By default, it uses snake_case based on the CLR type name (for example, `UserCreated` becomes `user_created`).
+
+- Register custom names when needed: `builder.AddEvent<UserCreated>("user_created_v2")`.
+- If you do not register an event, the default snake_case name is used automatically on write.
+- Event materialization throws `EventMaterializationException` if the event type cannot be resolved.
+
+### Migration steps
+
+1. Add a `TypeName` column (NOT NULL, default empty string) to the `Events` table.
+2. Deploy the library update and run `await dbContext.BackfillEventTypeNamesAsync()` to populate missing values.
+3. Optionally tighten constraints (remove the default or enforce non-empty values) once backfill is complete.
+
 ## Project guidelines
 
 - Keep public APIs small, composable, and backwards compatible.

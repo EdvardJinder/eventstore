@@ -23,9 +23,9 @@ public class EventExtensionsTests
             Data = "{}"
         };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => dbEvent.ToEvent());
+        var exception = Assert.Throws<EventMaterializationException>(() => dbEvent.ToEvent());
 
-        Assert.Contains("Could not load event type", exception.Message);
+        Assert.Contains("Could not resolve event type", exception.Message);
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class EventExtensionsTests
             Data = "null"
         };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => dbEvent.ToEvent());
+        var exception = Assert.Throws<EventMaterializationException>(() => dbEvent.ToEvent());
 
         Assert.Contains("Could not deserialize event data", exception.Message);
     }

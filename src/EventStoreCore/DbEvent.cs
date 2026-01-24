@@ -31,6 +31,11 @@ public sealed class DbEvent
     public string Type { get; set; } = string.Empty;
 
     /// <summary>
+    /// The logical event type name used for compatibility across renamed namespaces.
+    /// </summary>
+    public string TypeName { get; set; } = string.Empty;
+
+    /// <summary>
     /// The serialized event payload.
     /// </summary>
     public string Data { get; set; } = string.Empty;

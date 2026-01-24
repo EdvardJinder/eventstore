@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EventStoreCore;
 
@@ -18,6 +19,8 @@ public static class EventStoreExtensions
        Action<IEventStoreBuilder>? configure = null
            )
     {
+        services.TryAddSingleton(sp => new EventTypeRegistry(sp.GetServices<EventTypeRegistration>()));
+
         EventStoreBuilder builder = new EventStoreBuilder(services);
 
         configure?.Invoke(builder);

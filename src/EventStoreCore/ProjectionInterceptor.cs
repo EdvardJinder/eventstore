@@ -64,6 +64,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
             .Where(e => e.State is EntityState.Added or EntityState.Modified)
             .ToList();
 
+        var registry = _serviceProvider.GetService<EventTypeRegistry>();
         var handledEvents = new List<DbEvent>();
 
         foreach (var stream in streams)
@@ -71,7 +72,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
             var events = db.ChangeTracker.Entries<DbEvent>()
                 .Where(e => e.State is EntityState.Added && e.Entity.StreamId == stream.Entity.Id)
                 .OrderBy(e => e.Entity.Version)
-                .Select(e => new { Entry = e, Event = e.Entity.ToEvent() })
+                .Select(e => new { Entry = e, Event = e.Entity.ToEvent(registry) })
                 .Where(e => _options.IsHandeled(e.Event.EventType))
                 .ToArray();
 

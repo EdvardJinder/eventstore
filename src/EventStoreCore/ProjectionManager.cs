@@ -249,12 +249,16 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             return null;
         }
 
+        var eventTypeName = string.IsNullOrWhiteSpace(dbEvent.TypeName)
+            ? dbEvent.Type
+            : dbEvent.TypeName;
+
         return new FailedEventDto(
             dbEvent.EventId,
             dbEvent.StreamId,
             dbEvent.Version,
             dbEvent.Sequence,
-            dbEvent.Type,
+            eventTypeName,
             dbEvent.Data,
             dbEvent.Timestamp,
             status.LastError ?? "Unknown error"
