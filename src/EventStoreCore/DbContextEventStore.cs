@@ -33,6 +33,28 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         return new DbContextStream<T>(stream, db);
     }
 
+    public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default)
+    {
+        var stream = await db.Set<DbStream>()
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .Include(x => x.Events.Where(x => x.Version <= version))
+            .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+        if (stream is null) return null;
+        return new DbContextStream(stream);
+    }
+
+    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    {
+        var stream = await db.Set<DbStream>()
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .Include(x => x.Events.Where(x => x.Version <= version))
+            .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+        if (stream is null) return null;
+        return new DbContextStream<T>(stream);
+    }
+
     /// <inheritdoc />
     public async Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
     {

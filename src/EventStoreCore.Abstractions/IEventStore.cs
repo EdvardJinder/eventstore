@@ -55,6 +55,15 @@ public interface IEventStore
     Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Fetches a stream for reading events without mutation.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Fetches a typed stream for reading events without mutation.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
@@ -63,6 +72,17 @@ public interface IEventStore
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
     /// <returns>The read-only stream, or null when it does not exist.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
+        where T : IState, new();
+
+    /// <summary>
+    /// Fetches a typed stream for reading events without mutation.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
+    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default)
         where T : IState, new();
 }
 

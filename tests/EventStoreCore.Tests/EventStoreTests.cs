@@ -87,8 +87,26 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.Equal(3, readStream!.Events.Count);
     }
 
+    [Fact]
+    public async Task CanReadToVersion()
+    {
+        var dbContext = eventStoreFixture.Context;
+        var eventStore = dbContext.Streams;
+        var id = Guid.NewGuid();
+        eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync(id, version: 2, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(stream);
+        Assert.Equal(2, stream!.Events.Count);
+
+        // Verify that the events are the first two events
+        Assert.IsType<IEvent<TestEvent>>(stream.Events[0], exactMatch: false);
+        Assert.IsType<IEvent<TestRecordEvent>>(stream.Events[1], exactMatch: false);
+
+    }
+
     [Fact] 
-    async Task CanReadEvents()
+    public async Task CanReadEvents()
     {
         var dbContext = eventStoreFixture.Context;
         var eventStore = dbContext.Streams;
@@ -113,7 +131,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     }
 
     [Fact]
-    async Task CanBuildState()
+    public async Task CanBuildState()
     {
         var dbContext = eventStoreFixture.Context;
         var eventStore = dbContext.Streams;
