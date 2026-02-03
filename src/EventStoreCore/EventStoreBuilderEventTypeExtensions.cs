@@ -50,6 +50,6 @@ public static class EventStoreBuilderEventTypeExtensions
     private static void RegisterEvent(IEventStoreBuilder builder, Type eventType, string eventTypeName)
     {
         builder.Services.TryAddSingleton(sp => new EventTypeRegistry(sp.GetServices<EventTypeRegistration>()));
-        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton(new EventTypeRegistration(eventType, eventTypeName)));
+        builder.Services.AddSingleton(new EventTypeRegistration(eventType, eventTypeName));
     }
 }
