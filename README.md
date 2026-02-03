@@ -56,8 +56,8 @@ EventStore now persists a logical event type name in `DbEvent.TypeName`. By defa
 ### Migration steps
 
 1. Add a `TypeName` column (NOT NULL, default empty string) to the `Events` table.
-2. Deploy the library update and run `await dbContext.BackfillEventTypeNamesAsync()` to populate missing values.
-3. Optionally tighten constraints (remove the default or enforce non-empty values) once backfill is complete.
+2. Populate `TypeName` for existing rows using your preferred backfill process.
+3. Optionally tighten constraints (remove the default or enforce non-empty values) once values are populated.
 
 ## Project guidelines
 

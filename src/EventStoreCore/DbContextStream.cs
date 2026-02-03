@@ -30,7 +30,21 @@ public class DbContextStream : IStream
     public DbContextStream(DbStream dbStream, DbContext db) : this(dbStream)
     {
         ArgumentNullException.ThrowIfNull(db);
-        _registry = db.GetService<EventTypeRegistry>();
+
+        var options = db.GetService<IDbContextOptions>();
+        var appProvider = options.Extensions
+            .OfType<CoreOptionsExtension>()
+            .FirstOrDefault()
+            ?.ApplicationServiceProvider;
+
+        if (appProvider is null)
+        {
+            return;
+        }
+
+        _registry = appProvider.GetService(typeof(EventTypeRegistry)) as EventTypeRegistry
+            ?? throw new InvalidOperationException(
+                "EventTypeRegistry is not registered. Call services.AddEventStore() before using the event store.");
     }
 
     /// <summary>
