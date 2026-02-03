@@ -26,9 +26,14 @@ public sealed class DbEvent
     public long Sequence { get; set; }
 
     /// <summary>
-    /// The assembly-qualified name of the event payload type.
+    /// Required. The assembly-qualified name of the event payload type.
     /// </summary>
-    public string Type { get; set; } = string.Empty;
+    public required string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The logical event type name used for compatibility across renamed namespaces.
+    /// </summary>
+    public string TypeName { get; set; } = string.Empty;
 
     /// <summary>
     /// The serialized event payload.

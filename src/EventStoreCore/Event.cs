@@ -12,14 +12,26 @@ public class Event : IEvent
     /// </summary>
     /// <param name="dbEvent">The database event record.</param>
     public Event(DbEvent dbEvent)
+        : this(dbEvent, EventTypeResolver.ResolveEventType(dbEvent, null))
     {
+    }
+
+    /// <summary>
+    /// Creates an event wrapper for a persisted event using a resolved CLR type.
+    /// </summary>
+    /// <param name="dbEvent">The database event record.</param>
+    /// <param name="eventType">The resolved CLR type.</param>
+    public Event(DbEvent dbEvent, Type eventType)
+    {
+        ArgumentNullException.ThrowIfNull(dbEvent);
+        ArgumentNullException.ThrowIfNull(eventType);
         Id = dbEvent.EventId;
         StreamId = dbEvent.StreamId;
         Version = dbEvent.Version;
         Timestamp = dbEvent.Timestamp;
         TenantId = dbEvent.TenantId;
-        EventType = Type.GetType(dbEvent.Type!)!;
-        Data = System.Text.Json.JsonSerializer.Deserialize(dbEvent.Data, EventType)!;
+        EventType = eventType;
+        Data = Deserialize(dbEvent, eventType);
     }
 
     /// <summary>
@@ -56,6 +68,33 @@ public class Event : IEvent
     /// The CLR type of the event payload.
     /// </summary>
     public Type EventType { get; }
+
+    private static object Deserialize(DbEvent dbEvent, Type eventType)
+    {
+        try
+        {
+            var data = System.Text.Json.JsonSerializer.Deserialize(dbEvent.Data, eventType);
+            if (data is null)
+            {
+                throw new EventMaterializationException(
+                    $"Could not deserialize event data to type '{eventType.FullName ?? eventType.Name}'.",
+                    dbEvent);
+            }
+
+            return data;
+        }
+        catch (EventMaterializationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new EventMaterializationException(
+                $"Could not deserialize event data to type '{eventType.FullName ?? eventType.Name}'.",
+                dbEvent,
+                ex);
+        }
+    }
 }
 
 /// <summary>
@@ -70,12 +109,34 @@ public class Event<T> : Event, IEvent<T> where T : class
     /// <param name="dbEvent">The database event record.</param>
     public Event(DbEvent dbEvent) : base(dbEvent)
     {
-        Data = System.Text.Json.JsonSerializer.Deserialize<T>(dbEvent.Data)!;
+        Data = CastData(dbEvent, base.Data);
+    }
+
+    /// <summary>
+    /// Creates a typed event wrapper using a resolved CLR type.
+    /// </summary>
+    /// <param name="dbEvent">The database event record.</param>
+    /// <param name="eventType">The resolved CLR type.</param>
+    public Event(DbEvent dbEvent, Type eventType) : base(dbEvent, eventType)
+    {
+        Data = CastData(dbEvent, base.Data);
     }
 
     /// <summary>
     /// The event payload.
     /// </summary>
     public new T Data { get; }
+
+    private static T CastData(DbEvent dbEvent, object data)
+    {
+        if (data is T typed)
+        {
+            return typed;
+        }
+
+        throw new EventMaterializationException(
+            $"Could not deserialize event data to type '{typeof(T).FullName ?? typeof(T).Name}'.",
+            dbEvent);
+    }
 }
 

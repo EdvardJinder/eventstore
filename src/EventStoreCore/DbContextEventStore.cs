@@ -18,7 +18,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream(stream);
+        return new DbContextStream(stream, db);
     }
 
     /// <inheritdoc />
@@ -30,7 +30,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
          .Include(x => x.Events)
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream<T>(stream);
+        return new DbContextStream<T>(stream, db);
     }
 
     public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default)
@@ -63,7 +63,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream(stream);
+        return new DbContextStream(stream, db);
     }
 
     /// <inheritdoc />
@@ -74,7 +74,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
           .Include(x => x.Events)
           .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream<T>(stream);
+        return new DbContextStream<T>(stream, db);
     }
 
     /// <inheritdoc />
@@ -89,7 +89,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             TenantId = tenantId
         };
         db.Add(dbStream);
-        var stream = new DbContextStream(dbStream);
+        var stream = new DbContextStream(dbStream, db);
 
         stream.Append(events);
         return stream;
@@ -107,7 +107,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             TenantId = tenantId
         };
         db.Add(dbStream);
-        var stream = new DbContextStream<T>(dbStream);
+        var stream = new DbContextStream<T>(dbStream, db);
 
         stream.Append(events);
         return stream;

@@ -133,7 +133,8 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 return false;
             }
 
-            var @event = nextEvent.ToEvent();
+            var registry = scope.ServiceProvider.GetService<EventTypeRegistry>();
+            var @event = nextEvent.ToEvent(registry);
 
             if (subscriptionImpl is IScopedSubscription scoped)
             {

@@ -303,6 +303,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             return false;
         }
 
+        var registry = _serviceProvider.GetService<EventTypeRegistry>();
+
         _logger.LogDebug(
             "Processing batch of {Count} events for projection {Projection} starting from sequence {Sequence}",
             events.Count, projection.Name, events[0].Sequence);
@@ -313,7 +315,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         {
             foreach (var dbEvent in events)
             {
-                var @event = dbEvent.ToEvent();
+                var @event = dbEvent.ToEvent(registry);
 
                 // Check if this event type is handled by the projection
                 if (!projection.Options.IsHandeled(@event.EventType))
