@@ -11,29 +11,40 @@ internal static class EventTypeResolver
             throw new EventMaterializationException("Event type is required.", dbEvent);
         }
 
-        var eventType = Type.GetType(dbEvent.Type);
+        Type? eventType;
+        try
+        {
+            eventType = Type.GetType(dbEvent.Type);
+        }
+        catch (Exception ex)
+        {
+            throw new EventMaterializationException(
+                $"Could not resolve event type from malformed Type string '{dbEvent.Type}'.",
+                dbEvent,
+                ex);
+        }
+
         if (eventType is not null)
         {
-            if (registry is not null && !string.IsNullOrWhiteSpace(dbEvent.TypeName))
+            if (registry is not null
+                && !string.IsNullOrWhiteSpace(dbEvent.TypeName)
+                && registry.TryGetType(dbEvent.TypeName, out var mappedType)
+                && mappedType != eventType)
             {
-                if (registry.TryGetType(dbEvent.TypeName, out var mappedType) && mappedType != eventType)
-                {
-                    throw new EventMaterializationException(
-                        $"Event type name '{dbEvent.TypeName}' is registered for '{mappedType.FullName ?? mappedType.Name}', " +
-                        $"but event record contains '{eventType.FullName ?? eventType.Name}'.",
-                        dbEvent);
-                }
+                throw new EventMaterializationException(
+                    $"Event type name '{dbEvent.TypeName}' is registered for '{mappedType.FullName ?? mappedType.Name}', " +
+                    $"but event record contains '{eventType.FullName ?? eventType.Name}'.",
+                    dbEvent);
             }
 
             return eventType;
         }
 
-        if (registry is not null && !string.IsNullOrWhiteSpace(dbEvent.TypeName))
+        if (registry is not null
+            && !string.IsNullOrWhiteSpace(dbEvent.TypeName)
+            && registry.TryGetType(dbEvent.TypeName, out var registryType))
         {
-            if (registry.TryGetType(dbEvent.TypeName, out var mappedType))
-            {
-                return mappedType;
-            }
+            return registryType;
         }
 
         throw new EventMaterializationException(

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
@@ -45,7 +46,8 @@ public static class EventExtensions
         }
         catch (TargetInvocationException ex) when (ex.InnerException is EventMaterializationException inner)
         {
-            throw inner;
+            ExceptionDispatchInfo.Capture(inner).Throw();
+            throw; // Unreachable, but required for compiler
         }
         catch (Exception ex)
         {
