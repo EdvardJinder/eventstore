@@ -47,7 +47,7 @@ public static class EventExtensions
         catch (TargetInvocationException ex) when (ex.InnerException is EventMaterializationException inner)
         {
             ExceptionDispatchInfo.Capture(inner).Throw();
-            throw; // Unreachable, but required for compiler
+            throw; // Required for compiler control flow analysis
         }
         catch (Exception ex)
         {
