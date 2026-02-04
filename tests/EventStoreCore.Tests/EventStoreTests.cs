@@ -95,7 +95,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var stream = await eventStore.FetchForReadingAsync(id, version: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync(id, tenantId: default, streamType: "", version: 2, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
         Assert.Equal(2, stream!.Events.Count);
 
