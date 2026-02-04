@@ -59,6 +59,37 @@ EventStore now persists a logical event type name in `DbEvent.TypeName`. By defa
 2. Populate `TypeName` for existing rows using your preferred backfill process.
 3. Optionally tighten constraints (remove the default or enforce non-empty values) once values are populated.
 
+## Stream types
+
+EventStore supports multiple streams with the same ID but different types, enabling scenarios like:
+- Document upload/lifecycle stream and document analysis stream sharing the same document ID
+- Order processing stream and order audit stream sharing the same order ID
+
+Use the optional `streamType` parameter in `IEventStore` methods:
+
+```csharp
+// Create different stream types with the same ID
+var docId = Guid.NewGuid();
+eventStore.StartStream(docId, streamType: "document-lifecycle", events: [new DocumentCreated()]);
+eventStore.StartStream(docId, streamType: "document-analysis", events: [new AnalysisStarted()]);
+
+// Fetch specific stream types
+var lifecycleStream = await eventStore.FetchForReadingAsync(docId, streamType: "document-lifecycle");
+var analysisStream = await eventStore.FetchForReadingAsync(docId, streamType: "document-analysis");
+```
+
+**Default behavior**: If `streamType` is not specified, it defaults to an empty string `""`, maintaining backwards compatibility.
+
+### Migration steps for existing databases
+
+1. Add a `StreamType` column (NOT NULL, default empty string) to both the `Streams` and `Events` tables.
+2. Update the primary key on `Streams` from `Id` to `(Id, StreamType)`.
+3. Update the primary key on `Events` from `(StreamId, Version)` to `(StreamId, StreamType, Version)`.
+4. Update the foreign key relationship between `Events` and `Streams` to include `StreamType`.
+5. Update indexes to include `StreamType` where appropriate.
+
+**Note**: Changing primary keys in existing databases requires careful migration planning. Consider the impact on your application and data before applying these changes.
+
 ## Project guidelines
 
 - Keep public APIs small, composable, and backwards compatible.
