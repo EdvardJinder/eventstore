@@ -35,22 +35,28 @@ public class EventStoreFixture : PostgresFixture, IAsyncLifetime
     }
     
     private EventStoreDbContext _context = null!;
+    private DbContextOptions<EventStoreDbContext> _options = null!;
     
     public EventStoreDbContext Context
     {
         get => _context;
         private set => _context = value;
     }
+    
+    public EventStoreDbContext CreateNewContext()
+    {
+        return new EventStoreDbContext(_options);
+    }
 
     public new async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 
-        var options = new DbContextOptionsBuilder<EventStoreDbContext>()
+        _options = new DbContextOptionsBuilder<EventStoreDbContext>()
            .UseNpgsql(_postgreSqlContainer.GetConnectionString())
            .Options;
 
-        Context = new EventStoreDbContext(options);
+        Context = new EventStoreDbContext(_options);
 
         // Ensure database is deleted and recreated to pick up schema changes
         await Context.Database.EnsureDeletedAsync();

@@ -55,36 +55,68 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     [Fact]
     public async Task CanAppendToStream()
     {
-        var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
         var id = Guid.NewGuid();
-        eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
-        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var stream = await eventStore.FetchForWritingAsync(id, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(stream);
-        stream!.Append(new TestEvent { Name = "Jane Doe" });
-        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var readStream = await eventStore.FetchForReadingAsync(id, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(readStream);
-        Assert.Equal(3, readStream!.Events.Count);
+        
+        // Use one context to create the stream
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent()]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Use a fresh context to append
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var stream = await eventStore.FetchForWritingAsync(id, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(stream);
+            stream!.Append(new TestEvent { Name = "Jane Doe" });
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Use yet another context to verify
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var readStream = await eventStore.FetchForReadingAsync(id, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(readStream);
+            Assert.Equal(3, readStream!.Events.Count);
+        }
     }
 
     [Fact]
     public async Task CanAppendToStreamWithTenantId()
     {
         Guid tenantId = Guid.NewGuid();
-        var dbContext = eventStoreFixture.Context;
-        var eventStore = dbContext.Streams;
         var id = Guid.NewGuid();
-        eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
-        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var stream = await eventStore.FetchForWritingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(stream);
-        stream!.Append(new TestEvent { Name = "Jane Doe" });
-        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var readStream = await eventStore.FetchForReadingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(readStream);
-        Assert.Equal(3, readStream!.Events.Count);
+        
+        // Use one context to create the stream
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Use a fresh context to append
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var stream = await eventStore.FetchForWritingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(stream);
+            stream!.Append(new TestEvent { Name = "Jane Doe" });
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Use yet another context to verify
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var readStream = await eventStore.FetchForReadingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(readStream);
+            Assert.Equal(3, readStream!.Events.Count);
+        }
     }
 
     [Fact]
@@ -95,7 +127,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var id = Guid.NewGuid();
         eventStore.StartStream(id, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var stream = await eventStore.FetchForReadingAsync(id, tenantId: default, streamType: "", version: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync(id, version: 2, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
         Assert.Equal(2, stream!.Events.Count);
 
@@ -253,7 +285,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         eventStore.StartStream(id, streamType: streamType, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var stream = await eventStore.FetchForReadingAsync(id, tenantId: default, streamType: streamType, version: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync(id, streamType: streamType, version: 2, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
         Assert.Equal(2, stream!.Events.Count);
     }
