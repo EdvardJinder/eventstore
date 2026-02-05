@@ -114,6 +114,8 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         TestConsumer.HandledEvents.Clear();
         TestConsumer2.HandledEvents.Clear();
 
+        const string expectedName = "TestName";
+
         var services = new ServiceCollection();
         services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddEventStore(c =>
@@ -149,7 +151,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
 
         var eventStore = eventStoreDbContext.Streams;
         var streamId = Guid.NewGuid();
-        var testEvent = new TestEvent { Id = Guid.NewGuid(), Name = "TestName" };
+        var testEvent = new TestEvent { Id = Guid.NewGuid(), Name = expectedName };
         eventStore.StartStream(streamId, events: [testEvent]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
@@ -173,6 +175,6 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         Assert.Single(TestConsumer2.HandledEvents);
         Assert.Equal(testEvent.Id, TestConsumer.HandledEvents[0].Id);
         Assert.Equal(testEvent.Id, TestConsumer2.HandledEvents[0].Id);
-        Assert.Equal(testEvent.Name, TestConsumer2.HandledEvents[0].Name);
+        Assert.Equal(expectedName, TestConsumer2.HandledEvents[0].Name);
     }
 }

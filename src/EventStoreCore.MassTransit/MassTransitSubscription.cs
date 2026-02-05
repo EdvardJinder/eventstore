@@ -56,7 +56,7 @@ internal class MassTransitSubscription : ISubscription
 
             if(eventData is null)
             {
-                logger.LogError("Transform returned null for {EventType}", @event.EventType);
+                logger.LogError("Transform returned null for {EventType} (output type: {OutType})", @event.EventType, outType);
                 continue;
             }
 
