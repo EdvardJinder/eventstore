@@ -41,26 +41,29 @@ internal class MassTransitSubscription : ISubscription
         var options = scope.ServiceProvider.GetRequiredService<IOptions<EventTransformerOptions>>();
         var handlers = options.Value.Handlers;
 
-        if(!handlers.TryGetValue(@event.EventType, out var handler))
+        if(!handlers.TryGetValue(@event.EventType, out var handlerList))
         {
             logger.LogDebug("No handler for {EventType}", @event.EventType);
             return;
         }
 
-        var outType = handler.Out;
-        var transform = handler.Transform;
-
-        var eventData = transform(@event);
-
-        if(eventData is null)
+        foreach (var handler in handlerList)
         {
-            logger.LogError("Transform returned null for {EventType}", @event.EventType);
-            return;
-        }
+            var outType = handler.Out;
+            var transform = handler.Transform;
 
-        logger.LogDebug("Publishing transformed event for {EventType}", @event.EventType);
-        await bus.Publish(eventData, outType, ct);
-        logger.LogDebug("Published transformed event successfully");
+            var eventData = transform(@event);
+
+            if(eventData is null)
+            {
+                logger.LogError("Transform returned null for {EventType}", @event.EventType);
+                continue;
+            }
+
+            logger.LogDebug("Publishing transformed event for {EventType}", @event.EventType);
+            await bus.Publish(eventData, outType, ct);
+            logger.LogDebug("Published transformed event successfully");
+        }
 
     }
 }
