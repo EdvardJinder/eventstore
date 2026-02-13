@@ -43,6 +43,7 @@ internal static class ModelBuilderExtensions
             entity.HasMany(e => e.Events)
                 .WithOne()
                 .HasForeignKey(e => new { e.StreamId, e.StreamType, e.TenantId })
+                .HasPrincipalKey(e => new { e.Id, e.StreamType, e.TenantId })
                 .OnDelete(DeleteBehavior.Cascade);
 
         });
