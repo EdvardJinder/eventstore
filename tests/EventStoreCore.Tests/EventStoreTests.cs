@@ -289,5 +289,56 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.NotNull(stream);
         Assert.Equal(2, stream!.Events.Count);
     }
+
+    [Fact]
+    public async Task MultipleTenantsCanHaveSameStreamIdAndType()
+    {
+        // This test verifies that the primary key includes TenantId,
+        // allowing different tenants to have streams with identical Id and StreamType
+        var streamId = Guid.NewGuid();
+        var streamType = "shared-type";
+        var tenant1Id = Guid.NewGuid();
+        var tenant2Id = Guid.NewGuid();
+        
+        // Create stream for tenant 1
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            eventStore.StartStream(streamType, streamId, tenant1Id, events: [new TestEvent { Name = "Tenant 1 Event" }]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Create stream with same Id and StreamType for tenant 2 (should not throw)
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            eventStore.StartStream(streamType, streamId, tenant2Id, events: [new TestEvent { Name = "Tenant 2 Event" }]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Verify tenant 1 stream
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var stream1 = await eventStore.FetchForReadingAsync(streamType, streamId, tenant1Id, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(stream1);
+            Assert.Single(stream1!.Events);
+            var event1 = stream1.Events[0] as IEvent<TestEvent>;
+            Assert.NotNull(event1);
+            Assert.Equal("Tenant 1 Event", event1!.Data.Name);
+        }
+        
+        // Verify tenant 2 stream
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var stream2 = await eventStore.FetchForReadingAsync(streamType, streamId, tenant2Id, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(stream2);
+            Assert.Single(stream2!.Events);
+            var event2 = stream2.Events[0] as IEvent<TestEvent>;
+            Assert.NotNull(event2);
+            Assert.Equal("Tenant 2 Event", event2!.Data.Name);
+        }
+    }
 }
 

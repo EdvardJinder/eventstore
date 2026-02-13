@@ -11,7 +11,7 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Streams");
 
-            entity.HasKey(e => new { e.Id, e.StreamType });
+            entity.HasKey(e => new { e.Id, e.StreamType, e.TenantId });
 
             entity.Property(e => e.Id)
                     .IsRequired();
@@ -33,9 +33,6 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => e.TenantId);
 
-            entity.HasIndex(e => new { e.TenantId, e.Id, e.StreamType })
-                .IsUnique();
-
             entity.HasIndex(e => new { e.TenantId, e.StreamType, e.CurrentVersion });
 
             entity.HasIndex(e => new { e.TenantId, e.StreamType, e.UpdatedTimestamp });
@@ -54,7 +51,7 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Events");
 
-            entity.HasKey(e => new { e.StreamId, e.StreamType, e.Version });
+            entity.HasKey(e => new { e.StreamId, e.StreamType, e.TenantId, e.Version });
 
             entity.HasAlternateKey(e => e.EventId);
 
