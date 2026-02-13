@@ -95,7 +95,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            eventStore.StartStream(string.Empty, id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
+            eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
         
@@ -103,7 +103,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            var stream = await eventStore.FetchForWritingAsync(string.Empty, id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            var stream = await eventStore.FetchForWritingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(stream);
             stream!.Append(new TestEvent { Name = "Jane Doe" });
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -113,7 +113,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            var readStream = await eventStore.FetchForReadingAsync(string.Empty, id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            var readStream = await eventStore.FetchForReadingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(readStream);
             Assert.Equal(3, readStream!.Events.Count);
         }
