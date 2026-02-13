@@ -16,6 +16,11 @@ public sealed class DbEvent
     public Guid StreamId { get; set; }
 
     /// <summary>
+    /// The stream type for distinguishing multiple streams with the same ID.
+    /// </summary>
+    public string StreamType { get; set; } = string.Empty;
+
+    /// <summary>
     /// The event version within the stream.
     /// </summary>
     public long Version { get; set; }

@@ -16,6 +16,11 @@ public sealed class DbStream
     public Guid Id { get; set; }
 
     /// <summary>
+    /// The stream type for distinguishing multiple streams with the same ID.
+    /// </summary>
+    public string StreamType { get; set; } = string.Empty;
+
+    /// <summary>
     /// The current version of the stream.
     /// </summary>
     public long CurrentVersion { get; set; }

@@ -75,6 +75,7 @@ public class DbContextStream : IStream
             {
                 TenantId = _dbStream.TenantId,
                 StreamId = _dbStream.Id,
+                StreamType = _dbStream.StreamType,
                 Version = ++_dbStream.CurrentVersion,
                 Type = eventType.AssemblyQualifiedName!,
                 TypeName = typeName,

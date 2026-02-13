@@ -10,11 +10,23 @@ namespace EventStoreCore;
 public sealed class DbContextEventStore(DbContext db) : IEventStore
 {
     /// <inheritdoc />
-    public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(string.Empty, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(string.Empty, streamId, tenantId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(streamType, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId)
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -22,33 +34,71 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(string.Empty, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(string.Empty, streamId, tenantId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(streamType, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
          .AsNoTracking()
-         .Where(x => x.TenantId == tenantId)
+         .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
          .Include(x => x.Events)
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
         return new DbContextStream<T>(stream, db);
     }
 
-    public async Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(string.Empty, streamId, Guid.Empty, version, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(string.Empty, streamId, tenantId, version, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, long version, CancellationToken cancellationToken = default)
+        => FetchForReadingAsync(streamType, streamId, Guid.Empty, version, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId)
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events.Where(x => x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
         return new DbContextStream(stream);
     }
 
-    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, long version, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    /// <inheritdoc />
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, long version, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(string.Empty, streamId, Guid.Empty, version, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(string.Empty, streamId, tenantId, version, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, long version, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForReadingAsync<T>(streamType, streamId, Guid.Empty, version, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId)
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events.Where(x => x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -56,10 +106,22 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     }
 
     /// <inheritdoc />
-    public async Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default)
+    public Task<IStream?> FetchForWritingAsync(Guid streamId, CancellationToken cancellationToken = default)
+        => FetchForWritingAsync(string.Empty, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
+        => FetchForWritingAsync(string.Empty, streamId, tenantId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, CancellationToken cancellationToken = default)
+        => FetchForWritingAsync(streamType, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var stream = await db.Set<DbStream>()
-            .Where(x => x.TenantId == tenantId)
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -67,10 +129,22 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     }
 
     /// <inheritdoc />
-    public async Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId = default, CancellationToken cancellationToken = default) where T : IState, new()
+    public Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForWritingAsync<T>(string.Empty, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForWritingAsync<T>(string.Empty, streamId, tenantId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, CancellationToken cancellationToken = default) where T : IState, new()
+        => FetchForWritingAsync<T>(streamType, streamId, Guid.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
     {
         var stream = await db.Set<DbStream>()
-          .Where(x => x.TenantId == tenantId)
+          .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
           .Include(x => x.Events)
           .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -78,11 +152,24 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     }
 
     /// <inheritdoc />
-    public IStream StartStream(Guid streamId, Guid tenantId = default, params IEnumerable<object> events)
+    public IStream StartStream(Guid streamId, params IEnumerable<object> events)
+        => StartStream(string.Empty, streamId, Guid.Empty, events);
+
+    /// <inheritdoc />
+    public IStream StartStream(Guid streamId, Guid tenantId, params IEnumerable<object> events)
+        => StartStream(string.Empty, streamId, tenantId, events);
+
+    /// <inheritdoc />
+    public IStream StartStream(string streamType, Guid streamId, params IEnumerable<object> events)
+        => StartStream(streamType, streamId, Guid.Empty, events);
+
+    /// <inheritdoc />
+    public IStream StartStream(string streamType, Guid streamId, Guid tenantId, params IEnumerable<object> events)
     {
         var dbStream = new DbStream
         {
             Id = streamId,
+            StreamType = streamType,
             CurrentVersion = 0,
             CreatedTimestamp = DateTime.UtcNow,
             UpdatedTimestamp = DateTime.UtcNow,
@@ -96,11 +183,24 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     }
 
     /// <inheritdoc />
-    public IStream<T> StartStream<T>(Guid streamId, Guid tenantId = default, params IEnumerable<object> events) where T : IState, new()
+    public IStream<T> StartStream<T>(Guid streamId, params IEnumerable<object> events) where T : IState, new()
+        => StartStream<T>(string.Empty, streamId, Guid.Empty, events);
+
+    /// <inheritdoc />
+    public IStream<T> StartStream<T>(Guid streamId, Guid tenantId, params IEnumerable<object> events) where T : IState, new()
+        => StartStream<T>(string.Empty, streamId, tenantId, events);
+
+    /// <inheritdoc />
+    public IStream<T> StartStream<T>(string streamType, Guid streamId, params IEnumerable<object> events) where T : IState, new()
+        => StartStream<T>(streamType, streamId, Guid.Empty, events);
+
+    /// <inheritdoc />
+    public IStream<T> StartStream<T>(string streamType, Guid streamId, Guid tenantId, params IEnumerable<object> events) where T : IState, new()
     {
         var dbStream = new DbStream
         {
             Id = streamId,
+            StreamType = streamType,
             CurrentVersion = 0,
             CreatedTimestamp = DateTime.UtcNow,
             UpdatedTimestamp = DateTime.UtcNow,
