@@ -65,20 +65,24 @@ EventStore supports multiple streams with the same ID but different types, enabl
 - Document upload/lifecycle stream and document analysis stream sharing the same document ID
 - Order processing stream and order audit stream sharing the same order ID
 
-Use the optional `streamType` parameter in `IEventStore` methods:
+Stream type is specified as the first parameter when calling `IEventStore` methods:
 
 ```csharp
 // Create different stream types with the same ID
 var docId = Guid.NewGuid();
-eventStore.StartStream(docId, streamType: "document-lifecycle", events: [new DocumentCreated()]);
-eventStore.StartStream(docId, streamType: "document-analysis", events: [new AnalysisStarted()]);
+eventStore.StartStream("document-lifecycle", docId, events: [new DocumentCreated()]);
+eventStore.StartStream("document-analysis", docId, events: [new AnalysisStarted()]);
 
 // Fetch specific stream types
-var lifecycleStream = await eventStore.FetchForReadingAsync(docId, streamType: "document-lifecycle");
-var analysisStream = await eventStore.FetchForReadingAsync(docId, streamType: "document-analysis");
+var lifecycleStream = await eventStore.FetchForReadingAsync("document-lifecycle", docId);
+var analysisStream = await eventStore.FetchForReadingAsync("document-analysis", docId);
+
+// Default stream type (empty string)
+eventStore.StartStream(docId, events: [new SomeEvent()]);
+var stream = await eventStore.FetchForReadingAsync(docId);
 ```
 
-**Default behavior**: If `streamType` is not specified, it defaults to an empty string `""`, maintaining backwards compatibility.
+**Default behavior**: Overloads without `streamType` default to an empty string `""`, maintaining backwards compatibility.
 
 ### Migration steps for existing databases
 

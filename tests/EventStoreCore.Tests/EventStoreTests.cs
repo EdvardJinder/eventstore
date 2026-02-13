@@ -95,7 +95,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            eventStore.StartStream(id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
+            eventStore.StartStream(string.Empty, id, tenantId, events: [new TestEvent(), new TestRecordEvent()]);
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
         
@@ -103,7 +103,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            var stream = await eventStore.FetchForWritingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            var stream = await eventStore.FetchForWritingAsync(string.Empty, id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(stream);
             stream!.Append(new TestEvent { Name = "Jane Doe" });
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -113,7 +113,7 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         using (var dbContext = eventStoreFixture.CreateNewContext())
         {
             var eventStore = dbContext.Streams;
-            var readStream = await eventStore.FetchForReadingAsync(id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            var readStream = await eventStore.FetchForReadingAsync(string.Empty, id, tenantId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(readStream);
             Assert.Equal(3, readStream!.Events.Count);
         }
@@ -201,16 +201,16 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var id = Guid.NewGuid();
 
         // Create first stream with type "document-upload"
-        eventStore.StartStream(id, streamType: "document-upload", events: [new TestEvent { Name = "Upload Event" }]);
+        eventStore.StartStream("document-upload", id, events: [new TestEvent { Name = "Upload Event" }]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Create second stream with same ID but type "document-analysis"
-        eventStore.StartStream(id, streamType: "document-analysis", events: [new TestEvent { Name = "Analysis Event" }]);
+        eventStore.StartStream("document-analysis", id, events: [new TestEvent { Name = "Analysis Event" }]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Verify both streams exist independently
-        var uploadStream = await eventStore.FetchForReadingAsync(id, streamType: "document-upload", cancellationToken: TestContext.Current.CancellationToken);
-        var analysisStream = await eventStore.FetchForReadingAsync(id, streamType: "document-analysis", cancellationToken: TestContext.Current.CancellationToken);
+        var uploadStream = await eventStore.FetchForReadingAsync("document-upload", id, cancellationToken: TestContext.Current.CancellationToken);
+        var analysisStream = await eventStore.FetchForReadingAsync("document-analysis", id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(uploadStream);
         Assert.NotNull(analysisStream);
@@ -233,17 +233,17 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var streamType = "document-lifecycle";
 
         // Create stream with specific type
-        eventStore.StartStream(id, streamType: streamType, events: [new TestEvent { Name = "Created" }]);
+        eventStore.StartStream(streamType, id, events: [new TestEvent { Name = "Created" }]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Fetch and append more events
-        var stream = await eventStore.FetchForWritingAsync(id, streamType: streamType, cancellationToken: TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForWritingAsync(streamType, id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
         stream!.Append(new TestEvent { Name = "Updated" });
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Verify all events are in the correct stream
-        var readStream = await eventStore.FetchForReadingAsync(id, streamType: streamType, cancellationToken: TestContext.Current.CancellationToken);
+        var readStream = await eventStore.FetchForReadingAsync(streamType, id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(readStream);
         Assert.Equal(2, readStream!.Events.Count);
     }
@@ -256,21 +256,21 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var id = Guid.NewGuid();
 
         // Create two streams with same ID but different types
-        eventStore.StartStream(id, streamType: "type-a", events: [new TestEvent { Name = "Type A Event 1" }]);
-        eventStore.StartStream(id, streamType: "type-b", events: [new TestEvent { Name = "Type B Event 1" }]);
+        eventStore.StartStream("type-a", id, events: [new TestEvent { Name = "Type A Event 1" }]);
+        eventStore.StartStream("type-b", id, events: [new TestEvent { Name = "Type B Event 1" }]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Append to type-a
-        var streamA = await eventStore.FetchForWritingAsync(id, streamType: "type-a", cancellationToken: TestContext.Current.CancellationToken);
+        var streamA = await eventStore.FetchForWritingAsync("type-a", id, cancellationToken: TestContext.Current.CancellationToken);
         streamA!.Append(new TestEvent { Name = "Type A Event 2" });
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Verify type-a has 2 events
-        var readStreamA = await eventStore.FetchForReadingAsync(id, streamType: "type-a", cancellationToken: TestContext.Current.CancellationToken);
+        var readStreamA = await eventStore.FetchForReadingAsync("type-a", id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, readStreamA!.Events.Count);
 
         // Verify type-b still has only 1 event
-        var readStreamB = await eventStore.FetchForReadingAsync(id, streamType: "type-b", cancellationToken: TestContext.Current.CancellationToken);
+        var readStreamB = await eventStore.FetchForReadingAsync("type-b", id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(readStreamB!.Events);
     }
 
@@ -282,10 +282,10 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         var id = Guid.NewGuid();
         var streamType = "versioned-stream";
 
-        eventStore.StartStream(id, streamType: streamType, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
+        eventStore.StartStream(streamType, id, events: [new TestEvent(), new TestRecordEvent(), new TestEvent()]);
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var stream = await eventStore.FetchForReadingAsync(id, streamType: streamType, version: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var stream = await eventStore.FetchForReadingAsync(streamType, id, version: 2, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
         Assert.Equal(2, stream!.Events.Count);
     }
