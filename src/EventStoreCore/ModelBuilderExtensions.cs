@@ -17,8 +17,7 @@ internal static class ModelBuilderExtensions
                     .IsRequired();
 
             entity.Property(e => e.StreamType)
-                .IsRequired()
-                .HasDefaultValue(string.Empty);
+                .IsRequired();
 
             entity.Property(e => e.CurrentVersion);
 
@@ -59,8 +58,7 @@ internal static class ModelBuilderExtensions
                     .IsRequired();
 
             entity.Property(e => e.StreamType)
-                .IsRequired()
-                .HasDefaultValue(string.Empty);
+                .IsRequired();
 
             entity.Property(e => e.Sequence)
                 .ValueGeneratedOnAdd();
