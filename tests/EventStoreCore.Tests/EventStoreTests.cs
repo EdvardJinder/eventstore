@@ -340,5 +340,62 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
             Assert.Equal("Tenant 2 Event", event2!.Data.Name);
         }
     }
+
+    [Fact]
+    public async Task CanAppendToTypedStreamWithSpecificStreamType()
+    {
+        // Reproduces bug: When using typed stream APIs (StartStream<T> + FetchForWritingAsync<T>)
+        // with explicit stream types, the persisted StreamType can end up as empty string
+        var streamId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var streamType = "tenant-lifecycle";
+        
+        // Step 1: Start a stream with explicit stream type using typed API
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            eventStore.StartStream<TestState>(streamType, streamId, tenantId, events: [new TestEvent { Name = "Tenant Registered" }]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        
+        // Step 2: Verify the stream was created with the correct stream type
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var dbStream = await dbContext.Set<DbStream>()
+                .Include(s => s.Events)
+                .FirstOrDefaultAsync(s => s.Id == streamId && s.TenantId == tenantId, TestContext.Current.CancellationToken);
+            
+            Assert.NotNull(dbStream);
+            Assert.Equal(streamType, dbStream!.StreamType); // Should be "tenant-lifecycle", not ""
+            Assert.Single(dbStream.Events);
+            Assert.Equal(streamType, dbStream.Events.First().StreamType); // Event should also have correct stream type
+        }
+        
+        // Step 3: Fetch for writing with explicit stream type using typed API
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var eventStore = dbContext.Streams;
+            var stream = await eventStore.FetchForWritingAsync<TestState>(streamType, streamId, tenantId, cancellationToken: TestContext.Current.CancellationToken);
+            
+            Assert.NotNull(stream);
+            
+            // Step 4: Append event and save
+            stream!.Append(new TestEvent { Name = "Tenant Disabled" });
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken); // Should not throw DbUpdateConcurrencyException
+        }
+        
+        // Step 5: Verify the second event was appended successfully with correct stream type
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            var dbStream = await dbContext.Set<DbStream>()
+                .Include(s => s.Events)
+                .FirstOrDefaultAsync(s => s.Id == streamId && s.TenantId == tenantId && s.StreamType == streamType, TestContext.Current.CancellationToken);
+            
+            Assert.NotNull(dbStream);
+            Assert.Equal(streamType, dbStream!.StreamType);
+            Assert.Equal(2, dbStream.Events.Count);
+            Assert.All(dbStream.Events, e => Assert.Equal(streamType, e.StreamType)); // All events should have correct stream type
+        }
+    }
 }
 
