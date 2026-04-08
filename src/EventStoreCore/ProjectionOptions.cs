@@ -9,7 +9,9 @@ namespace EventStoreCore;
 public sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
+    private readonly HashSet<Type> _ignoredEventTypes = new();
     private bool HandlesAllEvents = true;
+    private bool _ignoreUnknown;
     private int _version = 1;
 
     /// <summary>
@@ -47,12 +49,41 @@ public sealed class ProjectionOptions : IProjectionOptions
     }
 
     /// <summary>
+    /// Excludes a specific event type from processing.
+    /// </summary>
+    /// <typeparam name="T">The event payload type to ignore.</typeparam>
+    public void Ignores<T>() where T : class
+    {
+        _ignoredEventTypes.Add(typeof(T));
+    }
+
+    /// <summary>
+    /// Instructs the projection to skip events whose CLR type cannot be resolved
+    /// instead of throwing an exception.
+    /// </summary>
+    public void IgnoreUnknown()
+    {
+        _ignoreUnknown = true;
+    }
+
+    /// <summary>
+    /// Gets whether unresolvable event types should be silently skipped.
+    /// True when <see cref="IgnoreUnknown"/> was called or the projection uses explicit <see cref="Handles{T}()" /> registration.
+    /// </summary>
+    internal bool ShouldIgnoreUnknown => _ignoreUnknown || !HandlesAllEvents;
+
+    /// <summary>
     /// Checks whether the projection handles the specified event type.
     /// </summary>
     /// <param name="eventType">The CLR event type.</param>
     /// <returns>True when the event type is handled.</returns>
     public bool IsHandeled(Type eventType)
     {
+        if (_ignoredEventTypes.Contains(eventType))
+        {
+            return false;
+        }
+
         return HandlesAllEvents || _handledEventTypes.Contains(eventType);
     }
 

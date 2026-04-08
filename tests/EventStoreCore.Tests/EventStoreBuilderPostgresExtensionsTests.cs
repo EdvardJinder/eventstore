@@ -16,6 +16,8 @@ public class EventStoreBuilderPostgresExtensionsTests
         public void Handles<T>() where T : class => HandlesAllCalled = true;
         public void HandlesAll() => HandlesAllCalled = true;
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;
+        public void Ignores<T>() where T : class { }
+        public void IgnoreUnknown() { }
     }
 
     private sealed class FakeRegistrar : IProjectionRegistrar, ISubscriptionDaemonRegistrar, IProjectionDaemonRegistrar
