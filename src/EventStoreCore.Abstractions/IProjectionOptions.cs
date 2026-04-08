@@ -22,5 +22,17 @@ public interface IProjectionOptions
     /// <param name="keySelector">Selects a snapshot key for the event.</param>
     /// <typeparam name="TEvent">The event payload type.</typeparam>
     void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = default) where TEvent : class;
+
+    /// <summary>
+    /// Excludes a specific event type from processing.
+    /// </summary>
+    /// <typeparam name="T">The event payload type to ignore.</typeparam>
+    void Ignores<T>() where T : class;
+
+    /// <summary>
+    /// Instructs the projection to skip events whose CLR type cannot be resolved
+    /// instead of throwing an <see cref="System.Exception"/>.
+    /// </summary>
+    void IgnoreUnknown();
 }
 

@@ -69,14 +69,34 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
 
         foreach (var stream in streams)
         {
-            var events = db.ChangeTracker.Entries<DbEvent>()
+            var dbEventEntries = db.ChangeTracker.Entries<DbEvent>()
                 .Where(e => e.State is EntityState.Added && e.Entity.StreamId == stream.Entity.Id)
                 .OrderBy(e => e.Entity.Version)
-                .Select(e => new { Entry = e, Event = e.Entity.ToEvent(registry) })
-                .Where(e => _options.IsHandeled(e.Event.EventType))
                 .ToArray();
 
-            if (events is not { Length: > 0 })
+            var resolvedEvents = new List<(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<DbEvent> Entry, IEvent Event)>();
+
+            foreach (var entry in dbEventEntries)
+            {
+                IEvent resolved;
+                try
+                {
+                    resolved = entry.Entity.ToEvent(registry);
+                }
+                catch (EventMaterializationException) when (_options.ShouldIgnoreUnknown)
+                {
+                    continue;
+                }
+
+                if (!_options.IsHandeled(resolved.EventType))
+                {
+                    continue;
+                }
+
+                resolvedEvents.Add((entry, resolved));
+            }
+
+            if (resolvedEvents.Count == 0)
             {
                 continue;
             }
@@ -84,7 +104,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
             using var scope = _serviceProvider.CreateScope();
             var projectionContext = new ProjectionContext(db, scope.ServiceProvider);
 
-            foreach (var item in events.OrderBy(e => e.Event.Version))
+            foreach (var item in resolvedEvents.OrderBy(e => e.Event.Version))
             {
                 var keySelector = _options.GetKeySelector(item.Event.EventType);
 
