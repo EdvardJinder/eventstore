@@ -113,7 +113,11 @@ public static class EventStoreBuilderEfCoreExtensions
     /// <typeparam name="TProjection">The projection implementation.</typeparam>
     /// <typeparam name="TSnapshot">The snapshot entity type.</typeparam>
     /// <param name="builder">The event store builder.</param>
-    /// <param name="mode">Whether to run inline or eventual projections.</param>
+    /// <param name="mode">
+    /// Whether to run inline or eventual projections. Inline projections execute inside the caller's
+    /// <c>SaveChanges</c> transaction and should stay deterministic, idempotent, and free of remote side effects.
+    /// Eventual projections run through the daemon pipeline and inherit at-least-once delivery semantics.
+    /// </param>
     /// <param name="configure">Optional projection options configuration.</param>
     /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddProjection<TDbContext, TProjection, TSnapshot>(
