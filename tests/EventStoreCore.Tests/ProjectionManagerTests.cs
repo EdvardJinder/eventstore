@@ -93,11 +93,15 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
         ProjectionState state = ProjectionState.Active,
         long position = 0,
         string? lastError = null,
-        long? failedEventSequence = null)
+        long? failedEventSequence = null,
+        CheckpointScope checkpointScope = CheckpointScope.Global,
+        Guid? tenantId = null)
     {
         var status = new DbProjectionStatus
         {
             ProjectionName = projectionName,
+            CheckpointScope = checkpointScope,
+            TenantId = tenantId ?? Guid.Empty,
             Version = 1,
             State = state,
             Position = position,
@@ -225,6 +229,74 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => manager.RebuildAsync("NonExistent.Projection", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task RebuildAsync_ResetsTenantScopedCheckpointsAfterClearingProjectionData()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var projectionName = typeof(TestProjection).FullName!;
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        await db.Set<TestSnapshot>().ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await db.Set<DbProjectionStatus>()
+            .Where(s => s.ProjectionName == projectionName)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+
+        db.Set<TestSnapshot>().Add(new TestSnapshot { Id = Guid.NewGuid(), Value = "old" });
+        await CreateProjectionStatusAsync(
+            db,
+            projectionName,
+            ProjectionState.Active,
+            position: 10,
+            checkpointScope: CheckpointScope.Tenant,
+            tenantId: tenantA);
+        await CreateProjectionStatusAsync(
+            db,
+            projectionName,
+            ProjectionState.Faulted,
+            position: 20,
+            lastError: "boom",
+            failedEventSequence: 21,
+            checkpointScope: CheckpointScope.Tenant,
+            tenantId: tenantB);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<IProjectionManager>();
+
+        await manager.RebuildAsync(projectionName, TestContext.Current.CancellationToken);
+
+        var snapshots = await db.Set<TestSnapshot>()
+            .AsNoTracking()
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var statuses = await db.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .Where(s => s.ProjectionName == projectionName)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(snapshots);
+        Assert.Contains(statuses, status =>
+            status.CheckpointScope == CheckpointScope.Global &&
+            status.TenantId == Guid.Empty &&
+            status.State == ProjectionState.Rebuilding &&
+            status.Position == 0);
+        Assert.Contains(statuses, status =>
+            status.CheckpointScope == CheckpointScope.Tenant &&
+            status.TenantId == tenantA &&
+            status.State == ProjectionState.Rebuilding &&
+            status.Position == 0);
+        Assert.Contains(statuses, status =>
+            status.CheckpointScope == CheckpointScope.Tenant &&
+            status.TenantId == tenantB &&
+            status.State == ProjectionState.Rebuilding &&
+            status.Position == 0 &&
+            status.LastError == null &&
+            status.FailedEventSequence == null);
     }
 
     [Fact]

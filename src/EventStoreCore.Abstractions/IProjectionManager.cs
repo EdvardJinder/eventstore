@@ -14,11 +14,34 @@ public interface IProjectionManager
     Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the tenant-scoped status of a specific projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The projection status, or null if not found.</returns>
+    Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection status is not supported by this manager.");
+    }
+
+    /// <summary>
     /// Gets the status of all registered projections.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A list of all projection statuses.</returns>
     Task<IReadOnlyList<ProjectionStatusDto>> GetAllStatusesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the tenant-scoped status of all registered projections for a tenant.
+    /// </summary>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A list of projection statuses for the tenant.</returns>
+    Task<IReadOnlyList<ProjectionStatusDto>> GetAllStatusesAsync(Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection status is not supported by this manager.");
+    }
 
     /// <summary>
     /// Triggers a rebuild of the specified projection.
@@ -36,11 +59,33 @@ public interface IProjectionManager
     Task PauseAsync(string projectionName, CancellationToken ct = default);
 
     /// <summary>
+    /// Pauses tenant-scoped processing of the specified projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection to pause.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task PauseAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection pause is not supported by this manager.");
+    }
+
+    /// <summary>
     /// Resumes processing of a paused projection.
     /// </summary>
     /// <param name="projectionName">The name of the projection to resume.</param>
     /// <param name="ct">Cancellation token.</param>
     Task ResumeAsync(string projectionName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resumes tenant-scoped processing of a paused projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection to resume.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task ResumeAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection resume is not supported by this manager.");
+    }
 
     /// <summary>
     /// Retries processing the failed event for the specified projection.
@@ -50,11 +95,33 @@ public interface IProjectionManager
     Task RetryFailedEventAsync(string projectionName, CancellationToken ct = default);
 
     /// <summary>
+    /// Retries processing the failed tenant-scoped event for the specified projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task RetryFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection retry is not supported by this manager.");
+    }
+
+    /// <summary>
     /// Skips the failed event and resumes processing from the next event.
     /// </summary>
     /// <param name="projectionName">The name of the projection.</param>
     /// <param name="ct">Cancellation token.</param>
     Task SkipFailedEventAsync(string projectionName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Skips the failed tenant-scoped event and resumes processing from the next event.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task SkipFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection skip is not supported by this manager.");
+    }
 
     /// <summary>
     /// Gets details about the failed event for a faulted projection.
@@ -63,6 +130,18 @@ public interface IProjectionManager
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Details about the failed event, or null if the projection is not faulted.</returns>
     Task<FailedEventDto?> GetFailedEventAsync(string projectionName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets details about the failed tenant-scoped event for a faulted projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Details about the failed event, or null if the projection is not faulted.</returns>
+    Task<FailedEventDto?> GetFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection failed-event lookup is not supported by this manager.");
+    }
 }
 
 /// <summary>
@@ -91,7 +170,18 @@ public sealed record ProjectionStatusDto(
     long? FailedEventSequence,
     DateTimeOffset? RebuildStartedAt,
     DateTimeOffset? RebuildCompletedAt
-);
+)
+{
+    /// <summary>
+    /// Whether this status row is global or tenant-scoped.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; init; } = CheckpointScope.Global;
+
+    /// <summary>
+    /// The tenant id for tenant-scoped status rows, or null for global status rows.
+    /// </summary>
+    public Guid? TenantId { get; init; }
+}
 
 /// <summary>
 /// Represents the possible states of a projection.
@@ -139,4 +229,15 @@ public sealed record FailedEventDto(
     string Data,
     DateTimeOffset Timestamp,
     string ProjectionError
-);
+)
+{
+    /// <summary>
+    /// Whether the failed event belongs to a global or tenant-scoped checkpoint.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; init; } = CheckpointScope.Global;
+
+    /// <summary>
+    /// The tenant id for tenant-scoped failures, or null for global failures.
+    /// </summary>
+    public Guid? TenantId { get; init; }
+}

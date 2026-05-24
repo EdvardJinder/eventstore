@@ -13,6 +13,16 @@ public sealed class DbSubscription
     public string SubscriptionAssemblyQualifiedName { get; set; } = null!;
 
     /// <summary>
+    /// Whether this checkpoint is shared globally or belongs to a tenant.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
+
+    /// <summary>
+    /// The tenant this checkpoint belongs to when <see cref="CheckpointScope" /> is <see cref="Abstractions.CheckpointScope.Tenant" />.
+    /// </summary>
+    public Guid TenantId { get; set; } = Guid.Empty;
+
+    /// <summary>
     /// The last processed event sequence number.
     /// </summary>
     public long Sequence { get; set; } = 0;
@@ -52,10 +62,14 @@ public sealed class DbSubscription
     /// </summary>
     /// <param name="totalEvents">The total number of events in the store.</param>
     /// <param name="lastProcessedAt">When the last processed event occurred.</param>
-    public SubscriptionStatusDto ToDto(long? totalEvents, DateTimeOffset? lastProcessedAt)
+    /// <param name="processedEvents">The number of events processed in this checkpoint scope.</param>
+    public SubscriptionStatusDto ToDto(
+        long? totalEvents,
+        DateTimeOffset? lastProcessedAt,
+        long? processedEvents = null)
     {
         var progress = totalEvents.HasValue && totalEvents.Value > 0
-            ? Math.Round((double)Sequence / totalEvents.Value * 100, 2)
+            ? Math.Round((double)(processedEvents ?? Sequence) / totalEvents.Value * 100, 2)
             : (double?)null;
 
         return new SubscriptionStatusDto(
@@ -69,7 +83,11 @@ public sealed class DbSubscription
             AttemptCount,
             LastAttemptAt,
             NextAttemptAt,
-            FailedEventSequence);
+            FailedEventSequence)
+        {
+            CheckpointScope = CheckpointScope,
+            TenantId = CheckpointScope == Abstractions.CheckpointScope.Tenant ? TenantId : null
+        };
     }
 }
 

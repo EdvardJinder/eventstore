@@ -178,13 +178,19 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         {
             var statusSet = db.Set<DbProjectionStatus>();
             var status = await statusSet
-                .FirstOrDefaultAsync(s => s.ProjectionName == _projectionName, cancellationToken);
+                .FirstOrDefaultAsync(s =>
+                    s.ProjectionName == _projectionName &&
+                    s.CheckpointScope == CheckpointScope.Global &&
+                    s.TenantId == Guid.Empty,
+                    cancellationToken);
 
             if (status == null)
             {
                 status = new DbProjectionStatus
                 {
                     ProjectionName = _projectionName,
+                    CheckpointScope = CheckpointScope.Global,
+                    TenantId = Guid.Empty,
                     Version = _projectionVersion,
                     State = ProjectionState.Active,
                     Position = maxSequence,
@@ -237,7 +243,11 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         {
             var status = await db.Set<DbProjectionStatus>()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.ProjectionName == _projectionName, ct);
+                .FirstOrDefaultAsync(s =>
+                    s.ProjectionName == _projectionName &&
+                    s.CheckpointScope == CheckpointScope.Global &&
+                    s.TenantId == Guid.Empty,
+                    ct);
 
             return status?.State == ProjectionState.Rebuilding;
         }

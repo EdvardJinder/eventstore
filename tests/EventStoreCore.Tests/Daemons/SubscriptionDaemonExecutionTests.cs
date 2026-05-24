@@ -89,6 +89,29 @@ public class SubscriptionDaemonExecutionTests
         }
     }
 
+    private sealed class TenantPoisonSubscription : ISubscription
+    {
+        private readonly Guid _poisonTenantId;
+
+        public TenantPoisonSubscription(Guid poisonTenantId)
+        {
+            _poisonTenantId = poisonTenantId;
+        }
+
+        public List<Guid> HandledTenantIds { get; } = [];
+
+        public Task Handle(IEvent @event, CancellationToken ct)
+        {
+            if (@event.TenantId == _poisonTenantId)
+            {
+                throw new InvalidOperationException("Tenant event failed.");
+            }
+
+            HandledTenantIds.Add(@event.TenantId);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeLockProvider : IDistributedLockProvider
     {
         public bool ReturnNullHandle { get; set; }
@@ -252,8 +275,7 @@ public class SubscriptionDaemonExecutionTests
 
         var processed = await daemon.ProcessNextBatchAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
-        var subscriptionEntity = await db.Set<DbSubscription>()
-            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+        var subscriptionEntity = await FindSubscriptionAsync(db, subscription.GetType().AssemblyQualifiedName!, CheckpointScope.Global, Guid.Empty);
 
         Assert.Equal(2, processed);
         Assert.Equal(2, subscription.HandledCount);
@@ -318,8 +340,7 @@ public class SubscriptionDaemonExecutionTests
             options);
 
         var processed = await daemon.ProcessNextBatchAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
-        var subscriptionEntity = await db.Set<DbSubscription>()
-            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+        var subscriptionEntity = await FindSubscriptionAsync(db, subscription.GetType().AssemblyQualifiedName!, CheckpointScope.Global, Guid.Empty);
 
         Assert.Equal(1, processed);
         Assert.Equal(2, subscription.HandledCount);
@@ -350,8 +371,7 @@ public class SubscriptionDaemonExecutionTests
         await EnsureSequenceAsync(db);
 
         var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
-        var status = await db.Set<DbSubscription>()
-            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+        var status = await FindSubscriptionAsync(db, subscription.GetType().AssemblyQualifiedName!, CheckpointScope.Global, Guid.Empty);
 
         Assert.False(processed);
         Assert.NotNull(status);
@@ -384,8 +404,7 @@ public class SubscriptionDaemonExecutionTests
         await EnsureSequenceAsync(db);
 
         var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
-        var status = await db.Set<DbSubscription>()
-            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+        var status = await FindSubscriptionAsync(db, subscription.GetType().AssemblyQualifiedName!, CheckpointScope.Global, Guid.Empty);
 
         Assert.False(processed);
         Assert.NotNull(status);
@@ -418,6 +437,56 @@ public class SubscriptionDaemonExecutionTests
 
         Assert.False(processed);
         Assert.False(subscription.Handled);
+    }
+
+    [Fact]
+    public async Task ProcessNextBatchAsync_TenantScopedCheckpoint_IsolatesPoisonTenant()
+    {
+        var db = BuildDbContext();
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var subscription = new TenantPoisonSubscription(tenantA);
+        var provider = BuildProvider(db, subscription);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new SubscriptionOptions
+            {
+                CheckpointScope = CheckpointScope.Tenant,
+                MaxRetryAttempts = 1,
+                RetryDelay = TimeSpan.FromSeconds(5)
+            }));
+
+        db.Events.AddRange(
+            CreateEvent(tenantA, 1),
+            CreateEvent(tenantB, 2));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var processedA = await daemon.ProcessNextBatchAsync(
+            provider.CreateScope(),
+            subscription,
+            TestContext.Current.CancellationToken,
+            tenantA);
+        var processedB = await daemon.ProcessNextBatchAsync(
+            provider.CreateScope(),
+            subscription,
+            TestContext.Current.CancellationToken,
+            tenantB);
+
+        var name = subscription.GetType().AssemblyQualifiedName!;
+        var tenantAStatus = await FindSubscriptionAsync(db, name, CheckpointScope.Tenant, tenantA);
+        var tenantBStatus = await FindSubscriptionAsync(db, name, CheckpointScope.Tenant, tenantB);
+
+        Assert.Equal(0, processedA);
+        Assert.Equal(1, processedB);
+        Assert.NotNull(tenantAStatus);
+        Assert.NotNull(tenantBStatus);
+        Assert.Equal(SubscriptionState.DeadLettered, tenantAStatus!.State);
+        Assert.Equal(1, tenantAStatus.FailedEventSequence);
+        Assert.Equal(SubscriptionState.Active, tenantBStatus!.State);
+        Assert.Equal(2, tenantBStatus.Sequence);
+        Assert.Contains(tenantB, subscription.HandledTenantIds);
     }
 
     private static async Task EnsureSequenceAsync(ExecutionDbContext db)
@@ -454,5 +523,34 @@ public class SubscriptionDaemonExecutionTests
         var db = new CountingExecutionDbContext(options);
         db.Database.EnsureCreated();
         return db;
+    }
+
+    private static async Task<DbSubscription?> FindSubscriptionAsync(
+        ExecutionDbContext db,
+        string name,
+        CheckpointScope checkpointScope,
+        Guid tenantId)
+    {
+        return await db.Set<DbSubscription>()
+            .FirstOrDefaultAsync(s =>
+                s.SubscriptionAssemblyQualifiedName == name &&
+                s.CheckpointScope == checkpointScope &&
+                s.TenantId == tenantId,
+                TestContext.Current.CancellationToken);
+    }
+
+    private static DbEvent CreateEvent(Guid tenantId, long sequence)
+    {
+        return new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = Guid.NewGuid(),
+            TenantId = tenantId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = sequence,
+            Type = typeof(object).AssemblyQualifiedName!,
+            Data = "{}"
+        };
     }
 }

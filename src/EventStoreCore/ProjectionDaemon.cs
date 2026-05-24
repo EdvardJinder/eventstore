@@ -88,8 +88,35 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// <param name="ct">Cancellation token.</param>
     private async Task ProcessProjectionAsync(ProjectionRegistration projection, CancellationToken ct)
     {
-        var lockName = $"projection:{projection.Name}";
+        var checkpointScopes = await GetCheckpointScopesAsync(projection.Name, ct);
 
+        foreach (var checkpointScope in checkpointScopes)
+        {
+            try
+            {
+                await ProcessProjectionScopeAsync(projection, checkpointScope, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (checkpointScope.IsTenant)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error processing projection {Projection} in tenant checkpoint scope {TenantId}",
+                    projection.Name,
+                    checkpointScope.TenantId);
+            }
+        }
+    }
+
+    private async Task ProcessProjectionScopeAsync(
+        ProjectionRegistration projection,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var lockName = $"projection:{projection.Name}{checkpointScope.LockSuffix}";
 
         IDistributedSynchronizationHandle? lockHandle = null;
         try
@@ -110,11 +137,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-            var status = await GetOrCreateStatusAsync(dbContext, projection, ct);
+            var status = await GetOrCreateStatusAsync(dbContext, projection, checkpointScope, ct);
 
             // Check for version mismatch and trigger rebuild if configured
             if (_options.AutoRebuildOnVersionChange && status.Version != projection.Version)
             {
+                if (checkpointScope.IsTenant)
+                {
+                    throw new InvalidOperationException(
+                        "Tenant-scoped projection checkpoints do not support automatic rebuild because projection ClearAsync is not tenant-aware. " +
+                        "Disable AutoRebuildOnVersionChange or run a global projection rebuild.");
+                }
+
                 _logger.LogInformation(
                     "Projection {Projection} version changed from {OldVersion} to {NewVersion}, triggering rebuild",
                     projection.Name, status.Version, projection.Version);
@@ -162,10 +196,15 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     private async Task<DbProjectionStatus> GetOrCreateStatusAsync(
         TDbContext dbContext,
         ProjectionRegistration projection,
+        CheckpointScopeKey checkpointScope,
         CancellationToken ct)
     {
         var status = await dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projection.Name, ct);
+            .FirstOrDefaultAsync(s =>
+                s.ProjectionName == projection.Name &&
+                s.CheckpointScope == checkpointScope.Scope &&
+                s.TenantId == checkpointScope.TenantId,
+                ct);
 
 
         if (status == null)
@@ -173,6 +212,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             status = new DbProjectionStatus
             {
                 ProjectionName = projection.Name,
+                CheckpointScope = checkpointScope.Scope,
+                TenantId = checkpointScope.TenantId,
                 Version = projection.Version,
                 State = ProjectionState.Active,
                 Position = 0
@@ -211,7 +252,9 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         status.FailedEventSequence = null;
 
         // Get total events for progress tracking
-        status.TotalEvents = await dbContext.Events.LongCountAsync(ct);
+        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+        status.TotalEvents = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+            .LongCountAsync(ct);
 
         await dbContext.SaveChangesAsync(ct);
 
@@ -291,7 +334,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         DbProjectionStatus status,
         CancellationToken ct)
     {
-        var events = await dbContext.Events
+        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+        var events = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
             .Where(e => e.Sequence > status.Position)
             .OrderBy(e => e.Sequence)
             .Take(_options.BatchSize)
@@ -388,7 +432,11 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             using var errorScope = _serviceProvider.CreateScope();
             var errorContext = errorScope.ServiceProvider.GetRequiredService<TDbContext>();
             var errorStatus = await errorContext.Set<DbProjectionStatus>()
-                .FirstAsync(s => s.ProjectionName == projection.Name, ct);
+                .FirstAsync(s =>
+                    s.ProjectionName == projection.Name &&
+                    s.CheckpointScope == status.CheckpointScope &&
+                    s.TenantId == status.TenantId,
+                    ct);
             
             errorStatus.State = ProjectionState.Faulted;
             errorStatus.LastError = ex.ToString();
@@ -397,5 +445,49 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
             throw;
         }
+    }
+
+    private async Task<IReadOnlyList<CheckpointScopeKey>> GetCheckpointScopesAsync(
+        string projectionName,
+        CancellationToken ct)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Global)
+        {
+            return [CheckpointScopeKey.Global];
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
+
+        var eventTenantIds = await dbContext.Events
+            .AsNoTracking()
+            .Select(e => e.TenantId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var checkpointTenantIds = await dbContext.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .Where(s =>
+                s.ProjectionName == projectionName &&
+                s.CheckpointScope == CheckpointScope.Tenant)
+            .Select(s => s.TenantId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return eventTenantIds
+            .Concat(checkpointTenantIds)
+            .Distinct()
+            .OrderBy(tenantId => tenantId)
+            .Select(CheckpointScopeKey.Tenant)
+            .ToArray();
+    }
+
+    private static IQueryable<DbEvent> ApplyCheckpointScope(
+        IQueryable<DbEvent> query,
+        CheckpointScopeKey checkpointScope)
+    {
+        return checkpointScope.IsTenant
+            ? query.Where(e => e.TenantId == checkpointScope.TenantId)
+            : query;
     }
 }
