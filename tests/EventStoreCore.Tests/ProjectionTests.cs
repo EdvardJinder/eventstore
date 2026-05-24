@@ -210,7 +210,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
@@ -241,7 +242,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
         var projectionName = typeof(UserProjection).FullName!;
         await db.Set<DbProjectionStatus>()
@@ -289,7 +291,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new BookEvent { Page = 1 }]);
@@ -321,7 +324,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TenantAwareProjectionDbContext>();
-        await db.Database.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
@@ -366,7 +370,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);

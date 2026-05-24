@@ -119,6 +119,7 @@ public class ProjectionDaemonCoverageTests
     {
         var options = new DbContextOptionsBuilder<ProjectionDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ProjectionDbContext(options);
     }
@@ -235,5 +236,246 @@ public class ProjectionDaemonCoverageTests
         var updated = await db.Set<DbProjectionStatus>().SingleAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(updated);
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_SkipsUnresolvableEvent_WhenHandlesUsed()
+    {
+        var db = BuildDbContext();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var options = new ProjectionOptions();
+        options.Handles<ProjectionEvent>();
+
+        var evolved = false;
+        var registration = new ProjectionRegistration
+        {
+            Name = "Projection",
+            Version = 1,
+            ProjectionType = typeof(ProjectionSnapshot),
+            SnapshotType = typeof(ProjectionSnapshot),
+            Options = options,
+            ClearAction = (_, _) => Task.CompletedTask,
+            EvolveAction = (_, _, snapshot, @event, _) =>
+            {
+                evolved = true;
+                var entity = (ProjectionSnapshot)snapshot;
+                if (@event is IEvent<ProjectionEvent> evt)
+                {
+                    entity.Id = evt.StreamId;
+                    entity.Name = evt.Data.Name;
+                }
+                return Task.CompletedTask;
+            },
+            GetOrCreateSnapshotAction = (_, _, _) => Task.FromResult<object>(new ProjectionSnapshot()),
+            AddSnapshotAction = (db, snapshot) => db.Add(snapshot)
+        };
+
+        var status = new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            Version = 1,
+            State = ProjectionState.Active,
+            Position = 0
+        };
+        db.Set<DbProjectionStatus>().Add(status);
+
+        var streamId = Guid.NewGuid();
+
+        // Unresolvable event (CLR type no longer exists)
+        var unknownEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = 1,
+            Type = "NonExistent.RemovedEvent, NonExistent",
+            TypeName = "removed_event",
+            Data = "{}"
+        };
+
+        // Resolvable and handled event
+        var knownEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 2,
+            Sequence = 2,
+            Type = typeof(ProjectionEvent).AssemblyQualifiedName!,
+            Data = "{\"Name\":\"Test\"}"
+        };
+
+        db.Set<DbEvent>().AddRange(unknownEvent, knownEvent);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = new ServiceCollection()
+            .AddSingleton(db)
+            .BuildServiceProvider();
+
+        var daemon = new ProjectionDaemon<ProjectionDbContext>(
+            NullLogger<ProjectionDaemon<ProjectionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new ProjectionDaemonOptions()));
+
+        var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
+            .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var result = await task;
+
+        Assert.True(result);
+        Assert.True(evolved);
+        Assert.Equal(2, status.Position);
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_ThrowsForUnresolvableEvent_WhenHandlesAll()
+    {
+        var db = BuildDbContext();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var options = new ProjectionOptions();
+        // Default is HandlesAll — should throw on unresolvable
+
+        var registration = BuildProjectionRegistration(1, options);
+
+        var status = new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            Version = 1,
+            State = ProjectionState.Active,
+            Position = 0
+        };
+        db.Set<DbProjectionStatus>().Add(status);
+
+        var unknownEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = 1,
+            Type = "NonExistent.RemovedEvent, NonExistent",
+            TypeName = "removed_event",
+            Data = "{}"
+        };
+        db.Set<DbEvent>().Add(unknownEvent);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = new ServiceCollection()
+            .AddSingleton(db)
+            .BuildServiceProvider();
+
+        var daemon = new ProjectionDaemon<ProjectionDbContext>(
+            NullLogger<ProjectionDaemon<ProjectionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new ProjectionDaemonOptions()));
+
+        var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
+            .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var task = (Task)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        await Assert.ThrowsAsync<EventMaterializationException>(async () => await task);
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_SkipsUnresolvableEvent_WhenHandlesAllWithIgnoreUnknown()
+    {
+        var db = BuildDbContext();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var options = new ProjectionOptions();
+        options.HandlesAll();
+        options.IgnoreUnknown();
+
+        var evolved = false;
+        var registration = new ProjectionRegistration
+        {
+            Name = "Projection",
+            Version = 1,
+            ProjectionType = typeof(ProjectionSnapshot),
+            SnapshotType = typeof(ProjectionSnapshot),
+            Options = options,
+            ClearAction = (_, _) => Task.CompletedTask,
+            EvolveAction = (_, _, snapshot, @event, _) =>
+            {
+                evolved = true;
+                var entity = (ProjectionSnapshot)snapshot;
+                if (@event is IEvent<ProjectionEvent> evt)
+                {
+                    entity.Id = evt.StreamId;
+                    entity.Name = evt.Data.Name;
+                }
+                return Task.CompletedTask;
+            },
+            GetOrCreateSnapshotAction = (_, _, _) => Task.FromResult<object>(new ProjectionSnapshot()),
+            AddSnapshotAction = (db, snapshot) => db.Add(snapshot)
+        };
+
+        var status = new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            Version = 1,
+            State = ProjectionState.Active,
+            Position = 0
+        };
+        db.Set<DbProjectionStatus>().Add(status);
+
+        var streamId = Guid.NewGuid();
+
+        var unknownEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = 1,
+            Type = "NonExistent.RemovedEvent, NonExistent",
+            TypeName = "removed_event",
+            Data = "{}"
+        };
+
+        var knownEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 2,
+            Sequence = 2,
+            Type = typeof(ProjectionEvent).AssemblyQualifiedName!,
+            Data = "{\"Name\":\"Test\"}"
+        };
+
+        db.Set<DbEvent>().AddRange(unknownEvent, knownEvent);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = new ServiceCollection()
+            .AddSingleton(db)
+            .BuildServiceProvider();
+
+        var daemon = new ProjectionDaemon<ProjectionDbContext>(
+            NullLogger<ProjectionDaemon<ProjectionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new ProjectionDaemonOptions()));
+
+        var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
+            .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var result = await task;
+
+        Assert.True(result);
+        Assert.True(evolved);
+        Assert.Equal(2, status.Position);
     }
 }

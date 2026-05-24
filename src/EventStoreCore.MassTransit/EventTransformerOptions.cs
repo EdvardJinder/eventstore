@@ -4,7 +4,7 @@ namespace EventStoreCore.MassTransit;
 
 internal class EventTransformerOptions : IEventTransformerOptions
 {
-    public Dictionary<Type, (Type Out, Func<IEvent, object?> Transform)> Handlers = [];
+    public Dictionary<Type, List<(Type Out, Func<IEvent, object?> Transform)>> Handlers = [];
     public void AddEvent<TIn, TOut>(Func<IEvent<TIn>, TOut> transform) where TIn : class
     {
         Type type = typeof(TIn);
@@ -23,6 +23,11 @@ internal class EventTransformerOptions : IEventTransformerOptions
             return null;
         };
 
-        Handlers.TryAdd(type, (outType, boxed));
+        if (!Handlers.TryGetValue(type, out var handlerList))
+        {
+            handlerList = [];
+            Handlers[type] = handlerList;
+        }
+        handlerList.Add((outType, boxed));
     }
 }

@@ -5,5 +5,7 @@ namespace EventStoreCore;
 
 internal interface ISubscriptionDaemonRegistrar
 {
-    void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory);
+    void AddSubscriptionDaemon(
+        Func<IServiceProvider, IDistributedLockProvider> factory,
+        Action<SubscriptionOptions>? configure = null);
 }

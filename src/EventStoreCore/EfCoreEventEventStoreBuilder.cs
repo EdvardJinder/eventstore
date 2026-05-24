@@ -53,9 +53,15 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         }
     }
 
-    public void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory)
+    public void AddSubscriptionDaemon(
+        Func<IServiceProvider, IDistributedLockProvider> factory,
+        Action<SubscriptionOptions>? configure = null)
     {
         services.TryAddSingleton(factory);
+        services.Configure<SubscriptionOptions>(opts =>
+        {
+            configure?.Invoke(opts);
+        });
         services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
         services.TryAddScoped<ISubscriptionManager>(sp =>
         {
