@@ -6,6 +6,70 @@ namespace EventStoreCore.Abstractions;
 public interface IEventStore
 {
     /// <summary>
+    /// Appends events using optimistic concurrency expectations.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="expectedVersion">The expected-version mode to enforce.</param>
+    /// <param name="events">The events to append.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated read-only stream.</returns>
+    Task<IReadOnlyStream> AppendAsync(
+        Guid streamId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends events using optimistic concurrency expectations.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
+    /// <param name="expectedVersion">The expected-version mode to enforce.</param>
+    /// <param name="events">The events to append.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated read-only stream.</returns>
+    Task<IReadOnlyStream> AppendAsync(
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends events using optimistic concurrency expectations.
+    /// </summary>
+    /// <param name="streamType">The stream type for distinguishing multiple streams with the same ID.</param>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="expectedVersion">The expected-version mode to enforce.</param>
+    /// <param name="events">The events to append.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated read-only stream.</returns>
+    Task<IReadOnlyStream> AppendAsync(
+        string streamType,
+        Guid streamId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends events using optimistic concurrency expectations.
+    /// </summary>
+    /// <param name="streamType">The stream type for distinguishing multiple streams with the same ID.</param>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
+    /// <param name="expectedVersion">The expected-version mode to enforce.</param>
+    /// <param name="events">The events to append.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated read-only stream.</returns>
+    Task<IReadOnlyStream> AppendAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Fetches a stream for appending new events.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>

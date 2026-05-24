@@ -94,6 +94,33 @@ var stream = await eventStore.FetchForReadingAsync(docId);
 
 **Note**: Changing primary keys in existing databases requires careful migration planning. Consider the impact on your application and data before applying these changes.
 
+## Optimistic concurrency
+
+Use `AppendAsync` when callers need explicit expected-version semantics instead of fetch-and-append behavior.
+
+```csharp
+await eventStore.AppendAsync(
+    streamId,
+    ExpectedVersion.NoStream,
+    [new AccountOpened()]);
+
+await eventStore.AppendAsync(
+    streamId,
+    ExpectedVersion.Exact(3),
+    [new FundsDeposited(100m)]);
+```
+
+Supported modes:
+
+- `ExpectedVersion.Any`: append whether the stream exists or not.
+- `ExpectedVersion.NoStream`: succeed only when the stream does not already exist.
+- `ExpectedVersion.StreamExists`: succeed only when the stream already exists.
+- `ExpectedVersion.Exact(version)`: succeed only when the stream exists at the supplied version.
+
+When an expected-version check fails, or when two writers race and the database wins the tie-breaker, EventStore throws `EventStoreConcurrencyException`.
+
+The final optimistic concurrency guard is enforced by the event table key over stream identity plus event version. This means concurrent writers to the same stream cannot both commit the same next version.
+
 ## Project guidelines
 
 - Keep public APIs small, composable, and backwards compatible.
