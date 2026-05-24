@@ -88,6 +88,31 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         }
     }
 
+    public class FailingUserSnapshot
+    {
+        public Guid UserId { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class FailingUserProjection : IProjection<FailingUserSnapshot>
+    {
+        public static Task Evolve(FailingUserSnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct)
+        {
+            if (@event is IEvent<UserCreated> e)
+            {
+                snapshot.UserId = e.StreamId;
+                snapshot.Name = e.Data.Name;
+            }
+
+            throw new InvalidOperationException("Inline projection failure");
+        }
+
+        public static Task ClearAsync(IProjectionContext context, CancellationToken ct)
+        {
+            return context.DbContext.Set<FailingUserSnapshot>().ExecuteDeleteAsync(ct);
+        }
+    }
+
     public class TenantScopedUserSnapshot
     {
         public string Id { get; set; } = string.Empty;
@@ -122,6 +147,28 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         public static Task ClearAsync(IProjectionContext context, CancellationToken ct)
         {
             return context.DbContext.Set<TenantScopedUserSnapshot>().ExecuteDeleteAsync(ct);
+        }
+    }
+
+    public class InlineFailureProjectionDbContext : DbContext
+    {
+        public InlineFailureProjectionDbContext(DbContextOptions<InlineFailureProjectionDbContext> options) : base(options)
+        {
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.UseEventStore();
+            modelBuilder.Entity<DbStream>().ToTable("InlineFailureProjectionStreams");
+            modelBuilder.Entity<DbEvent>().ToTable("InlineFailureProjectionEvents");
+            modelBuilder.Entity<DbProjectionStatus>().ToTable("InlineFailureProjectionStatuses");
+            modelBuilder.Entity<DbSubscription>().ToTable("InlineFailureProjectionSubscriptions");
+            modelBuilder.Entity<FailingUserSnapshot>(entity =>
+            {
+                entity.ToTable("InlineFailureProjectionSnapshots");
+                entity.HasKey(e => e.UserId);
+            });
         }
     }
 
@@ -302,6 +349,59 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         Assert.NotNull(snapshot);
         Assert.Equal(streamId, snapshot.BookId);
+    }
+
+    [Fact]
+    public async Task InlineProjectionFailureRollsBackAppendSnapshotAndStatus()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<InlineFailureProjectionDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<InlineFailureProjectionDbContext>();
+            c.AddProjection<InlineFailureProjectionDbContext, FailingUserProjection, FailingUserSnapshot>(ProjectionMode.Inline, p =>
+            {
+                p.Handles<UserCreated>();
+            });
+        });
+
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+
+        var streamId = Guid.NewGuid();
+
+        await using (var arrangeScope = provider.CreateAsyncScope())
+        {
+            var db = arrangeScope.ServiceProvider.GetRequiredService<InlineFailureProjectionDbContext>();
+            await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+            await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using (var saveScope = provider.CreateAsyncScope())
+        {
+            var db = saveScope.ServiceProvider.GetRequiredService<InlineFailureProjectionDbContext>();
+            db.Streams.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }]);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync(TestContext.Current.CancellationToken));
+        }
+
+        await using var assertScope = provider.CreateAsyncScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<InlineFailureProjectionDbContext>();
+        var projectionName = typeof(FailingUserProjection).FullName!;
+
+        var persistedEvents = await assertDb.Set<DbEvent>()
+            .Where(e => e.StreamId == streamId)
+            .CountAsync(TestContext.Current.CancellationToken);
+        var snapshots = await assertDb.Set<FailingUserSnapshot>()
+            .Where(e => e.UserId == streamId)
+            .CountAsync(TestContext.Current.CancellationToken);
+        var status = await assertDb.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, persistedEvents);
+        Assert.Equal(0, snapshots);
+        Assert.Null(status);
     }
 
     [Fact]

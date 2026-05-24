@@ -45,6 +45,26 @@ services.AddEventStore(builder =>
 
 Projection and subscription daemons require an `IDistributedLockProvider`. Register any implementation (Redis, SQL Server, Postgres, etc.) in DI.
 
+## Inline projection contract
+
+Inline projections run inside the same `DbContext` scope and `SaveChanges` transaction that appends events. If an inline projection throws, the append is rolled back with it.
+
+Inline projections should therefore be:
+
+- Deterministic: the same event history should always produce the same snapshot state.
+- Idempotent: reprocessing the same event should not produce duplicate side effects.
+- Local: treat inline execution as part of persistence, not as a place for remote I/O.
+
+### Pure vs Advanced
+
+`Pure` inline projections only mutate their snapshot from event data. This is the safest default and the easiest mode to reason about.
+
+`Advanced` inline projections may use the projection context and shared EF Core scope to update additional local state in the same transaction. Keep that work inside the database boundary and make it idempotent.
+
+Avoid network calls, message publishing, HTTP requests, and other remote side effects in inline projections. Inline projections can be retried, rolled back, or skipped during rebuild flows, so external side effects belong in subscriptions or eventual projections instead.
+
+Subscriptions and eventual projections are at-least-once. Consumers should use `EventId` as a stable deduplication key when replay or retry can redeliver an event.
+
 ## Event type names
 
 EventStore now persists a logical event type name in `DbEvent.TypeName`. By default, it uses snake_case based on the CLR type name (for example, `UserCreated` becomes `user_created`).

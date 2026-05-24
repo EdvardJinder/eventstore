@@ -9,6 +9,8 @@ public interface IProjection<TSnapshot>
 {
     /// <summary>
     /// Apply the event to the snapshot. Implementations perform any required persistence inside the supplied context.
+    /// Projection logic should be deterministic and idempotent because inline execution can be rolled back and
+    /// eventual execution can redeliver events.
     /// </summary>
     /// <param name="snapshot">The snapshot instance to mutate.</param>
     /// <param name="event">The event to apply.</param>
