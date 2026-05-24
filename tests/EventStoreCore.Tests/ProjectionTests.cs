@@ -6,6 +6,8 @@ using EventStoreCore.Postgres;
 
 using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using static EventStoreCore.Tests.EventStoreFixture;
 
@@ -86,6 +88,107 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         }
     }
 
+    public class TenantScopedUserSnapshot
+    {
+        public string Id { get; set; } = string.Empty;
+        public Guid UserId { get; set; }
+        public Guid TenantId { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class TenantScopedUserProjection : IProjection<TenantScopedUserSnapshot>
+    {
+        public static Task Evolve(TenantScopedUserSnapshot snapshot, IEvent @event, IProjectionContext context, CancellationToken ct)
+        {
+            switch (@event)
+            {
+                case IEvent<UserCreated> e:
+                    snapshot.Id = $"{e.TenantId}:{e.StreamId}";
+                    snapshot.UserId = e.StreamId;
+                    snapshot.TenantId = e.TenantId;
+                    snapshot.Name = e.Data.Name;
+                    break;
+                case IEvent<UserNameUpdated> e:
+                    snapshot.Id = $"{e.TenantId}:{e.StreamId}";
+                    snapshot.UserId = e.StreamId;
+                    snapshot.TenantId = e.TenantId;
+                    snapshot.Name = e.Data.NewName;
+                    break;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public static Task ClearAsync(IProjectionContext context, CancellationToken ct)
+        {
+            return context.DbContext.Set<TenantScopedUserSnapshot>().ExecuteDeleteAsync(ct);
+        }
+    }
+
+    public class TenantAwareProjectionDbContext : DbContext
+    {
+        public TenantAwareProjectionDbContext(DbContextOptions<TenantAwareProjectionDbContext> options) : base(options)
+        {
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<DbStream>(entity =>
+            {
+                entity.ToTable("TenantAwareProjectionStreams");
+                entity.HasKey(e => new { e.Id, e.TenantId });
+                entity.Property(e => e.Id).IsRequired();
+                entity.Property(e => e.TenantId).IsRequired();
+                entity.Property(e => e.CurrentVersion);
+                entity.Property(e => e.CreatedTimestamp).IsRequired();
+                entity.Property(e => e.UpdatedTimestamp).IsRequired();
+
+                entity.HasMany(e => e.Events)
+                    .WithOne()
+                    .HasForeignKey(e => new { e.StreamId, e.TenantId })
+                    .HasPrincipalKey(e => new { e.Id, e.TenantId })
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<DbEvent>(entity =>
+            {
+                entity.ToTable("TenantAwareProjectionEvents");
+                entity.HasKey(e => new { e.StreamId, e.TenantId, e.Version });
+                entity.HasAlternateKey(e => e.EventId);
+                entity.Property(e => e.StreamId).IsRequired();
+                entity.Property(e => e.TenantId).IsRequired();
+                entity.Property(e => e.Sequence).ValueGeneratedOnAdd();
+                entity.Property(e => e.Version).IsRequired();
+                entity.Property(e => e.Type).IsRequired();
+                entity.Property(e => e.TypeName).IsRequired().HasDefaultValue(string.Empty);
+                entity.Property(e => e.Data).IsRequired().HasColumnType("jsonb");
+                entity.Property(e => e.Timestamp).IsRequired();
+            });
+
+            modelBuilder.Entity<DbProjectionStatus>(entity =>
+            {
+                entity.ToTable("TenantAwareProjectionStatuses");
+                entity.HasKey(e => e.ProjectionName);
+                entity.Property(e => e.ProjectionName).HasMaxLength(500).IsRequired();
+                entity.Property(e => e.Version).IsRequired();
+                entity.Property(e => e.State).IsRequired();
+                entity.Property(e => e.Position).IsRequired();
+            });
+
+            modelBuilder.Entity<TenantScopedUserSnapshot>(entity =>
+            {
+                entity.ToTable("TenantAwareProjectionSnapshots");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).IsRequired();
+                entity.Property(e => e.UserId).IsRequired();
+                entity.Property(e => e.TenantId).IsRequired();
+                entity.Property(e => e.Name).IsRequired();
+            });
+        }
+    }
+
 
     [Fact]
     public async Task Projection()
@@ -107,7 +210,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);
@@ -138,7 +242,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
         var projectionName = typeof(UserProjection).FullName!;
         await db.Set<DbProjectionStatus>()
@@ -186,7 +291,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         var provider = services.BuildServiceProvider();
 
         var db = provider.CreateScope().ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new BookEvent { Page = 1 }]);
@@ -196,6 +302,51 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         Assert.NotNull(snapshot);
         Assert.Equal(streamId, snapshot.BookId);
+    }
+
+    [Fact]
+    public async Task InlineProjectionMatchesTenantWhenStreamIdsOverlap()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<TenantAwareProjectionDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<TenantAwareProjectionDbContext>();
+            c.AddProjection<TenantAwareProjectionDbContext, TenantScopedUserProjection, TenantScopedUserSnapshot>(ProjectionMode.Inline, p =>
+            {
+                p.Handles<UserCreated>(e => $"{e.TenantId}:{e.StreamId}");
+                p.Handles<UserNameUpdated>(e => $"{e.TenantId}:{e.StreamId}");
+            });
+        });
+
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TenantAwareProjectionDbContext>();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var eventStore = db.Streams;
+        var streamId = Guid.NewGuid();
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        eventStore.StartStream(streamId, tenantA, events: [new UserCreated { Name = "Tenant A" }]);
+        eventStore.StartStream(streamId, tenantB, events: [new UserCreated { Name = "Tenant B" }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var snapshotA = await db.Set<TenantScopedUserSnapshot>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == $"{tenantA}:{streamId}", TestContext.Current.CancellationToken);
+        var snapshotB = await db.Set<TenantScopedUserSnapshot>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == $"{tenantB}:{streamId}", TestContext.Current.CancellationToken);
+
+        Assert.Equal("Tenant A", snapshotA.Name);
+        Assert.Equal(tenantA, snapshotA.TenantId);
+        Assert.Equal("Tenant B", snapshotB.Name);
+        Assert.Equal(tenantB, snapshotB.TenantId);
     }
 
     [Fact]
@@ -219,7 +370,8 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
 
         var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
-        db.Database.EnsureCreated();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var eventStore = db.Streams;
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new UserCreated { Name = "John Doe" }, new UserNameUpdated { NewName = "Mary Jane" }]);

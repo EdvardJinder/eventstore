@@ -70,7 +70,9 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         foreach (var stream in streams)
         {
             var dbEventEntries = db.ChangeTracker.Entries<DbEvent>()
-                .Where(e => e.State is EntityState.Added && e.Entity.StreamId == stream.Entity.Id)
+                .Where(e => e.State is EntityState.Added &&
+                    e.Entity.StreamId == stream.Entity.Id &&
+                    e.Entity.TenantId == stream.Entity.TenantId)
                 .OrderBy(e => e.Entity.Version)
                 .ToArray();
 
