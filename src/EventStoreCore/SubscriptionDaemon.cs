@@ -55,9 +55,9 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     await using (acquired)
                     {
                         using var scope = _serviceProvider.CreateScope();
-                        var processed = await ProcessNextEventAsync(scope, subscription, stoppingToken);
+                        var processedCount = await ProcessNextBatchAsync(scope, subscription, stoppingToken);
 
-                        if (!processed)
+                        if (processedCount == 0)
                         {
                             logger.LogInformation(
                                 "No new events to process for subscription {Subscription}",
@@ -102,64 +102,114 @@ public sealed class SubscriptionDaemon<TDbContext>(
     /// <returns>True when an event was processed.</returns>
     internal async Task<bool> ProcessNextEventAsync(IServiceScope scope, ISubscription subscriptionImpl, CancellationToken stoppingToken)
     {
+        return await ProcessNextBatchAsync(scope, subscriptionImpl, stoppingToken, 1, 1) > 0;
+    }
+
+    /// <summary>
+    /// Processes the next available batch of events for a subscription.
+    /// </summary>
+    /// <param name="scope">The scoped service provider.</param>
+    /// <param name="subscriptionImpl">The subscription instance.</param>
+    /// <param name="stoppingToken">Cancellation token.</param>
+    /// <returns>The number of events processed in the batch.</returns>
+    internal Task<int> ProcessNextBatchAsync(IServiceScope scope, ISubscription subscriptionImpl, CancellationToken stoppingToken)
+    {
+        return ProcessNextBatchAsync(
+            scope,
+            subscriptionImpl,
+            stoppingToken,
+            Math.Max(1, _options.BatchSize),
+            Math.Max(1, _options.CheckpointFrequency));
+    }
+
+    private async Task<int> ProcessNextBatchAsync(
+        IServiceScope scope,
+        ISubscription subscriptionImpl,
+        CancellationToken stoppingToken,
+        int batchSize,
+        int checkpointFrequency)
+    {
         var name = subscriptionImpl.GetType().AssemblyQualifiedName!;
-
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
-
-
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
 
         try
         {
+            var subscriptionSet = dbContext.Set<DbSubscription>();
             var subscription = await dbContext.Set<DbSubscription>().FindAsync([name], stoppingToken);
+            var createdSubscription = false;
+
             if (subscription is null)
             {
                 subscription = new DbSubscription
                 {
                     SubscriptionAssemblyQualifiedName = name,
                 };
-                dbContext.Set<DbSubscription>().Add(subscription);
-                await dbContext.SaveChangesAsync(stoppingToken);
+                subscriptionSet.Add(subscription);
+                createdSubscription = true;
                 logger.LogInformation("Created new subscription entity for {Subscription}", name);
             }
 
-            var nextEvent = await dbContext.Events
+            var nextEvents = await dbContext.Events
                 .Where(e => e.Sequence > subscription.Sequence)
-                .OrderBy(e => e.Sequence) // Ensure ordering
-                .FirstOrDefaultAsync(stoppingToken);
+                .OrderBy(e => e.Sequence)
+                .Take(batchSize)
+                .ToListAsync(stoppingToken);
 
-            if (nextEvent is null)
+            if (nextEvents.Count == 0)
             {
-                return false;
+                if (createdSubscription)
+                {
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                }
+
+                return 0;
             }
 
             var registry = scope.ServiceProvider.GetService<EventTypeRegistry>();
-            var @event = nextEvent.ToEvent(registry);
+            var processedCount = 0;
+            long? lastProcessedSequence = null;
 
-            if (subscriptionImpl is IScopedSubscription scoped)
+            foreach (var nextEvent in nextEvents)
             {
-                await scoped.HandleAsync(dbContext, @event, stoppingToken);
+                var @event = nextEvent.ToEvent(registry);
+
+                if (subscriptionImpl is IScopedSubscription scoped)
+                {
+                    await scoped.HandleAsync(dbContext, @event, stoppingToken);
+                }
+                else
+                {
+                    await subscriptionImpl.Handle(@event, stoppingToken);
+                }
+
+                processedCount++;
+                lastProcessedSequence = nextEvent.Sequence;
+
+                if (processedCount % checkpointFrequency == 0)
+                {
+                    subscription.Sequence = nextEvent.Sequence;
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                }
             }
-            else
+
+            if (lastProcessedSequence is long finalSequence && subscription.Sequence != finalSequence)
             {
-                await subscriptionImpl.Handle(@event, stoppingToken);
+                subscription.Sequence = finalSequence;
+                await dbContext.SaveChangesAsync(stoppingToken);
             }
-
-            subscription.Sequence = nextEvent.Sequence;
-            await dbContext.SaveChangesAsync(stoppingToken);
-
-            await transaction.CommitAsync(stoppingToken);
 
             logger.LogInformation(
-                "Processed event {EventId} (Sequence {Sequence}) for subscription {Subscription}",
-                @event.Id, nextEvent.Sequence, name);
+                "Processed {Count} events through sequence {Sequence} for subscription {Subscription}",
+                processedCount,
+                lastProcessedSequence,
+                name);
 
-            return true;
+            return processedCount;
         }
         catch
         {
             logger.LogWarning(
-                "Rolling back transaction for subscription {Subscription}",
+                "Subscription {Subscription} failed after processing one or more events",
                 name);
             throw;
         }

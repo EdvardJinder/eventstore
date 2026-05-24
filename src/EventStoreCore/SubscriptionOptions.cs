@@ -4,6 +4,16 @@
 public sealed class SubscriptionOptions
 {
     /// <summary>
+    /// The number of events to read and process in each daemon batch.
+    /// </summary>
+    public int BatchSize { get; set; } = 500;
+
+    /// <summary>
+    /// How many processed events to handle before persisting the subscription checkpoint.
+    /// </summary>
+    public int CheckpointFrequency { get; set; } = 1;
+
+    /// <summary>
     /// How often to poll for new events when caught up.
     /// </summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(10);
