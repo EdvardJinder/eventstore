@@ -14,7 +14,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
 {
     public class TestSub : ICloudEventSubscription
     {
-        public static List<CloudEvent> HandledEvents { get; } = new();
+        public List<CloudEvent> HandledEvents { get; } = new();
         public Task Handle(CloudEvent @event, CancellationToken ct)
         {
             // Handle the event (e.g., log it, process it, etc.)
@@ -76,10 +76,14 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         List<object> events = [new TestEvent(), new TestEvent2()];
         eventStore.StartStream(streamId, events: events);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var lastWrittenSequence = await eventStoreDbContext.Events
+            .Where(e => e.StreamId == streamId)
+            .MaxAsync(e => e.Sequence, TestContext.Current.CancellationToken);
 
         var subscriptionDeamon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
 
         var subscription = provider.GetRequiredService<CloudEventSubscription<TestSub>>();
+        var testSub = provider.GetRequiredService<TestSub>();
 
         var processed = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
         var processed2 = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
@@ -88,10 +92,10 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
             .FindAsync(new object[] { typeof(CloudEventSubscription<TestSub>).AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(subscriptionEntity);
-        Assert.Equal(2, subscriptionEntity.Sequence);
+        Assert.Equal(lastWrittenSequence, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
         Assert.True(processed2, "No event was processed");
-        Assert.Equal(2, TestSub.HandledEvents.Count);
+        Assert.Equal(2, testSub.HandledEvents.Count);
 
     }
 }

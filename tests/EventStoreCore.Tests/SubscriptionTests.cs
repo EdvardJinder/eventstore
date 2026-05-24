@@ -13,7 +13,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 {
     public class TestSub : ISubscription
     {
-        public static List<IEvent> HandledEvents { get; } = new();
+        public List<IEvent> HandledEvents { get; } = new();
         public Task Handle(IEvent @event, CancellationToken ct)
         {
             HandledEvents.Add(@event);
@@ -23,7 +23,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
     public class TestSub2 : ISubscription
     {
-        public static List<IEvent> HandledEvents { get; } = new();
+        public List<IEvent> HandledEvents { get; } = new();
         public Task Handle(IEvent @event, CancellationToken ct)
         {
             HandledEvents.Add(@event);
@@ -35,7 +35,6 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
     {
         public Guid Id { get; set; } = Guid.NewGuid();
     }
-
 
     [Fact]
     public async Task should_handle_events()
@@ -60,6 +59,10 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var writtenSequence = await eventStoreDbContext.Events
+            .Where(e => e.StreamId == streamId)
+            .Select(e => e.Sequence)
+            .SingleAsync(TestContext.Current.CancellationToken);
 
         var daemon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
         var subscription = provider.GetRequiredService<TestSub>();
@@ -71,18 +74,15 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
 
         Assert.NotNull(subscriptionEntity);
-        Assert.Equal(1, subscriptionEntity.Sequence);
+        Assert.Equal(writtenSequence, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
-        Assert.Single(TestSub.HandledEvents);
-        Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
+        Assert.Single(subscription.HandledEvents);
+        Assert.IsType<TestEvent>(subscription.HandledEvents[0].Data);
     }
 
     [Fact]
     public async Task should_create_subscription_rows_for_multiple_subscriptions()
     {
-        TestSub.HandledEvents.Clear();
-        TestSub2.HandledEvents.Clear();
-
         var services = new ServiceCollection();
         services.AddDbContext<EventStoreDbContext>(options =>
         {
@@ -125,10 +125,10 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.True(subscriptionEntity2.Sequence > 0);
         Assert.True(processed1, "No event was processed");
         Assert.True(processed2, "No event was processed");
-        Assert.Single(TestSub.HandledEvents);
-        Assert.Single(TestSub2.HandledEvents);
-        Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
-        Assert.IsType<TestEvent>(TestSub2.HandledEvents[0].Data);
+        Assert.Single(subscription1.HandledEvents);
+        Assert.Single(subscription2.HandledEvents);
+        Assert.IsType<TestEvent>(subscription1.HandledEvents[0].Data);
+        Assert.IsType<TestEvent>(subscription2.HandledEvents[0].Data);
 
     }
 }
