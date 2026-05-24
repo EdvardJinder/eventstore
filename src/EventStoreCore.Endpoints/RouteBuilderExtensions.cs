@@ -25,9 +25,11 @@ public static class RouteBuilderExtensions
 
 
         // GET /projections - List all projections
-        group.MapGet("/projections", async ([FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections", async ([FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var statuses = await manager.GetAllStatusesAsync(ct);
+            var statuses = tenantId.HasValue
+                ? await manager.GetAllStatusesAsync(tenantId.Value, ct)
+                : await manager.GetAllStatusesAsync(ct);
             return Results.Ok(statuses);
         })
         .WithName("GetAllProjections")
@@ -35,9 +37,11 @@ public static class RouteBuilderExtensions
         .Produces<IReadOnlyList<ProjectionStatusDto>>();
 
         // GET /projections/{name} - Get specific projection
-        group.MapGet("/projections/{name}", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections/{name}", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var status = await manager.GetStatusAsync(name, ct);
+            var status = tenantId.HasValue
+                ? await manager.GetStatusAsync(name, tenantId.Value, ct)
+                : await manager.GetStatusAsync(name, ct);
             return status != null ? Results.Ok(status) : Results.NotFound();
         })
         .WithName("GetProjection")
@@ -64,11 +68,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/pause - Pause projection
-        group.MapPost("/projections/{name}/pause", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/pause", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.PauseAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.PauseAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.PauseAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -82,11 +93,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/resume - Resume projection
-        group.MapPost("/projections/{name}/resume", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/resume", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.ResumeAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.ResumeAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.ResumeAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -100,9 +118,11 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // GET /projections/{name}/failed-event - Get failed event details
-        group.MapGet("/projections/{name}/failed-event", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapGet("/projections/{name}/failed-event", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var failedEvent = await manager.GetFailedEventAsync(name, ct);
+            var failedEvent = tenantId.HasValue
+                ? await manager.GetFailedEventAsync(name, tenantId.Value, ct)
+                : await manager.GetFailedEventAsync(name, ct);
             return failedEvent != null ? Results.Ok(failedEvent) : Results.NotFound();
         })
         .WithName("GetFailedEvent")
@@ -111,11 +131,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /projections/{name}/retry - Retry failed event
-        group.MapPost("/projections/{name}/retry", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/retry", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.RetryFailedEventAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.RetryFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.RetryFailedEventAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -129,11 +156,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/skip - Skip failed event
-        group.MapPost("/projections/{name}/skip", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/skip", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.SkipFailedEventAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.SkipFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.SkipFailedEventAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -147,9 +181,11 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // GET /subscriptions - List all subscriptions
-        group.MapGet("/subscriptions", async ([FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapGet("/subscriptions", async ([FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var statuses = await manager.GetAllStatusesAsync(ct);
+            var statuses = tenantId.HasValue
+                ? await manager.GetAllStatusesAsync(tenantId.Value, ct)
+                : await manager.GetAllStatusesAsync(ct);
             return Results.Ok(statuses);
         })
         .WithName("GetAllSubscriptions")
@@ -157,9 +193,11 @@ public static class RouteBuilderExtensions
         .Produces<IReadOnlyList<SubscriptionStatusDto>>();
 
         // GET /subscriptions/{name} - Get specific subscription
-        group.MapGet("/subscriptions/{name}", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapGet("/subscriptions/{name}", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var status = await manager.GetStatusAsync(name, ct);
+            var status = tenantId.HasValue
+                ? await manager.GetStatusAsync(name, tenantId.Value, ct)
+                : await manager.GetStatusAsync(name, ct);
             return status != null ? Results.Ok(status) : Results.NotFound();
         })
         .WithName("GetSubscription")
@@ -168,11 +206,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /subscriptions/{name}/pause - Pause subscription
-        group.MapPost("/subscriptions/{name}/pause", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapPost("/subscriptions/{name}/pause", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.PauseAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.PauseAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.PauseAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -186,11 +231,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /subscriptions/{name}/resume - Resume subscription
-        group.MapPost("/subscriptions/{name}/resume", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapPost("/subscriptions/{name}/resume", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.ResumeAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.ResumeAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.ResumeAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -204,9 +256,11 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // GET /subscriptions/{name}/failed-event - Get failed event details
-        group.MapGet("/subscriptions/{name}/failed-event", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapGet("/subscriptions/{name}/failed-event", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
-            var failedEvent = await manager.GetFailedEventAsync(name, ct);
+            var failedEvent = tenantId.HasValue
+                ? await manager.GetFailedEventAsync(name, tenantId.Value, ct)
+                : await manager.GetFailedEventAsync(name, ct);
             return failedEvent != null ? Results.Ok(failedEvent) : Results.NotFound();
         })
         .WithName("GetSubscriptionFailedEvent")
@@ -215,11 +269,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /subscriptions/{name}/retry - Retry failed event
-        group.MapPost("/subscriptions/{name}/retry", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapPost("/subscriptions/{name}/retry", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.RetryFailedEventAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.RetryFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.RetryFailedEventAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -233,11 +294,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /subscriptions/{name}/skip - Skip failed event
-        group.MapPost("/subscriptions/{name}/skip", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        group.MapPost("/subscriptions/{name}/skip", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.SkipFailedEventAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.SkipFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.SkipFailedEventAsync(name, ct);
+                }
                 return Results.Ok();
             }
             catch (InvalidOperationException ex)
@@ -256,11 +324,19 @@ public static class RouteBuilderExtensions
             [FromServices] ISubscriptionManager manager,
             [FromQuery] long? startSequence,
             [FromQuery] DateTimeOffset? fromTimestamp,
+            [FromQuery] Guid? tenantId,
             CancellationToken ct) =>
         {
             try
             {
-                await manager.ReplayAsync(name, startSequence, fromTimestamp, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.ReplayAsync(name, tenantId.Value, startSequence, fromTimestamp, ct);
+                }
+                else
+                {
+                    await manager.ReplayAsync(name, startSequence, fromTimestamp, ct);
+                }
                 return Results.Accepted();
             }
             catch (InvalidOperationException ex)

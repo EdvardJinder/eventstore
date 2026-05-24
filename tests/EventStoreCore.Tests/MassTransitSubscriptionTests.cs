@@ -111,8 +111,13 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
 
         Assert.True(await consumer.Consumed.Any<TestIntegrationEvent>(TestContext.Current.CancellationToken));
       
+        var subscriptionName = subscription.GetType().AssemblyQualifiedName!;
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
-          .FindAsync([subscription.GetType().AssemblyQualifiedName], TestContext.Current.CancellationToken);
+          .FirstOrDefaultAsync(s =>
+              s.SubscriptionAssemblyQualifiedName == subscriptionName &&
+              s.CheckpointScope == EventStoreCore.Abstractions.CheckpointScope.Global &&
+              s.TenantId == Guid.Empty,
+              TestContext.Current.CancellationToken);
 
         Assert.NotNull(subscriptionEntity);
         Assert.Equal(writtenSequence, subscriptionEntity.Sequence);

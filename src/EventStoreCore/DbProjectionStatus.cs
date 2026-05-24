@@ -13,6 +13,16 @@ public sealed class DbProjectionStatus
     public string ProjectionName { get; set; } = null!;
 
     /// <summary>
+    /// Whether this checkpoint is shared globally or belongs to a tenant.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
+
+    /// <summary>
+    /// The tenant this checkpoint belongs to when <see cref="CheckpointScope" /> is <see cref="Abstractions.CheckpointScope.Tenant" />.
+    /// </summary>
+    public Guid TenantId { get; set; } = Guid.Empty;
+
+    /// <summary>
     /// The version of the projection. Used to detect when a projection needs rebuilding.
     /// </summary>
     public int Version { get; set; } = 1;
@@ -62,7 +72,7 @@ public sealed class DbProjectionStatus
     /// </summary>
     public ProjectionStatusDto ToDto()
     {
-        var progress = TotalEvents.HasValue && TotalEvents.Value > 0
+        var progress = CheckpointScope == Abstractions.CheckpointScope.Global && TotalEvents.HasValue && TotalEvents.Value > 0
             ? Math.Round((double)Position / TotalEvents.Value * 100, 2)
             : (double?)null;
 
@@ -78,6 +88,10 @@ public sealed class DbProjectionStatus
             FailedEventSequence,
             RebuildStartedAt,
             RebuildCompletedAt
-        );
+        )
+        {
+            CheckpointScope = CheckpointScope,
+            TenantId = CheckpointScope == Abstractions.CheckpointScope.Tenant ? TenantId : null
+        };
     }
 }

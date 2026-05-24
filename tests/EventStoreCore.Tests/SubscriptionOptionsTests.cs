@@ -1,4 +1,5 @@
 using EventStoreCore;
+using EventStoreCore.Abstractions;
 
 namespace EventStoreCore.Tests;
 
@@ -14,6 +15,7 @@ public class SubscriptionOptionsTests
         Assert.Equal(TimeSpan.FromSeconds(10), options.PollingInterval);
         Assert.Equal(TimeSpan.FromMinutes(5), options.LockTimeout);
         Assert.Equal(3, options.MaxRetryAttempts);
+        Assert.Equal(CheckpointScope.Global, options.CheckpointScope);
         Assert.Equal(TimeSpan.FromSeconds(10), options.RetryDelay);
     }
 }

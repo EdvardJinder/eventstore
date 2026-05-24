@@ -1,6 +1,7 @@
 using Azure.Messaging;
 using EventStoreCore.CloudEvents;
 using EventStoreCore;
+using EventStoreCore.Abstractions;
 
 using EventStoreCore.Postgres;
 
@@ -88,8 +89,13 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         var processed = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
         var processed2 = await subscriptionDeamon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
+        var subscriptionName = typeof(CloudEventSubscription<TestSub>).AssemblyQualifiedName!;
         var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { typeof(CloudEventSubscription<TestSub>).AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
+            .FirstOrDefaultAsync(s =>
+                s.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                s.CheckpointScope == CheckpointScope.Global &&
+                s.TenantId == Guid.Empty,
+                TestContext.Current.CancellationToken);
 
         Assert.NotNull(subscriptionEntity);
         Assert.Equal(lastWrittenSequence, subscriptionEntity.Sequence);

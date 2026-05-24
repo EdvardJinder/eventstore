@@ -65,6 +65,45 @@ Avoid network calls, message publishing, HTTP requests, and other remote side ef
 
 Subscriptions and eventual projections are at-least-once. Consumers should use `EventId` as a stable deduplication key when replay or retry can redeliver an event.
 
+## Tenant-scoped checkpoints
+
+Streams and events include `TenantId`. By default, subscription and projection daemons use global checkpoints for backwards compatibility: one checkpoint row tracks progress across all tenants.
+
+Use tenant-scoped checkpoints when a poison event, pause, retry, skip, or replay in one tenant should not affect other tenants:
+
+```csharp
+using EventStoreCore.Abstractions;
+
+services.AddEventStore(builder =>
+{
+    builder.ExistingDbContext<MyEventStoreDbContext>();
+
+    builder.AddSubscriptionDaemon<MyEventStoreDbContext>(
+        _ => distributedLockProvider,
+        options => options.CheckpointScope = CheckpointScope.Tenant);
+
+    builder.AddProjectionDaemon<MyEventStoreDbContext>(
+        _ => distributedLockProvider,
+        options =>
+        {
+            options.CheckpointScope = CheckpointScope.Tenant;
+            options.AutoRebuildOnVersionChange = false;
+        });
+});
+```
+
+Global checkpoint rows use `CheckpointScope.Global`. Tenant checkpoint rows use `CheckpointScope.Tenant` plus the event `TenantId`, including `Guid.Empty` for the default tenant. The admin endpoints accept an optional `tenantId` query parameter for tenant-scoped status and operations, for example `POST /subscriptions/{name}/retry?tenantId={tenantId}`.
+
+Tenant-scoped checkpoints isolate daemon progress and failure state; they do not automatically make projection snapshots tenant-isolated. If multiple tenants can use the same stream id, include tenant id in the projection key or snapshot key.
+
+Projection rebuild remains global because `IProjection<TSnapshot>.ClearAsync` has no tenant parameter. Tenant-scoped projection checkpoints therefore do not support automatic version-change rebuilds; disable `AutoRebuildOnVersionChange` when using tenant-scoped projection checkpoints and run global rebuilds intentionally.
+
+### Migration steps
+
+1. Add `CheckpointScope` and `TenantId` columns to `Subscriptions` and `ProjectionStatuses`.
+2. Backfill existing rows with `CheckpointScope.Global` and `TenantId = Guid.Empty`.
+3. Update the primary keys to `(SubscriptionAssemblyQualifiedName, CheckpointScope, TenantId)` and `(ProjectionName, CheckpointScope, TenantId)`.
+
 ## Event type names
 
 EventStore now persists a logical event type name in `DbEvent.TypeName`. By default, it uses snake_case based on the CLR type name (for example, `UserCreated` becomes `user_created`).

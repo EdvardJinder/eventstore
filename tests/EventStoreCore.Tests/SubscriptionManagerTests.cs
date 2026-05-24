@@ -83,8 +83,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
 
         await manager.ReplayAsync(name, startSequence: 2, ct: TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.NotNull(subscription);
         Assert.Equal(1, subscription!.Sequence);
@@ -117,8 +116,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
 
         await manager.ReplayAsync(name, fromTimestamp: dbEvents[1].Timestamp, ct: TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.NotNull(subscription);
         Assert.Equal(dbEvents[1].Sequence - 1, subscription!.Sequence);
@@ -143,8 +141,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
         await manager.PauseAsync(name, TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.Equal(SubscriptionState.Paused, subscription!.State);
     }
@@ -169,8 +166,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
         await manager.ResumeAsync(name, TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.Equal(SubscriptionState.Active, subscription!.State);
     }
@@ -200,8 +196,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
         await manager.RetryFailedEventAsync(name, TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.Equal(SubscriptionState.Active, subscription!.State);
         Assert.Equal(0, subscription.AttemptCount);
@@ -235,8 +230,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
         await manager.SkipFailedEventAsync(name, TestContext.Current.CancellationToken);
 
-        var subscription = await db.Set<DbSubscription>()
-            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+        var subscription = await FindGlobalSubscriptionAsync(db, name);
 
         Assert.Equal(SubscriptionState.Active, subscription!.State);
         Assert.Equal(2, subscription.Sequence);
@@ -275,5 +269,15 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         Assert.NotNull(failedEvent);
         Assert.Equal(dbEvent.Sequence, failedEvent!.Sequence);
         Assert.Equal("boom", failedEvent.SubscriptionError);
+    }
+
+    private static Task<DbSubscription?> FindGlobalSubscriptionAsync(EventStoreDbContext db, string name)
+    {
+        return db.Set<DbSubscription>()
+            .FirstOrDefaultAsync(s =>
+                s.SubscriptionAssemblyQualifiedName == name &&
+                s.CheckpointScope == CheckpointScope.Global &&
+                s.TenantId == Guid.Empty,
+                TestContext.Current.CancellationToken);
     }
 }

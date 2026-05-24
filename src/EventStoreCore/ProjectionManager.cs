@@ -1,4 +1,3 @@
-using EventStoreCore;
 using EventStoreCore.Abstractions;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
@@ -39,34 +38,31 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     }
 
     /// <inheritdoc />
-    public async Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, CancellationToken ct = default)
+    public Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct);
+        return GetStatusAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<ProjectionStatusDto?> GetStatusAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return GetStatusAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task<ProjectionStatusDto?> GetStatusAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await FindStatusAsync(projectionName, checkpointScope, asNoTracking: true)
+            .FirstOrDefaultAsync(ct);
 
         if (status == null)
         {
-            // Check if projection is registered but not yet initialized
             var registration = _projections.FirstOrDefault(p => p.Name == projectionName);
-            if (registration != null)
-            {
-                // Return a default status for uninitialized projection
-                return new ProjectionStatusDto(
-                    projectionName,
-                    registration.Version,
-                    ProjectionState.Active,
-                    0,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                );
-            }
-            return null;
+            return registration == null
+                ? null
+                : CreateDefaultStatus(projectionName, registration.Version, checkpointScope);
         }
 
         return status.ToDto();
@@ -79,32 +75,44 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             .AsNoTracking()
             .ToListAsync(ct);
 
-        var result = new List<ProjectionStatusDto>();
+        var result = statuses
+            .Select(status => status.ToDto())
+            .ToList();
 
-        // Add statuses for projections that have records
-        foreach (var status in statuses)
+        foreach (var registration in _projections)
         {
-            result.Add(status.ToDto());
+            if (!statuses.Any(s =>
+                s.ProjectionName == registration.Name &&
+                s.CheckpointScope == CheckpointScope.Global &&
+                s.TenantId == Guid.Empty))
+            {
+                result.Add(CreateDefaultStatus(registration.Name, registration.Version, CheckpointScopeKey.Global));
+            }
         }
 
-        // Add default status for registered projections without records
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ProjectionStatusDto>> GetAllStatusesAsync(Guid tenantId, CancellationToken ct = default)
+    {
+        var checkpointScope = CheckpointScopeKey.Tenant(tenantId);
+        var statuses = await _dbContext.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .Where(s =>
+                s.CheckpointScope == checkpointScope.Scope &&
+                s.TenantId == checkpointScope.TenantId)
+            .ToListAsync(ct);
+
+        var result = statuses
+            .Select(status => status.ToDto())
+            .ToList();
+
         foreach (var registration in _projections)
         {
             if (!statuses.Any(s => s.ProjectionName == registration.Name))
             {
-                result.Add(new ProjectionStatusDto(
-                    registration.Name,
-                    registration.Version,
-                    ProjectionState.Active,
-                    0,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                ));
+                result.Add(CreateDefaultStatus(registration.Name, registration.Version, checkpointScope));
             }
         }
 
@@ -118,14 +126,13 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             ?? throw new InvalidOperationException($"Projection '{projectionName}' is not registered.");
 
         var lockName = $"projection:{projectionName}";
-        
+
         await using var lockHandle = await _lockProvider.AcquireLockAsync(lockName, cancellationToken: ct);
 
         _logger.LogInformation("Initiating manual rebuild for projection {Projection}", projectionName);
 
-        var status = await GetOrCreateStatusAsync(projectionName, registration.Version, ct);
+        var status = await GetOrCreateStatusAsync(projectionName, registration.Version, CheckpointScopeKey.Global, ct);
 
-        // Update status to rebuilding
         status.State = ProjectionState.Rebuilding;
         status.Position = 0;
         status.Version = registration.Version;
@@ -137,7 +144,6 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
 
         await _dbContext.SaveChangesAsync(ct);
 
-        // Clear projection data
         await registration.ClearAction(_dbContext, ct);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -147,11 +153,20 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     }
 
     /// <inheritdoc />
-    public async Task PauseAsync(string projectionName, CancellationToken ct = default)
+    public Task PauseAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct)
-            ?? throw new InvalidOperationException($"Projection '{projectionName}' not found.");
+        return PauseAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task PauseAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return PauseAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task PauseAsync(string projectionName, CheckpointScopeKey checkpointScope, CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(projectionName, checkpointScope, ct);
 
         if (status.State == ProjectionState.Faulted)
         {
@@ -161,15 +176,27 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         status.State = ProjectionState.Paused;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Paused projection {Projection}", projectionName);
+        _logger.LogInformation(
+            "Paused projection {Projection} in checkpoint scope {Scope}",
+            projectionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task ResumeAsync(string projectionName, CancellationToken ct = default)
+    public Task ResumeAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct)
-            ?? throw new InvalidOperationException($"Projection '{projectionName}' not found.");
+        return ResumeAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task ResumeAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return ResumeAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task ResumeAsync(string projectionName, CheckpointScopeKey checkpointScope, CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(projectionName, checkpointScope, ct);
 
         if (status.State != ProjectionState.Paused)
         {
@@ -179,44 +206,71 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         status.State = ProjectionState.Active;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Resumed projection {Projection}", projectionName);
+        _logger.LogInformation(
+            "Resumed projection {Projection} in checkpoint scope {Scope}",
+            projectionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task RetryFailedEventAsync(string projectionName, CancellationToken ct = default)
+    public Task RetryFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct)
-            ?? throw new InvalidOperationException($"Projection '{projectionName}' not found.");
+        return RetryFailedEventAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task RetryFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return RetryFailedEventAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task RetryFailedEventAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(projectionName, checkpointScope, ct);
 
         if (status.State != ProjectionState.Faulted)
         {
             throw new InvalidOperationException($"Projection is not faulted. Current state: {status.State}");
         }
 
-        // Clear error state and set back to active
-        // The daemon will retry processing from the current position
         status.State = ProjectionState.Active;
         status.LastError = null;
         status.FailedEventSequence = null;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Retrying failed event for projection {Projection}", projectionName);
+        _logger.LogInformation(
+            "Retrying failed event for projection {Projection} in checkpoint scope {Scope}",
+            projectionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task SkipFailedEventAsync(string projectionName, CancellationToken ct = default)
+    public Task SkipFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct)
-            ?? throw new InvalidOperationException($"Projection '{projectionName}' not found.");
+        return SkipFailedEventAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task SkipFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return SkipFailedEventAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task SkipFailedEventAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(projectionName, checkpointScope, ct);
 
         if (status.State != ProjectionState.Faulted || !status.FailedEventSequence.HasValue)
         {
             throw new InvalidOperationException("Projection is not faulted or has no failed event to skip.");
         }
 
-        // Skip the failed event by advancing position past it
         status.Position = status.FailedEventSequence.Value;
         status.State = ProjectionState.Active;
         status.LastError = null;
@@ -224,23 +278,38 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Skipped failed event at sequence {Sequence} for projection {Projection}",
-            status.Position, projectionName);
+            "Skipped failed event at sequence {Sequence} for projection {Projection} in checkpoint scope {Scope}",
+            status.Position,
+            projectionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task<FailedEventDto?> GetFailedEventAsync(string projectionName, CancellationToken ct = default)
+    public Task<FailedEventDto?> GetFailedEventAsync(string projectionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct);
+        return GetFailedEventAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<FailedEventDto?> GetFailedEventAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return GetFailedEventAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task<FailedEventDto?> GetFailedEventAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await FindStatusAsync(projectionName, checkpointScope, asNoTracking: true)
+            .FirstOrDefaultAsync(ct);
 
         if (status?.State != ProjectionState.Faulted || !status.FailedEventSequence.HasValue)
         {
             return null;
         }
 
-        var dbEvent = await _dbContext.Events
+        var dbEvent = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Sequence == status.FailedEventSequence, ct);
 
@@ -262,19 +331,29 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             dbEvent.Data,
             dbEvent.Timestamp,
             status.LastError ?? "Unknown error"
-        );
+        )
+        {
+            CheckpointScope = checkpointScope.Scope,
+            TenantId = checkpointScope.IsTenant ? checkpointScope.TenantId : null
+        };
     }
 
-    private async Task<DbProjectionStatus> GetOrCreateStatusAsync(string projectionName, int version, CancellationToken ct)
+    private async Task<DbProjectionStatus> GetOrCreateStatusAsync(
+        string projectionName,
+        int version,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
     {
-        var status = await _dbContext.Set<DbProjectionStatus>()
-            .FirstOrDefaultAsync(s => s.ProjectionName == projectionName, ct);
+        var status = await FindStatusAsync(projectionName, checkpointScope, asNoTracking: false)
+            .FirstOrDefaultAsync(ct);
 
         if (status == null)
         {
             status = new DbProjectionStatus
             {
                 ProjectionName = projectionName,
+                CheckpointScope = checkpointScope.Scope,
+                TenantId = checkpointScope.TenantId,
                 Version = version,
                 State = ProjectionState.Active,
                 Position = 0
@@ -285,5 +364,61 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
 
         return status;
     }
-}
 
+    private async Task<DbProjectionStatus> GetExistingStatusAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        return await FindStatusAsync(projectionName, checkpointScope, asNoTracking: false)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException($"Projection '{projectionName}' not found.");
+    }
+
+    private IQueryable<DbProjectionStatus> FindStatusAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        bool asNoTracking)
+    {
+        var query = _dbContext.Set<DbProjectionStatus>()
+            .Where(s =>
+                s.ProjectionName == projectionName &&
+                s.CheckpointScope == checkpointScope.Scope &&
+                s.TenantId == checkpointScope.TenantId);
+
+        return asNoTracking ? query.AsNoTracking() : query;
+    }
+
+    private static ProjectionStatusDto CreateDefaultStatus(
+        string projectionName,
+        int version,
+        CheckpointScopeKey checkpointScope)
+    {
+        return new ProjectionStatusDto(
+            projectionName,
+            version,
+            ProjectionState.Active,
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        )
+        {
+            CheckpointScope = checkpointScope.Scope,
+            TenantId = checkpointScope.IsTenant ? checkpointScope.TenantId : null
+        };
+    }
+
+    private static IQueryable<DbEvent> ApplyCheckpointScope(
+        IQueryable<DbEvent> query,
+        CheckpointScopeKey checkpointScope)
+    {
+        return checkpointScope.IsTenant
+            ? query.Where(e => e.TenantId == checkpointScope.TenantId)
+            : query;
+    }
+}

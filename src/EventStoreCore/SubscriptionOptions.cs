@@ -1,3 +1,5 @@
+using EventStoreCore.Abstractions;
+
 /// <summary>
 /// Configuration options for subscription processing.
 /// </summary>
@@ -27,6 +29,11 @@ public sealed class SubscriptionOptions
     /// Maximum retry attempts before giving up in the daemon loop.
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;
+
+    /// <summary>
+    /// Determines whether subscription checkpoints are shared globally or stored separately per tenant.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
 
     /// <summary>
     /// Delay between retry attempts when processing fails.

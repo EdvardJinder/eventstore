@@ -40,11 +40,24 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
     }
 
     /// <inheritdoc />
-    public async Task<SubscriptionStatusDto?> GetStatusAsync(string subscriptionName, CancellationToken ct = default)
+    public Task<SubscriptionStatusDto?> GetStatusAsync(string subscriptionName, CancellationToken ct = default)
     {
-        var record = await _dbContext.Set<DbSubscription>()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct);
+        return GetStatusAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<SubscriptionStatusDto?> GetStatusAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return GetStatusAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task<SubscriptionStatusDto?> GetStatusAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var record = await FindStatusAsync(subscriptionName, checkpointScope, asNoTracking: true)
+            .FirstOrDefaultAsync(ct);
 
         if (record == null)
         {
@@ -53,25 +66,11 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
                 return null;
             }
 
-            var totalEvents = await _dbContext.Events.LongCountAsync(ct);
-            return new SubscriptionStatusDto(
-                subscriptionName,
-                0,
-                SubscriptionState.Active,
-                totalEvents,
-                CalculateProgress(0, totalEvents),
-                null,
-                null,
-                0,
-                null,
-                null,
-                null);
+            var totalEvents = await CountEventsAsync(checkpointScope, ct);
+            return CreateDefaultStatus(subscriptionName, checkpointScope, totalEvents);
         }
 
-        var lastProcessedAt = await GetLastProcessedAtAsync(record.Sequence, ct);
-        var totalCount = await _dbContext.Events.LongCountAsync(ct);
-
-        return record.ToDto(totalCount, lastProcessedAt);
+        return await ToStatusDtoAsync(record, ct);
     }
 
     /// <inheritdoc />
@@ -81,33 +80,22 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             .AsNoTracking()
             .ToListAsync(ct);
 
-        var totalEvents = await _dbContext.Events.LongCountAsync(ct);
-        var lastProcessedLookup = await GetLastProcessedLookupAsync(records, ct);
-
         var result = new List<SubscriptionStatusDto>();
 
         foreach (var record in records)
         {
-            lastProcessedLookup.TryGetValue(record.Sequence, out var lastProcessedAt);
-            result.Add(record.ToDto(totalEvents, lastProcessedAt));
+            result.Add(await ToStatusDtoAsync(record, ct));
         }
 
+        var globalTotalEvents = await CountEventsAsync(CheckpointScopeKey.Global, ct);
         foreach (var subscriptionName in _subscriptionNames)
         {
-            if (!records.Any(r => r.SubscriptionAssemblyQualifiedName == subscriptionName))
+            if (!records.Any(r =>
+                r.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                r.CheckpointScope == CheckpointScope.Global &&
+                r.TenantId == Guid.Empty))
             {
-                result.Add(new SubscriptionStatusDto(
-                    subscriptionName,
-                    0,
-                    SubscriptionState.Active,
-                    totalEvents,
-                    CalculateProgress(0, totalEvents),
-                    null,
-                    null,
-                    0,
-                    null,
-                    null,
-                    null));
+                result.Add(CreateDefaultStatus(subscriptionName, CheckpointScopeKey.Global, globalTotalEvents));
             }
         }
 
@@ -115,9 +103,50 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
     }
 
     /// <inheritdoc />
-    public async Task PauseAsync(string subscriptionName, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SubscriptionStatusDto>> GetAllStatusesAsync(Guid tenantId, CancellationToken ct = default)
     {
-        var status = await GetExistingStatusAsync(subscriptionName, ct);
+        var checkpointScope = CheckpointScopeKey.Tenant(tenantId);
+        var records = await _dbContext.Set<DbSubscription>()
+            .AsNoTracking()
+            .Where(s =>
+                s.CheckpointScope == checkpointScope.Scope &&
+                s.TenantId == checkpointScope.TenantId)
+            .ToListAsync(ct);
+
+        var result = new List<SubscriptionStatusDto>();
+
+        foreach (var record in records)
+        {
+            result.Add(await ToStatusDtoAsync(record, ct));
+        }
+
+        var totalEvents = await CountEventsAsync(checkpointScope, ct);
+        foreach (var subscriptionName in _subscriptionNames)
+        {
+            if (!records.Any(r => r.SubscriptionAssemblyQualifiedName == subscriptionName))
+            {
+                result.Add(CreateDefaultStatus(subscriptionName, checkpointScope, totalEvents));
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public Task PauseAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        return PauseAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task PauseAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return PauseAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task PauseAsync(string subscriptionName, CheckpointScopeKey checkpointScope, CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, checkpointScope, ct);
 
         if (status.State is SubscriptionState.Faulted or SubscriptionState.DeadLettered)
         {
@@ -132,13 +161,27 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         status.State = SubscriptionState.Paused;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Paused subscription {Subscription}", subscriptionName);
+        _logger.LogInformation(
+            "Paused subscription {Subscription} in checkpoint scope {Scope}",
+            subscriptionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task ResumeAsync(string subscriptionName, CancellationToken ct = default)
+    public Task ResumeAsync(string subscriptionName, CancellationToken ct = default)
     {
-        var status = await GetExistingStatusAsync(subscriptionName, ct);
+        return ResumeAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task ResumeAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return ResumeAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task ResumeAsync(string subscriptionName, CheckpointScopeKey checkpointScope, CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, checkpointScope, ct);
 
         if (status.State != SubscriptionState.Paused)
         {
@@ -148,13 +191,30 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         status.State = SubscriptionState.Active;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Resumed subscription {Subscription}", subscriptionName);
+        _logger.LogInformation(
+            "Resumed subscription {Subscription} in checkpoint scope {Scope}",
+            subscriptionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task RetryFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    public Task RetryFailedEventAsync(string subscriptionName, CancellationToken ct = default)
     {
-        var status = await GetExistingStatusAsync(subscriptionName, ct);
+        return RetryFailedEventAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task RetryFailedEventAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return RetryFailedEventAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task RetryFailedEventAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, checkpointScope, ct);
 
         if (status.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered))
         {
@@ -165,13 +225,30 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         status.State = SubscriptionState.Active;
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Retrying failed event for subscription {Subscription}", subscriptionName);
+        _logger.LogInformation(
+            "Retrying failed event for subscription {Subscription} in checkpoint scope {Scope}",
+            subscriptionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task SkipFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    public Task SkipFailedEventAsync(string subscriptionName, CancellationToken ct = default)
     {
-        var status = await GetExistingStatusAsync(subscriptionName, ct);
+        return SkipFailedEventAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task SkipFailedEventAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return SkipFailedEventAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task SkipFailedEventAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, checkpointScope, ct);
 
         if (status.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered) || !status.FailedEventSequence.HasValue)
         {
@@ -184,24 +261,38 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Skipped failed event at sequence {Sequence} for subscription {Subscription}",
+            "Skipped failed event at sequence {Sequence} for subscription {Subscription} in checkpoint scope {Scope}",
             status.Sequence,
-            subscriptionName);
+            subscriptionName,
+            checkpointScope);
     }
 
     /// <inheritdoc />
-    public async Task<SubscriptionFailedEventDto?> GetFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    public Task<SubscriptionFailedEventDto?> GetFailedEventAsync(string subscriptionName, CancellationToken ct = default)
     {
-        var status = await _dbContext.Set<DbSubscription>()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct);
+        return GetFailedEventAsync(subscriptionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<SubscriptionFailedEventDto?> GetFailedEventAsync(string subscriptionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return GetFailedEventAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task<SubscriptionFailedEventDto?> GetFailedEventAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var status = await FindStatusAsync(subscriptionName, checkpointScope, asNoTracking: true)
+            .FirstOrDefaultAsync(ct);
 
         if (status?.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered) || !status.FailedEventSequence.HasValue)
         {
             return null;
         }
 
-        var dbEvent = await _dbContext.Events
+        var dbEvent = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Sequence == status.FailedEventSequence, ct);
 
@@ -222,15 +313,40 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             eventTypeName,
             dbEvent.Data,
             dbEvent.Timestamp,
-            status.LastError ?? "Unknown error");
+            status.LastError ?? "Unknown error")
+        {
+            CheckpointScope = checkpointScope.Scope,
+            TenantId = checkpointScope.IsTenant ? checkpointScope.TenantId : null
+        };
     }
 
     /// <inheritdoc />
-    public async Task ReplayAsync(
+    public Task ReplayAsync(
         string subscriptionName,
         long? startSequence = null,
         DateTimeOffset? fromTimestamp = null,
         CancellationToken ct = default)
+    {
+        return ReplayAsync(subscriptionName, CheckpointScopeKey.Global, startSequence, fromTimestamp, ct);
+    }
+
+    /// <inheritdoc />
+    public Task ReplayAsync(
+        string subscriptionName,
+        Guid tenantId,
+        long? startSequence = null,
+        DateTimeOffset? fromTimestamp = null,
+        CancellationToken ct = default)
+    {
+        return ReplayAsync(subscriptionName, CheckpointScopeKey.Tenant(tenantId), startSequence, fromTimestamp, ct);
+    }
+
+    private async Task ReplayAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        long? startSequence,
+        DateTimeOffset? fromTimestamp,
+        CancellationToken ct)
     {
         if (startSequence.HasValue && fromTimestamp.HasValue)
         {
@@ -242,22 +358,25 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             throw new InvalidOperationException($"Subscription '{subscriptionName}' is not registered.");
         }
 
-        await using var lockHandle = await _lockProvider.AcquireLockAsync(subscriptionName, cancellationToken: ct);
+        var lockName = $"{subscriptionName}{checkpointScope.LockSuffix}";
+        await using var lockHandle = await _lockProvider.AcquireLockAsync(lockName, cancellationToken: ct);
 
-        var record = await _dbContext.Set<DbSubscription>()
-            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct);
+        var record = await FindStatusAsync(subscriptionName, checkpointScope, asNoTracking: false)
+            .FirstOrDefaultAsync(ct);
 
         if (record == null)
         {
             record = new DbSubscription
             {
                 SubscriptionAssemblyQualifiedName = subscriptionName,
+                CheckpointScope = checkpointScope.Scope,
+                TenantId = checkpointScope.TenantId,
                 Sequence = 0
             };
             _dbContext.Set<DbSubscription>().Add(record);
         }
 
-        var targetSequence = await ResolveReplayPositionAsync(startSequence, fromTimestamp, ct);
+        var targetSequence = await ResolveReplayPositionAsync(checkpointScope, startSequence, fromTimestamp, ct);
         record.Sequence = targetSequence;
         record.State = SubscriptionState.Active;
         ResetFailureState(record);
@@ -265,19 +384,14 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         await _dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Reset subscription {Subscription} to sequence {Sequence} for replay",
+            "Reset subscription {Subscription} in checkpoint scope {Scope} to sequence {Sequence} for replay",
             subscriptionName,
+            checkpointScope,
             record.Sequence);
     }
 
-    /// <summary>
-    /// Resolves the sequence position for a replay request.
-    /// </summary>
-    /// <param name="startSequence">Explicit start sequence, if provided.</param>
-    /// <param name="fromTimestamp">Timestamp to start from, if provided.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The sequence position to persist.</returns>
     private async Task<long> ResolveReplayPositionAsync(
+        CheckpointScopeKey checkpointScope,
         long? startSequence,
         DateTimeOffset? fromTimestamp,
         CancellationToken ct)
@@ -289,7 +403,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
 
         if (fromTimestamp.HasValue)
         {
-            var firstSequence = await _dbContext.Events
+            var firstSequence = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
                 .AsNoTracking()
                 .Where(e => e.Timestamp >= fromTimestamp.Value)
                 .OrderBy(e => e.Sequence)
@@ -301,18 +415,70 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
                 return Math.Max(firstSequence.Value - 1, 0);
             }
 
-            var maxSequence = await _dbContext.Events.MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
-            return maxSequence;
+            return await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+                .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
         }
 
         return 0;
     }
 
-    private async Task<DbSubscription> GetExistingStatusAsync(string subscriptionName, CancellationToken ct)
+    private async Task<DbSubscription> GetExistingStatusAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
     {
-        return await _dbContext.Set<DbSubscription>()
-            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct)
+        return await FindStatusAsync(subscriptionName, checkpointScope, asNoTracking: false)
+            .FirstOrDefaultAsync(ct)
             ?? throw new InvalidOperationException($"Subscription '{subscriptionName}' not found.");
+    }
+
+    private IQueryable<DbSubscription> FindStatusAsync(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        bool asNoTracking)
+    {
+        var query = _dbContext.Set<DbSubscription>()
+            .Where(s =>
+                s.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                s.CheckpointScope == checkpointScope.Scope &&
+                s.TenantId == checkpointScope.TenantId);
+
+        return asNoTracking ? query.AsNoTracking() : query;
+    }
+
+    private async Task<SubscriptionStatusDto> ToStatusDtoAsync(DbSubscription record, CancellationToken ct)
+    {
+        var checkpointScope = new CheckpointScopeKey(record.CheckpointScope, record.TenantId);
+        var totalEvents = await CountEventsAsync(checkpointScope, ct);
+        var lastProcessedAt = await GetLastProcessedAtAsync(record.Sequence, checkpointScope, ct);
+        var processedEvents = checkpointScope.IsTenant
+            ? await CountProcessedEventsAsync(record.Sequence, checkpointScope, ct)
+            : (long?)null;
+
+        return record.ToDto(totalEvents, lastProcessedAt, processedEvents);
+    }
+
+    private static SubscriptionStatusDto CreateDefaultStatus(
+        string subscriptionName,
+        CheckpointScopeKey checkpointScope,
+        long totalEvents)
+    {
+        return new SubscriptionStatusDto(
+            subscriptionName,
+            0,
+            SubscriptionState.Active,
+            totalEvents,
+            CalculateProgress(0, totalEvents),
+            null,
+            null,
+            0,
+            null,
+            null,
+            null)
+        {
+            CheckpointScope = checkpointScope.Scope,
+            TenantId = checkpointScope.IsTenant ? checkpointScope.TenantId : null
+        };
     }
 
     private static void ResetFailureState(DbSubscription status)
@@ -340,51 +506,48 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         return Math.Round((double)position / totalEvents * 100, 2);
     }
 
-    /// <summary>
-    /// Gets the timestamp of the last processed event at a given position.
-    /// </summary>
-    /// <param name="position">The event sequence position.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The timestamp of the event, or null when not available.</returns>
-    private async Task<DateTimeOffset?> GetLastProcessedAtAsync(long position, CancellationToken ct)
+    private Task<long> CountEventsAsync(CheckpointScopeKey checkpointScope, CancellationToken ct)
+    {
+        return ApplyCheckpointScope(_dbContext.Events, checkpointScope).LongCountAsync(ct);
+    }
+
+    private Task<long> CountProcessedEventsAsync(
+        long position,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        if (position <= 0)
+        {
+            return Task.FromResult(0L);
+        }
+
+        return ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+            .LongCountAsync(e => e.Sequence <= position, ct);
+    }
+
+    private async Task<DateTimeOffset?> GetLastProcessedAtAsync(
+        long position,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
     {
         if (position <= 0)
         {
             return null;
         }
 
-        return await _dbContext.Events
+        return await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
             .AsNoTracking()
             .Where(e => e.Sequence == position)
             .Select(e => (DateTimeOffset?)e.Timestamp)
             .FirstOrDefaultAsync(ct);
     }
 
-    /// <summary>
-    /// Builds a lookup for last processed timestamps by sequence number.
-    /// </summary>
-    /// <param name="records">Subscription records to inspect.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A lookup of sequence to timestamp.</returns>
-    private async Task<Dictionary<long, DateTimeOffset>> GetLastProcessedLookupAsync(
-        IReadOnlyCollection<DbSubscription> records,
-        CancellationToken ct)
+    private static IQueryable<DbEvent> ApplyCheckpointScope(
+        IQueryable<DbEvent> query,
+        CheckpointScopeKey checkpointScope)
     {
-        var positions = records
-            .Select(r => r.Sequence)
-            .Where(sequence => sequence > 0)
-            .Distinct()
-            .ToArray();
-
-        if (positions.Length == 0)
-        {
-            return new Dictionary<long, DateTimeOffset>();
-        }
-
-        return await _dbContext.Events
-            .AsNoTracking()
-            .Where(e => positions.Contains(e.Sequence))
-            .ToDictionaryAsync(e => e.Sequence, e => e.Timestamp, ct);
+        return checkpointScope.IsTenant
+            ? query.Where(e => e.TenantId == checkpointScope.TenantId)
+            : query;
     }
 }
-
