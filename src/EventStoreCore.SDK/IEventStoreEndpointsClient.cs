@@ -93,6 +93,47 @@ public interface IEventStoreEndpointsClient
     Task<SubscriptionStatusDto?> GetSubscriptionAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Pauses processing of the specified subscription.
+    /// </summary>
+    /// <param name="name">The subscription name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/subscriptions/{name}/pause")]
+    Task PauseSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resumes processing of a paused subscription.
+    /// </summary>
+    /// <param name="name">The subscription name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/subscriptions/{name}/resume")]
+    Task ResumeSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets details about the failed event for a faulted or dead-lettered subscription.
+    /// </summary>
+    /// <param name="name">The subscription name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The failed event details, or null when not found.</returns>
+    [Get("/subscriptions/{name}/failed-event")]
+    Task<SubscriptionFailedEventDto?> GetSubscriptionFailedEventAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retries processing the failed subscription event.
+    /// </summary>
+    /// <param name="name">The subscription name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/subscriptions/{name}/retry")]
+    Task RetrySubscriptionFailedEventAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Skips the failed subscription event and resumes processing.
+    /// </summary>
+    /// <param name="name">The subscription name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/subscriptions/{name}/skip")]
+    Task SkipSubscriptionFailedEventAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Replays a subscription from a specific sequence or timestamp.
     /// </summary>
     /// <param name="name">The subscription name.</param>

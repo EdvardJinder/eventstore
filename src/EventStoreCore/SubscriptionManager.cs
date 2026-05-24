@@ -57,20 +57,21 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             return new SubscriptionStatusDto(
                 subscriptionName,
                 0,
+                SubscriptionState.Active,
                 totalEvents,
                 CalculateProgress(0, totalEvents),
+                null,
+                null,
+                0,
+                null,
+                null,
                 null);
         }
 
         var lastProcessedAt = await GetLastProcessedAtAsync(record.Sequence, ct);
         var totalCount = await _dbContext.Events.LongCountAsync(ct);
 
-        return new SubscriptionStatusDto(
-            record.SubscriptionAssemblyQualifiedName,
-            record.Sequence,
-            totalCount,
-            CalculateProgress(record.Sequence, totalCount),
-            lastProcessedAt);
+        return record.ToDto(totalCount, lastProcessedAt);
     }
 
     /// <inheritdoc />
@@ -88,13 +89,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         foreach (var record in records)
         {
             lastProcessedLookup.TryGetValue(record.Sequence, out var lastProcessedAt);
-
-            result.Add(new SubscriptionStatusDto(
-                record.SubscriptionAssemblyQualifiedName,
-                record.Sequence,
-                totalEvents,
-                CalculateProgress(record.Sequence, totalEvents),
-                lastProcessedAt));
+            result.Add(record.ToDto(totalEvents, lastProcessedAt));
         }
 
         foreach (var subscriptionName in _subscriptionNames)
@@ -104,13 +99,130 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
                 result.Add(new SubscriptionStatusDto(
                     subscriptionName,
                     0,
+                    SubscriptionState.Active,
                     totalEvents,
                     CalculateProgress(0, totalEvents),
+                    null,
+                    null,
+                    0,
+                    null,
+                    null,
                     null));
             }
         }
 
         return result;
+    }
+
+    /// <inheritdoc />
+    public async Task PauseAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, ct);
+
+        if (status.State is SubscriptionState.Faulted or SubscriptionState.DeadLettered)
+        {
+            throw new InvalidOperationException("Cannot pause a faulted or dead-lettered subscription. Retry or skip the failed event first.");
+        }
+
+        if (status.State == SubscriptionState.Paused)
+        {
+            throw new InvalidOperationException("Subscription is already paused.");
+        }
+
+        status.State = SubscriptionState.Paused;
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Paused subscription {Subscription}", subscriptionName);
+    }
+
+    /// <inheritdoc />
+    public async Task ResumeAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, ct);
+
+        if (status.State != SubscriptionState.Paused)
+        {
+            throw new InvalidOperationException($"Subscription is not paused. Current state: {status.State}");
+        }
+
+        status.State = SubscriptionState.Active;
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Resumed subscription {Subscription}", subscriptionName);
+    }
+
+    /// <inheritdoc />
+    public async Task RetryFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, ct);
+
+        if (status.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered))
+        {
+            throw new InvalidOperationException($"Subscription is not faulted. Current state: {status.State}");
+        }
+
+        ResetFailureState(status);
+        status.State = SubscriptionState.Active;
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Retrying failed event for subscription {Subscription}", subscriptionName);
+    }
+
+    /// <inheritdoc />
+    public async Task SkipFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        var status = await GetExistingStatusAsync(subscriptionName, ct);
+
+        if (status.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered) || !status.FailedEventSequence.HasValue)
+        {
+            throw new InvalidOperationException("Subscription is not faulted or has no failed event to skip.");
+        }
+
+        status.Sequence = status.FailedEventSequence.Value;
+        ResetFailureState(status);
+        status.State = SubscriptionState.Active;
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Skipped failed event at sequence {Sequence} for subscription {Subscription}",
+            status.Sequence,
+            subscriptionName);
+    }
+
+    /// <inheritdoc />
+    public async Task<SubscriptionFailedEventDto?> GetFailedEventAsync(string subscriptionName, CancellationToken ct = default)
+    {
+        var status = await _dbContext.Set<DbSubscription>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct);
+
+        if (status?.State is not (SubscriptionState.Faulted or SubscriptionState.DeadLettered) || !status.FailedEventSequence.HasValue)
+        {
+            return null;
+        }
+
+        var dbEvent = await _dbContext.Events
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Sequence == status.FailedEventSequence, ct);
+
+        if (dbEvent == null)
+        {
+            return null;
+        }
+
+        var eventTypeName = string.IsNullOrWhiteSpace(dbEvent.TypeName)
+            ? dbEvent.Type
+            : dbEvent.TypeName;
+
+        return new SubscriptionFailedEventDto(
+            dbEvent.EventId,
+            dbEvent.StreamId,
+            dbEvent.Version,
+            dbEvent.Sequence,
+            eventTypeName,
+            dbEvent.Data,
+            dbEvent.Timestamp,
+            status.LastError ?? "Unknown error");
     }
 
     /// <inheritdoc />
@@ -147,6 +259,8 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
 
         var targetSequence = await ResolveReplayPositionAsync(startSequence, fromTimestamp, ct);
         record.Sequence = targetSequence;
+        record.State = SubscriptionState.Active;
+        ResetFailureState(record);
 
         await _dbContext.SaveChangesAsync(ct);
 
@@ -192,6 +306,22 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         }
 
         return 0;
+    }
+
+    private async Task<DbSubscription> GetExistingStatusAsync(string subscriptionName, CancellationToken ct)
+    {
+        return await _dbContext.Set<DbSubscription>()
+            .FirstOrDefaultAsync(s => s.SubscriptionAssemblyQualifiedName == subscriptionName, ct)
+            ?? throw new InvalidOperationException($"Subscription '{subscriptionName}' not found.");
+    }
+
+    private static void ResetFailureState(DbSubscription status)
+    {
+        status.LastError = null;
+        status.AttemptCount = 0;
+        status.LastAttemptAt = null;
+        status.NextAttemptAt = null;
+        status.FailedEventSequence = null;
     }
 
     /// <summary>

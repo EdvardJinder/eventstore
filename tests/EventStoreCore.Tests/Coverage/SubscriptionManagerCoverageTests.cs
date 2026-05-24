@@ -127,6 +127,7 @@ public class SubscriptionManagerCoverageTests
         Assert.Single(statuses);
         Assert.Equal(typeof(SampleSubscription).AssemblyQualifiedName, statuses[0].SubscriptionName);
         Assert.Equal(0, statuses[0].Position);
+        Assert.Equal(SubscriptionState.Active, statuses[0].State);
     }
 
     [Fact]
@@ -159,5 +160,46 @@ public class SubscriptionManagerCoverageTests
 
         Assert.NotNull(status);
         Assert.Equal(trackedEvent.Sequence, status!.Position);
+    }
+
+    [Fact]
+    public async Task RetryFailedEventAsync_ThrowsWhenSubscriptionIsNotFaulted()
+    {
+        var db = BuildDbContext();
+        var subscription = new SampleSubscription();
+        var manager = BuildManager(db, new[] { subscription });
+        var name = typeof(SampleSubscription).AssemblyQualifiedName!;
+
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            State = SubscriptionState.Active
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            manager.RetryFailedEventAsync(name, TestContext.Current.CancellationToken));
+
+        Assert.Contains("not faulted", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetFailedEventAsync_ReturnsNull_WhenSubscriptionIsNotFaulted()
+    {
+        var db = BuildDbContext();
+        var subscription = new SampleSubscription();
+        var manager = BuildManager(db, new[] { subscription });
+        var name = typeof(SampleSubscription).AssemblyQualifiedName!;
+
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            State = SubscriptionState.Active
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var failedEvent = await manager.GetFailedEventAsync(name, TestContext.Current.CancellationToken);
+
+        Assert.Null(failedEvent);
     }
 }

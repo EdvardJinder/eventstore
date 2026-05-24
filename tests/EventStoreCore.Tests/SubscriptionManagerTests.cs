@@ -62,6 +62,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         Assert.NotNull(status);
         Assert.Equal(name, status!.SubscriptionName);
         Assert.Equal(0, status.Position);
+        Assert.Equal(SubscriptionState.Active, status.State);
     }
 
     [Fact]
@@ -121,5 +122,158 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
 
         Assert.NotNull(subscription);
         Assert.Equal(dbEvents[1].Sequence - 1, subscription!.Sequence);
+    }
+
+    [Fact]
+    public async Task PauseAsync_TransitionsSubscriptionToPaused()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await ResetDatabaseAsync(db, TestContext.Current.CancellationToken);
+
+        var name = typeof(TestSub).AssemblyQualifiedName!;
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
+        await manager.PauseAsync(name, TestContext.Current.CancellationToken);
+
+        var subscription = await db.Set<DbSubscription>()
+            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SubscriptionState.Paused, subscription!.State);
+    }
+
+    [Fact]
+    public async Task ResumeAsync_TransitionsPausedSubscriptionToActive()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await ResetDatabaseAsync(db, TestContext.Current.CancellationToken);
+
+        var name = typeof(TestSub).AssemblyQualifiedName!;
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            State = SubscriptionState.Paused
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
+        await manager.ResumeAsync(name, TestContext.Current.CancellationToken);
+
+        var subscription = await db.Set<DbSubscription>()
+            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SubscriptionState.Active, subscription!.State);
+    }
+
+    [Fact]
+    public async Task RetryFailedEventAsync_ClearsFaultState()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await ResetDatabaseAsync(db, TestContext.Current.CancellationToken);
+
+        var name = typeof(TestSub).AssemblyQualifiedName!;
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            State = SubscriptionState.DeadLettered,
+            AttemptCount = 3,
+            LastError = "boom",
+            FailedEventSequence = 4,
+            LastAttemptAt = DateTimeOffset.UtcNow,
+            NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(1)
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
+        await manager.RetryFailedEventAsync(name, TestContext.Current.CancellationToken);
+
+        var subscription = await db.Set<DbSubscription>()
+            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SubscriptionState.Active, subscription!.State);
+        Assert.Equal(0, subscription.AttemptCount);
+        Assert.Null(subscription.LastError);
+        Assert.Null(subscription.FailedEventSequence);
+        Assert.Null(subscription.LastAttemptAt);
+        Assert.Null(subscription.NextAttemptAt);
+    }
+
+    [Fact]
+    public async Task SkipFailedEventAsync_AdvancesPastFailedEventAndResumes()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await ResetDatabaseAsync(db, TestContext.Current.CancellationToken);
+
+        var name = typeof(TestSub).AssemblyQualifiedName!;
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            Sequence = 1,
+            State = SubscriptionState.Faulted,
+            AttemptCount = 1,
+            LastError = "boom",
+            FailedEventSequence = 2
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
+        await manager.SkipFailedEventAsync(name, TestContext.Current.CancellationToken);
+
+        var subscription = await db.Set<DbSubscription>()
+            .FindAsync(new object[] { name }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SubscriptionState.Active, subscription!.State);
+        Assert.Equal(2, subscription.Sequence);
+        Assert.Equal(0, subscription.AttemptCount);
+        Assert.Null(subscription.LastError);
+        Assert.Null(subscription.FailedEventSequence);
+    }
+
+    [Fact]
+    public async Task GetFailedEventAsync_ReturnsFaultedEventDetails()
+    {
+        var provider = BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        await ResetDatabaseAsync(db, TestContext.Current.CancellationToken);
+
+        var streamId = Guid.NewGuid();
+        db.Streams.StartStream(streamId, events: [new TestEvent()]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var dbEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var name = typeof(TestSub).AssemblyQualifiedName!;
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = name,
+            State = SubscriptionState.Faulted,
+            LastError = "boom",
+            FailedEventSequence = dbEvent.Sequence
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var manager = scope.ServiceProvider.GetRequiredService<ISubscriptionManager>();
+        var failedEvent = await manager.GetFailedEventAsync(name, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(failedEvent);
+        Assert.Equal(dbEvent.Sequence, failedEvent!.Sequence);
+        Assert.Equal("boom", failedEvent.SubscriptionError);
     }
 }

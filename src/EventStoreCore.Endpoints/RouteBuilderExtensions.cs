@@ -167,6 +167,89 @@ public static class RouteBuilderExtensions
         .Produces<SubscriptionStatusDto>()
         .Produces(StatusCodes.Status404NotFound);
 
+        // POST /subscriptions/{name}/pause - Pause subscription
+        group.MapPost("/subscriptions/{name}/pause", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            try
+            {
+                await manager.PauseAsync(name, ct);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("PauseSubscription")
+        .WithDescription("Pauses processing of the specified subscription")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        // POST /subscriptions/{name}/resume - Resume subscription
+        group.MapPost("/subscriptions/{name}/resume", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            try
+            {
+                await manager.ResumeAsync(name, ct);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("ResumeSubscription")
+        .WithDescription("Resumes processing of a paused subscription")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        // GET /subscriptions/{name}/failed-event - Get failed event details
+        group.MapGet("/subscriptions/{name}/failed-event", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            var failedEvent = await manager.GetFailedEventAsync(name, ct);
+            return failedEvent != null ? Results.Ok(failedEvent) : Results.NotFound();
+        })
+        .WithName("GetSubscriptionFailedEvent")
+        .WithDescription("Gets details about the failed event for a faulted or dead-lettered subscription")
+        .Produces<SubscriptionFailedEventDto>()
+        .Produces(StatusCodes.Status404NotFound);
+
+        // POST /subscriptions/{name}/retry - Retry failed event
+        group.MapPost("/subscriptions/{name}/retry", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            try
+            {
+                await manager.RetryFailedEventAsync(name, ct);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("RetrySubscriptionFailedEvent")
+        .WithDescription("Retries processing the failed subscription event")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        // POST /subscriptions/{name}/skip - Skip failed event
+        group.MapPost("/subscriptions/{name}/skip", async ([FromRoute] string name, [FromServices] ISubscriptionManager manager, CancellationToken ct) =>
+        {
+            try
+            {
+                await manager.SkipFailedEventAsync(name, ct);
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("SkipSubscriptionFailedEvent")
+        .WithDescription("Skips the failed subscription event and resumes processing")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
         // POST /subscriptions/{name}/replay - Trigger replay
         group.MapPost("/subscriptions/{name}/replay", async (
             [FromRoute] string name,
