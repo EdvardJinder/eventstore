@@ -214,6 +214,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
                         await dbContext.SaveChangesAsync(stoppingToken);
                     }
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     logger.LogError(
@@ -225,10 +229,11 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     if (lastProcessedSequence is long persistedSequence && subscription.Sequence != persistedSequence)
                     {
                         subscription.Sequence = persistedSequence;
-                        await dbContext.SaveChangesAsync(stoppingToken);
                     }
 
-                    await PersistFailureAsync(name, nextEvent.Sequence, ex, stoppingToken);
+                    PersistFailure(subscription, nextEvent.Sequence, ex);
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                    await transaction.CommitAsync(stoppingToken);
                     return processedCount;
                 }
             }
@@ -339,39 +344,18 @@ public sealed class SubscriptionDaemon<TDbContext>(
         }
     }
 
-    private async Task PersistFailureAsync(
-        string subscriptionName,
+    private void PersistFailure(
+        DbSubscription subscription,
         long failedSequence,
-        Exception exception,
-        CancellationToken cancellationToken)
+        Exception exception)
     {
-        using var errorScope = _serviceProvider.CreateScope();
-        var errorContext = errorScope.ServiceProvider.GetRequiredService<TDbContext>();
-        var subscriptionSet = errorContext.Set<DbSubscription>();
-        var status = subscriptionSet.Local
-            .FirstOrDefault(s => s.SubscriptionAssemblyQualifiedName == subscriptionName)
-            ?? await subscriptionSet.FirstOrDefaultAsync(
-                s => s.SubscriptionAssemblyQualifiedName == subscriptionName,
-                cancellationToken);
-
-        if (status is null)
-        {
-            status = new DbSubscription
-            {
-                SubscriptionAssemblyQualifiedName = subscriptionName
-            };
-            subscriptionSet.Add(status);
-        }
-
-        status.AttemptCount += 1;
-        status.LastAttemptAt = DateTimeOffset.UtcNow;
-        status.NextAttemptAt = status.LastAttemptAt.Value.Add(_options.RetryDelay);
-        status.LastError = exception.ToString();
-        status.FailedEventSequence = failedSequence;
-        status.State = status.AttemptCount >= _options.MaxRetryAttempts
+        subscription.AttemptCount += 1;
+        subscription.LastAttemptAt ??= DateTimeOffset.UtcNow;
+        subscription.NextAttemptAt = subscription.LastAttemptAt.Value.Add(_options.RetryDelay);
+        subscription.LastError = exception.ToString();
+        subscription.FailedEventSequence = failedSequence;
+        subscription.State = subscription.AttemptCount >= _options.MaxRetryAttempts
             ? SubscriptionState.DeadLettered
             : SubscriptionState.Faulted;
-
-        await errorContext.SaveChangesAsync(cancellationToken);
     }
 }
