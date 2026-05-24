@@ -34,6 +34,21 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         }
     }
 
+    private static async Task<long> GetCurrentVersionAsync(
+        EventStoreFixture.EventStoreDbContext dbContext,
+        Guid streamId,
+        Guid tenantId = default,
+        string streamType = "")
+    {
+        var stream = await dbContext.Set<DbStream>()
+            .AsNoTracking()
+            .SingleAsync(
+                s => s.Id == streamId && s.TenantId == tenantId && s.StreamType == streamType,
+                TestContext.Current.CancellationToken);
+
+        return stream.CurrentVersion;
+    }
+
     [Fact]
     public async Task CanStartStream()
     {
@@ -222,6 +237,128 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         
         Assert.Equal("Upload Event", uploadEvent?.Data.Name);
         Assert.Equal("Analysis Event", analysisEvent?.Data.Name);
+    }
+
+    [Fact]
+    public async Task AppendAsync_NoStream_Throws_WhenStreamAlreadyExists()
+    {
+        var streamId = Guid.NewGuid();
+
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            dbContext.Streams.StartStream(streamId, events: [new TestEvent()]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var appendContext = eventStoreFixture.CreateNewContext();
+
+        var exception = await Assert.ThrowsAsync<EventStoreConcurrencyException>(() =>
+            appendContext.Streams.AppendAsync(
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "Unexpected" }],
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ExpectedVersion.NoStream, exception.ExpectedVersion);
+        Assert.Equal(streamId, exception.StreamId);
+        Assert.Equal(1, exception.ActualVersion);
+    }
+
+    [Fact]
+    public async Task AppendAsync_StreamExists_Throws_WhenStreamDoesNotExist()
+    {
+        var streamId = Guid.NewGuid();
+
+        using var dbContext = eventStoreFixture.CreateNewContext();
+
+        var exception = await Assert.ThrowsAsync<EventStoreConcurrencyException>(() =>
+            dbContext.Streams.AppendAsync(
+                streamId,
+                ExpectedVersion.StreamExists,
+                [new TestEvent()],
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ExpectedVersion.StreamExists, exception.ExpectedVersion);
+        Assert.Equal(streamId, exception.StreamId);
+        Assert.Null(exception.ActualVersion);
+    }
+
+    [Fact]
+    public async Task AppendAsync_Exact_Throws_WhenVersionDoesNotMatch()
+    {
+        var streamId = Guid.NewGuid();
+
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            dbContext.Streams.StartStream(streamId, events: [new TestEvent()]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var appendContext = eventStoreFixture.CreateNewContext();
+
+        var exception = await Assert.ThrowsAsync<EventStoreConcurrencyException>(() =>
+            appendContext.Streams.AppendAsync(
+                streamId,
+                ExpectedVersion.Exact(0),
+                [new TestEvent { Name = "Version mismatch" }],
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(ExpectedVersionMode.Exact, exception.ExpectedVersion.Mode);
+        Assert.Equal(0, exception.ExpectedVersion.Version);
+        Assert.Equal(1, exception.ActualVersion);
+    }
+
+    [Fact]
+    public async Task AppendAsync_ConcurrentExactWriters_CauseOneConcurrencyFailure()
+    {
+        var streamId = Guid.NewGuid();
+
+        using (var dbContext = eventStoreFixture.CreateNewContext())
+        {
+            dbContext.Streams.StartStream(streamId, events: [new TestEvent()]);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<Exception?> AppendFromNewContext(string name)
+        {
+            using var dbContext = eventStoreFixture.CreateNewContext();
+            await gate.Task;
+
+            try
+            {
+                await dbContext.Streams.AppendAsync(
+                    streamId,
+                    ExpectedVersion.Exact(1),
+                    [new TestEvent { Name = name }],
+                    TestContext.Current.CancellationToken);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        var writer1 = AppendFromNewContext("writer-1");
+        var writer2 = AppendFromNewContext("writer-2");
+
+        gate.SetResult();
+
+        var results = await Task.WhenAll(writer1, writer2);
+        var failures = results.OfType<Exception>().ToArray();
+
+        Assert.Equal(1, results.Count(r => r is null));
+        var failure = Assert.Single(failures);
+        Assert.IsType<EventStoreConcurrencyException>(failure);
+
+        using var verifyContext = eventStoreFixture.CreateNewContext();
+        var readStream = await verifyContext.Streams.FetchForReadingAsync(streamId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(readStream);
+        Assert.Equal(2, readStream!.Events.Count);
+        Assert.Equal(2, await GetCurrentVersionAsync(verifyContext, streamId));
     }
 
     [Fact]

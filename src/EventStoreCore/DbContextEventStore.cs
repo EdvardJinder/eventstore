@@ -10,6 +10,99 @@ namespace EventStoreCore;
 public sealed class DbContextEventStore(DbContext db) : IEventStore
 {
     /// <inheritdoc />
+    public Task<IReadOnlyStream> AppendAsync(
+        Guid streamId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default)
+        => AppendAsync(string.Empty, streamId, Guid.Empty, expectedVersion, events, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream> AppendAsync(
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default)
+        => AppendAsync(string.Empty, streamId, tenantId, expectedVersion, events, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyStream> AppendAsync(
+        string streamType,
+        Guid streamId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default)
+        => AppendAsync(streamType, streamId, Guid.Empty, expectedVersion, events, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyStream> AppendAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+
+        var eventList = events.ToArray();
+        var stream = await db.Set<DbStream>()
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+            .Include(x => x.Events)
+            .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+
+        stream = expectedVersion.Mode switch
+        {
+            ExpectedVersionMode.Any => stream ?? CreateStream(streamType, streamId, tenantId),
+            ExpectedVersionMode.NoStream when stream is null => CreateStream(streamType, streamId, tenantId),
+            ExpectedVersionMode.NoStream => throw CreateConcurrencyException(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                stream!.CurrentVersion,
+                "Append expected no stream, but the stream already exists."),
+            ExpectedVersionMode.StreamExists when stream is not null => stream,
+            ExpectedVersionMode.StreamExists => throw CreateConcurrencyException(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                actualVersion: null,
+                "Append expected an existing stream, but the stream was not found."),
+            ExpectedVersionMode.Exact when stream is not null && stream.CurrentVersion == expectedVersion.Version => stream,
+            ExpectedVersionMode.Exact => throw CreateConcurrencyException(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                stream?.CurrentVersion,
+                $"Append expected stream version {expectedVersion.Version}, but observed {(stream is null ? "no stream" : stream.CurrentVersion.ToString())}."),
+            _ => throw new InvalidOperationException($"Unsupported expected-version mode: {expectedVersion.Mode}")
+        };
+
+        new DbContextStream(stream, db).Append(eventList);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return new DbContextStream(stream, db);
+        }
+        catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
+        {
+            throw CreateConcurrencyException(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                stream.CurrentVersion - eventList.Length,
+                "Append failed because another writer modified the stream concurrently.",
+                ex);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, CancellationToken cancellationToken = default)
         => FetchForReadingAsync(string.Empty, streamId, Guid.Empty, cancellationToken);
 
@@ -197,6 +290,15 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public IStream<T> StartStream<T>(string streamType, Guid streamId, Guid tenantId, params IEnumerable<object> events) where T : IState, new()
     {
+        var dbStream = CreateStream(streamType, streamId, tenantId);
+        var stream = new DbContextStream<T>(dbStream, db);
+
+        stream.Append(events);
+        return stream;
+    }
+
+    private DbStream CreateStream(string streamType, Guid streamId, Guid tenantId)
+    {
         var dbStream = new DbStream
         {
             Id = streamId,
@@ -206,11 +308,33 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             UpdatedTimestamp = DateTime.UtcNow,
             TenantId = tenantId
         };
-        db.Add(dbStream);
-        var stream = new DbContextStream<T>(dbStream, db);
 
-        stream.Append(events);
-        return stream;
+        db.Add(dbStream);
+        return dbStream;
+    }
+
+    private static bool IsEventStoreWriteConflict(DbUpdateException exception)
+    {
+        return exception.Entries.Any(entry => entry.Entity is DbEvent or DbStream);
+    }
+
+    private static EventStoreConcurrencyException CreateConcurrencyException(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        long? actualVersion,
+        string message,
+        Exception? innerException = null)
+    {
+        return new EventStoreConcurrencyException(
+            streamType,
+            streamId,
+            tenantId,
+            expectedVersion,
+            actualVersion,
+            message,
+            innerException);
     }
 }
 
