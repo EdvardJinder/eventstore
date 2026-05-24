@@ -65,6 +65,30 @@ public class SubscriptionDaemonExecutionTests
         }
     }
 
+    private sealed class ThrowingSubscription : ISubscription
+    {
+        private readonly int _throwOnAttempt;
+
+        public ThrowingSubscription(int throwOnAttempt)
+        {
+            _throwOnAttempt = throwOnAttempt;
+        }
+
+        public int HandledCount { get; private set; }
+
+        public Task Handle(IEvent @event, CancellationToken ct)
+        {
+            HandledCount++;
+
+            if (HandledCount == _throwOnAttempt)
+            {
+                throw new InvalidOperationException("Subscription handler failed.");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeLockProvider : IDistributedLockProvider
     {
         public bool ReturnNullHandle { get; set; }
@@ -120,7 +144,7 @@ public class SubscriptionDaemonExecutionTests
         await task;
     }
 
-    private static ServiceProvider BuildProvider<TDbContext>(TDbContext db, RecordingSubscription subscription)
+    private static ServiceProvider BuildProvider<TDbContext>(TDbContext db, ISubscription subscription)
         where TDbContext : DbContext
     {
         var services = new ServiceCollection();
@@ -266,6 +290,40 @@ public class SubscriptionDaemonExecutionTests
         Assert.Equal(3, processed);
         Assert.Equal(3, subscription.HandledCount);
         Assert.Equal(2, db.SubscriptionSaveChangesCount);
+    }
+
+    [Fact]
+    public async Task ProcessNextBatchAsync_KeepsPersistedCheckpointWhenLaterEventFails()
+    {
+        var db = BuildDbContext();
+        var subscription = new ThrowingSubscription(throwOnAttempt: 2);
+        var provider = BuildProvider(db, subscription);
+        var lockProvider = new FakeLockProvider();
+        var options = Options.Create(new SubscriptionOptions
+        {
+            BatchSize = 3,
+            CheckpointFrequency = 1
+        });
+
+        db.Streams.StartStream(Guid.NewGuid(), events: [new object(), new object(), new object()]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await EnsureSequencesAsync(db);
+
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            lockProvider,
+            options);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            daemon.ProcessNextBatchAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken));
+
+        var subscriptionEntity = await db.Set<DbSubscription>()
+            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, subscription.HandledCount);
+        Assert.NotNull(subscriptionEntity);
+        Assert.Equal(1, subscriptionEntity.Sequence);
     }
 
     private static async Task EnsureSequencesAsync(ExecutionDbContext db)

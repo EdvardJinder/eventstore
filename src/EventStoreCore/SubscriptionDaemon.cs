@@ -132,8 +132,6 @@ public sealed class SubscriptionDaemon<TDbContext>(
         var name = subscriptionImpl.GetType().AssemblyQualifiedName!;
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
-
         try
         {
             var subscriptionSet = dbContext.Set<DbSubscription>();
@@ -162,7 +160,6 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 if (createdSubscription)
                 {
                     await dbContext.SaveChangesAsync(stoppingToken);
-                    await transaction.CommitAsync(stoppingToken);
                 }
 
                 return 0;
@@ -201,8 +198,6 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 await dbContext.SaveChangesAsync(stoppingToken);
             }
 
-            await transaction.CommitAsync(stoppingToken);
-
             logger.LogInformation(
                 "Processed {Count} events through sequence {Sequence} for subscription {Subscription}",
                 processedCount,
@@ -214,7 +209,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
         catch
         {
             logger.LogWarning(
-                "Rolling back transaction for subscription {Subscription}",
+                "Subscription {Subscription} failed after processing one or more events",
                 name);
             throw;
         }
