@@ -246,32 +246,42 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         var daemon = provider.GetRequiredService<SubscriptionDaemon<EventStoreDbContext>>();
         var subscription = provider.GetRequiredService<RetryTrackingSubscription>();
+        var manager = provider.GetRequiredService<ISubscriptionManager>();
+        var subscriptionName = typeof(RetryTrackingSubscription).AssemblyQualifiedName!;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken));
+        var firstProcessed = await daemon.ProcessNextEventAsync(
+            provider.CreateScope(),
+            subscription,
+            TestContext.Current.CancellationToken);
 
         var failedSubscriptionRow = await eventStoreDbContext.Set<DbSubscription>()
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                e => e.SubscriptionAssemblyQualifiedName == typeof(RetryTrackingSubscription).AssemblyQualifiedName!,
+                e => e.SubscriptionAssemblyQualifiedName == subscriptionName,
                 TestContext.Current.CancellationToken);
 
-        Assert.Null(failedSubscriptionRow);
+        Assert.False(firstProcessed);
+        Assert.NotNull(failedSubscriptionRow);
+        Assert.Equal(SubscriptionState.Faulted, failedSubscriptionRow!.State);
+        Assert.Equal(expectedEvent.Sequence, failedSubscriptionRow.FailedEventSequence);
         Assert.Single(RetryTrackingSubscription.HandledEventIds);
         Assert.Equal(expectedEvent.EventId, RetryTrackingSubscription.HandledEventIds[0]);
+
+        await manager.RetryFailedEventAsync(subscriptionName, TestContext.Current.CancellationToken);
 
         var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
         var succeededSubscriptionRow = await eventStoreDbContext.Set<DbSubscription>()
             .AsNoTracking()
             .SingleAsync(
-                e => e.SubscriptionAssemblyQualifiedName == typeof(RetryTrackingSubscription).AssemblyQualifiedName!,
+                e => e.SubscriptionAssemblyQualifiedName == subscriptionName,
                 TestContext.Current.CancellationToken);
 
         Assert.True(processed);
         Assert.Equal(2, RetryTrackingSubscription.Attempts);
         Assert.Equal(expectedEvent.EventId, RetryTrackingSubscription.HandledEventIds[1]);
         Assert.Equal(expectedEvent.Sequence, succeededSubscriptionRow.Sequence);
+        Assert.Equal(SubscriptionState.Active, succeededSubscriptionRow.State);
     }
 
     [Fact]

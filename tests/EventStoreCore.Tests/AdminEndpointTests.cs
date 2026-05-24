@@ -22,10 +22,12 @@ public class AdminEndpointTests : IAsyncLifetime
     private IHost _host = null!;
     private HttpClient _client = null!;
     private IProjectionManager _mockManager = null!;
+    private ISubscriptionManager _mockSubscriptionManager = null!;
 
     public async ValueTask InitializeAsync()
     {
         _mockManager = Substitute.For<IProjectionManager>();
+        _mockSubscriptionManager = Substitute.For<ISubscriptionManager>();
 
         _host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -36,6 +38,7 @@ public class AdminEndpointTests : IAsyncLifetime
                     {
                         services.AddRouting();
                         services.AddSingleton(_mockManager);
+                        services.AddSingleton(_mockSubscriptionManager);
                     })
                     .Configure(app =>
                     {
@@ -115,6 +118,160 @@ public class AdminEndpointTests : IAsyncLifetime
         Assert.Equal("TestProjection", projections[0].ProjectionName);
         Assert.Equal(ProjectionState.Active, projections[0].State);
         Assert.Equal(100, projections[0].Position);
+    }
+
+    #endregion
+
+    #region GET /subscriptions Tests
+
+    [Fact]
+    public async Task GetAllSubscriptions_ReturnsSubscriptions_WhenSubscriptionsExist()
+    {
+        var expected = new List<SubscriptionStatusDto>
+        {
+            new SubscriptionStatusDto(
+                SubscriptionName: "TestSubscription",
+                Position: 10,
+                State: SubscriptionState.Faulted,
+                TotalEvents: 20,
+                ProgressPercentage: 50.0,
+                LastProcessedAt: DateTimeOffset.UtcNow,
+                LastError: "boom",
+                AttemptCount: 2,
+                LastAttemptAt: DateTimeOffset.UtcNow,
+                NextAttemptAt: DateTimeOffset.UtcNow.AddMinutes(1),
+                FailedEventSequence: 11)
+        };
+
+        _mockSubscriptionManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
+            .Returns(expected);
+
+        var response = await _client.GetAsync("/api/eventstore/admin/subscriptions",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var subscriptions = await response.Content.ReadFromJsonAsync<List<SubscriptionStatusDto>>(
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(subscriptions);
+        Assert.Single(subscriptions);
+        Assert.Equal(SubscriptionState.Faulted, subscriptions[0].State);
+    }
+
+    [Fact]
+    public async Task GetSubscription_ReturnsSubscription_WhenSubscriptionExists()
+    {
+        var expected = new SubscriptionStatusDto(
+            SubscriptionName: "TestSubscription",
+            Position: 10,
+            State: SubscriptionState.Paused,
+            TotalEvents: 20,
+            ProgressPercentage: 50.0,
+            LastProcessedAt: DateTimeOffset.UtcNow,
+            LastError: null,
+            AttemptCount: 0,
+            LastAttemptAt: null,
+            NextAttemptAt: null,
+            FailedEventSequence: null);
+
+        _mockSubscriptionManager.GetStatusAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(expected);
+
+        var response = await _client.GetAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var subscription = await response.Content.ReadFromJsonAsync<SubscriptionStatusDto>(
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(subscription);
+        Assert.Equal(SubscriptionState.Paused, subscription.State);
+    }
+
+    [Fact]
+    public async Task PauseSubscription_ReturnsOk_WhenSuccessful()
+    {
+        _mockSubscriptionManager.PauseAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription/pause",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockSubscriptionManager.Received(1).PauseAsync("TestSubscription", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResumeSubscription_ReturnsOk_WhenSuccessful()
+    {
+        _mockSubscriptionManager.ResumeAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription/resume",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockSubscriptionManager.Received(1).ResumeAsync("TestSubscription", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetSubscriptionFailedEvent_ReturnsFailedEvent_WhenFaulted()
+    {
+        var expected = new SubscriptionFailedEventDto(
+            EventId: Guid.NewGuid(),
+            StreamId: Guid.NewGuid(),
+            Version: 1,
+            Sequence: 42,
+            EventType: "TestEvent",
+            Data: "{}",
+            Timestamp: DateTimeOffset.UtcNow,
+            SubscriptionError: "boom");
+
+        _mockSubscriptionManager.GetFailedEventAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(expected);
+
+        var response = await _client.GetAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription/failed-event",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var failedEvent = await response.Content.ReadFromJsonAsync<SubscriptionFailedEventDto>(
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(failedEvent);
+        Assert.Equal(42, failedEvent.Sequence);
+    }
+
+    [Fact]
+    public async Task RetrySubscriptionFailedEvent_ReturnsOk_WhenSuccessful()
+    {
+        _mockSubscriptionManager.RetryFailedEventAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription/retry",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockSubscriptionManager.Received(1).RetryFailedEventAsync("TestSubscription", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SkipSubscriptionFailedEvent_ReturnsOk_WhenSuccessful()
+    {
+        _mockSubscriptionManager.SkipFailedEventAsync("TestSubscription", Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            "/api/eventstore/admin/subscriptions/TestSubscription/skip",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockSubscriptionManager.Received(1).SkipFailedEventAsync("TestSubscription", Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -459,12 +616,16 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
     private IHost _host = null!;
     private HttpClient _client = null!;
     private IProjectionManager _mockManager = null!;
+    private ISubscriptionManager _mockSubscriptionManager = null!;
 
     public async ValueTask InitializeAsync()
     {
         _mockManager = Substitute.For<IProjectionManager>();
         _mockManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
             .Returns(new List<ProjectionStatusDto>());
+        _mockSubscriptionManager = Substitute.For<ISubscriptionManager>();
+        _mockSubscriptionManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<SubscriptionStatusDto>());
 
         _host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -475,6 +636,7 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
                     {
                         services.AddRouting();
                         services.AddSingleton(_mockManager);
+                        services.AddSingleton(_mockSubscriptionManager);
                     })
                     .Configure(app =>
                     {

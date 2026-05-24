@@ -69,7 +69,7 @@ public class SubscriptionDaemonExecutionTests
     {
         private readonly int _throwOnAttempt;
 
-        public ThrowingSubscription(int throwOnAttempt)
+        public ThrowingSubscription(int throwOnAttempt = 1)
         {
             _throwOnAttempt = throwOnAttempt;
         }
@@ -302,7 +302,9 @@ public class SubscriptionDaemonExecutionTests
         var options = Options.Create(new SubscriptionOptions
         {
             BatchSize = 3,
-            CheckpointFrequency = 1
+            CheckpointFrequency = 1,
+            RetryDelay = TimeSpan.FromSeconds(5),
+            MaxRetryAttempts = 3
         });
 
         db.Streams.StartStream(Guid.NewGuid(), events: [new object(), new object(), new object()]);
@@ -315,15 +317,117 @@ public class SubscriptionDaemonExecutionTests
             lockProvider,
             options);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            daemon.ProcessNextBatchAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken));
-
+        var processed = await daemon.ProcessNextBatchAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
         var subscriptionEntity = await db.Set<DbSubscription>()
             .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
 
+        Assert.Equal(1, processed);
         Assert.Equal(2, subscription.HandledCount);
         Assert.NotNull(subscriptionEntity);
+        Assert.Equal(SubscriptionState.Faulted, subscriptionEntity!.State);
         Assert.Equal(1, subscriptionEntity.Sequence);
+        Assert.Equal(2, subscriptionEntity.FailedEventSequence);
+    }
+
+    [Fact]
+    public async Task ProcessNextEventAsync_FaultsSubscriptionAndSchedulesRetry()
+    {
+        var db = BuildDbContext();
+        var subscription = new ThrowingSubscription();
+        var provider = BuildProvider(db, subscription);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new SubscriptionOptions
+            {
+                RetryDelay = TimeSpan.FromSeconds(5),
+                MaxRetryAttempts = 3
+            }));
+
+        db.Streams.StartStream(Guid.NewGuid(), events: [new object()]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await EnsureSequenceAsync(db);
+
+        var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+        var status = await db.Set<DbSubscription>()
+            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+
+        Assert.False(processed);
+        Assert.NotNull(status);
+        Assert.Equal(SubscriptionState.Faulted, status!.State);
+        Assert.Equal(1, status.AttemptCount);
+        Assert.NotNull(status.LastError);
+        Assert.NotNull(status.LastAttemptAt);
+        Assert.NotNull(status.NextAttemptAt);
+        Assert.NotNull(status.FailedEventSequence);
+    }
+
+    [Fact]
+    public async Task ProcessNextEventAsync_DeadLettersSubscription_WhenMaxRetryAttemptsReached()
+    {
+        var db = BuildDbContext();
+        var subscription = new ThrowingSubscription();
+        var provider = BuildProvider(db, subscription);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new SubscriptionOptions
+            {
+                RetryDelay = TimeSpan.FromMilliseconds(1),
+                MaxRetryAttempts = 1
+            }));
+
+        db.Streams.StartStream(Guid.NewGuid(), events: [new object()]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await EnsureSequenceAsync(db);
+
+        var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+        var status = await db.Set<DbSubscription>()
+            .FindAsync([subscription.GetType().AssemblyQualifiedName!], TestContext.Current.CancellationToken);
+
+        Assert.False(processed);
+        Assert.NotNull(status);
+        Assert.Equal(SubscriptionState.DeadLettered, status!.State);
+        Assert.Equal(1, status.AttemptCount);
+    }
+
+    [Fact]
+    public async Task ProcessNextEventAsync_DoesNotProcessPausedSubscription()
+    {
+        var db = BuildDbContext();
+        var subscription = new RecordingSubscription();
+        var provider = BuildProvider(db, subscription);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new SubscriptionOptions()));
+
+        db.Streams.StartStream(Guid.NewGuid(), events: [new object()]);
+        db.Set<DbSubscription>().Add(new DbSubscription
+        {
+            SubscriptionAssemblyQualifiedName = subscription.GetType().AssemblyQualifiedName!,
+            State = SubscriptionState.Paused
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await EnsureSequenceAsync(db);
+
+        var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
+
+        Assert.False(processed);
+        Assert.False(subscription.Handled);
+    }
+
+    private static async Task EnsureSequenceAsync(ExecutionDbContext db)
+    {
+        var storedEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        if (storedEvent.Sequence == 0)
+        {
+            storedEvent.Sequence = 1;
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
     }
 
     private static async Task EnsureSequencesAsync(ExecutionDbContext db)

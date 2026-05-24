@@ -132,10 +132,12 @@ public sealed class SubscriptionDaemon<TDbContext>(
         var name = subscriptionImpl.GetType().AssemblyQualifiedName!;
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
+
         try
         {
             var subscriptionSet = dbContext.Set<DbSubscription>();
-            var subscription = await dbContext.Set<DbSubscription>().FindAsync([name], stoppingToken);
+            var subscription = await subscriptionSet.FindAsync([name], stoppingToken);
             var createdSubscription = false;
 
             if (subscription is null)
@@ -149,6 +151,17 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 logger.LogInformation("Created new subscription entity for {Subscription}", name);
             }
 
+            if (!CanProcess(subscription, name))
+            {
+                if (createdSubscription)
+                {
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                    await transaction.CommitAsync(stoppingToken);
+                }
+
+                return 0;
+            }
+
             var nextEvents = await dbContext.Events
                 .Where(e => e.Sequence > subscription.Sequence)
                 .OrderBy(e => e.Sequence)
@@ -160,6 +173,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 if (createdSubscription)
                 {
                     await dbContext.SaveChangesAsync(stoppingToken);
+                    await transaction.CommitAsync(stoppingToken);
                 }
 
                 return 0;
@@ -171,24 +185,51 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
             foreach (var nextEvent in nextEvents)
             {
-                var @event = nextEvent.ToEvent(registry);
-
-                if (subscriptionImpl is IScopedSubscription scoped)
+                try
                 {
-                    await scoped.HandleAsync(dbContext, @event, stoppingToken);
+                    subscription.LastAttemptAt = DateTimeOffset.UtcNow;
+                    var @event = nextEvent.ToEvent(registry);
+
+                    if (subscriptionImpl is IScopedSubscription scoped)
+                    {
+                        await scoped.HandleAsync(dbContext, @event, stoppingToken);
+                    }
+                    else
+                    {
+                        await subscriptionImpl.Handle(@event, stoppingToken);
+                    }
+
+                    processedCount++;
+                    lastProcessedSequence = nextEvent.Sequence;
+
+                    subscription.State = SubscriptionState.Active;
+                    subscription.LastError = null;
+                    subscription.AttemptCount = 0;
+                    subscription.NextAttemptAt = null;
+                    subscription.FailedEventSequence = null;
+
+                    if (processedCount % checkpointFrequency == 0)
+                    {
+                        subscription.Sequence = nextEvent.Sequence;
+                        await dbContext.SaveChangesAsync(stoppingToken);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    await subscriptionImpl.Handle(@event, stoppingToken);
-                }
+                    logger.LogError(
+                        ex,
+                        "Error processing event at sequence {Sequence} for subscription {Subscription}",
+                        nextEvent.Sequence,
+                        name);
 
-                processedCount++;
-                lastProcessedSequence = nextEvent.Sequence;
+                    if (lastProcessedSequence is long persistedSequence && subscription.Sequence != persistedSequence)
+                    {
+                        subscription.Sequence = persistedSequence;
+                        await dbContext.SaveChangesAsync(stoppingToken);
+                    }
 
-                if (processedCount % checkpointFrequency == 0)
-                {
-                    subscription.Sequence = nextEvent.Sequence;
-                    await dbContext.SaveChangesAsync(stoppingToken);
+                    await PersistFailureAsync(name, nextEvent.Sequence, ex, stoppingToken);
+                    return processedCount;
                 }
             }
 
@@ -197,6 +238,8 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 subscription.Sequence = finalSequence;
                 await dbContext.SaveChangesAsync(stoppingToken);
             }
+
+            await transaction.CommitAsync(stoppingToken);
 
             logger.LogInformation(
                 "Processed {Count} events through sequence {Sequence} for subscription {Subscription}",
@@ -262,5 +305,73 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     name);
             return null;
         }
+    }
+
+    private bool CanProcess(DbSubscription subscription, string name)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        switch (subscription.State)
+        {
+            case SubscriptionState.Active:
+                return true;
+
+            case SubscriptionState.Paused:
+                logger.LogDebug("Subscription {Subscription} is paused, skipping", name);
+                return false;
+
+            case SubscriptionState.Faulted when subscription.NextAttemptAt.HasValue && subscription.NextAttemptAt.Value > now:
+                logger.LogDebug(
+                    "Subscription {Subscription} is faulted until {NextAttemptAt}, skipping",
+                    name,
+                    subscription.NextAttemptAt);
+                return false;
+
+            case SubscriptionState.Faulted:
+                return true;
+
+            case SubscriptionState.DeadLettered:
+                logger.LogDebug("Subscription {Subscription} is dead-lettered, requires manual intervention", name);
+                return false;
+
+            default:
+                return true;
+        }
+    }
+
+    private async Task PersistFailureAsync(
+        string subscriptionName,
+        long failedSequence,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        using var errorScope = _serviceProvider.CreateScope();
+        var errorContext = errorScope.ServiceProvider.GetRequiredService<TDbContext>();
+        var subscriptionSet = errorContext.Set<DbSubscription>();
+        var status = subscriptionSet.Local
+            .FirstOrDefault(s => s.SubscriptionAssemblyQualifiedName == subscriptionName)
+            ?? await subscriptionSet.FirstOrDefaultAsync(
+                s => s.SubscriptionAssemblyQualifiedName == subscriptionName,
+                cancellationToken);
+
+        if (status is null)
+        {
+            status = new DbSubscription
+            {
+                SubscriptionAssemblyQualifiedName = subscriptionName
+            };
+            subscriptionSet.Add(status);
+        }
+
+        status.AttemptCount += 1;
+        status.LastAttemptAt = DateTimeOffset.UtcNow;
+        status.NextAttemptAt = status.LastAttemptAt.Value.Add(_options.RetryDelay);
+        status.LastError = exception.ToString();
+        status.FailedEventSequence = failedSequence;
+        status.State = status.AttemptCount >= _options.MaxRetryAttempts
+            ? SubscriptionState.DeadLettered
+            : SubscriptionState.Faulted;
+
+        await errorContext.SaveChangesAsync(cancellationToken);
     }
 }

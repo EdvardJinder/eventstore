@@ -96,8 +96,27 @@ internal static class ModelBuilderExtensions
 
             entity.HasKey(e => e.SubscriptionAssemblyQualifiedName);
 
+            entity.Property(e => e.SubscriptionAssemblyQualifiedName)
+                .IsRequired();
+
             entity.Property(e => e.Sequence)
-                    .IsRequired();
+                .IsRequired();
+
+            entity.Property(e => e.State)
+                .IsRequired();
+
+            entity.Property(e => e.LastError);
+
+            entity.Property(e => e.AttemptCount)
+                .IsRequired();
+
+            entity.Property(e => e.LastAttemptAt);
+
+            entity.Property(e => e.NextAttemptAt);
+
+            entity.Property(e => e.FailedEventSequence);
+
+            entity.HasIndex(e => e.State);
         });
 
         modelBuilder.Entity<DbProjectionStatus>(entity =>
