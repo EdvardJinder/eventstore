@@ -351,7 +351,8 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
 
         Assert.Equal(1, results.Count(r => r is null));
         var failure = Assert.Single(failures);
-        Assert.IsType<EventStoreConcurrencyException>(failure);
+        var concurrencyException = Assert.IsType<EventStoreConcurrencyException>(failure);
+        Assert.Equal(2, concurrencyException.ActualVersion);
 
         using var verifyContext = eventStoreFixture.CreateNewContext();
         var readStream = await verifyContext.Streams.FetchForReadingAsync(streamId, TestContext.Current.CancellationToken);

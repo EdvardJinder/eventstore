@@ -91,12 +91,14 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         }
         catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
         {
+            var actualVersion = await GetActualVersionAsync(streamType, streamId, tenantId, cancellationToken);
+
             throw CreateConcurrencyException(
                 streamType,
                 streamId,
                 tenantId,
                 expectedVersion,
-                stream.CurrentVersion - eventList.Length,
+                actualVersion,
                 "Append failed because another writer modified the stream concurrently.",
                 ex);
         }
@@ -315,7 +317,52 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
 
     private static bool IsEventStoreWriteConflict(DbUpdateException exception)
     {
-        return exception.Entries.Any(entry => entry.Entity is DbEvent or DbStream);
+        return exception.Entries.Any(entry => entry.Entity is DbEvent or DbStream)
+            && IsUniqueConstraintViolation(exception);
+    }
+
+    private async Task<long?> GetActualVersionAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken)
+    {
+        db.ChangeTracker.Clear();
+
+        return await db.Set<DbStream>()
+            .AsNoTracking()
+            .Where(stream => stream.Id == streamId && stream.StreamType == streamType && stream.TenantId == tenantId)
+            .Select(stream => (long?)stream.CurrentVersion)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private static bool IsUniqueConstraintViolation(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (GetStringProperty(current, "SqlState") == "23505")
+            {
+                return true;
+            }
+
+            if (GetIntProperty(current, "Number") is 2601 or 2627)
+            {
+                return true;
+            }
+
+            if (GetIntProperty(current, "SqliteErrorCode") == 19)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? GetStringProperty(Exception exception, string propertyName)
+    {
+        return exception.GetType().GetProperty(propertyName)?.GetValue(exception) as string;
+    }
+
+    private static int? GetIntProperty(Exception exception, string propertyName)
+    {
+        return exception.GetType().GetProperty(propertyName)?.GetValue(exception) as int?;
     }
 
     private static EventStoreConcurrencyException CreateConcurrencyException(
