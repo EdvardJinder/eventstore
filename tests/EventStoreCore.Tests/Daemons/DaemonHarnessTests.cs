@@ -29,6 +29,11 @@ public class DaemonHarnessTests
         public string Name { get; set; } = string.Empty;
     }
 
+    private sealed class OldProjectionEvent
+    {
+        public string OldName { get; set; } = string.Empty;
+    }
+
     private sealed class ProjectionSnapshot
     {
         public Guid Id { get; set; }
@@ -379,5 +384,68 @@ public class DaemonHarnessTests
         Assert.Equal(1, status.Position);
         Assert.Equal(dbEvent.StreamId, snapshot.Id);
         Assert.Equal("Active", snapshot.Name);
+    }
+
+    [Fact]
+    public async Task ProjectionDaemon_ProcessProjectionAsync_AppliesUpcaster()
+    {
+        var db = BuildDbContext();
+        var registration = BuildProjectionRegistration(version: 1);
+        var lockProvider = new FakeLockProvider();
+
+        var dbEvent = new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = 1,
+            Type = "Missing.Assembly.Type",
+            TypeName = "old_projection_event",
+            Data = "{\"OldName\":\"Upcasted\"}"
+        };
+        db.Events.Add(dbEvent);
+        db.Set<DbProjectionStatus>().Add(new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            Version = 1,
+            State = ProjectionState.Active,
+            Position = 0
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = BuildProvider(services =>
+        {
+            services.AddSingleton(registration);
+            services.AddSingleton(db);
+            services.AddEventStore(c => c.AddEvent<ProjectionEvent>("projection_event", e => e
+                .AddUpcaster<OldProjectionEvent>("old_projection_event", old => new ProjectionEvent
+                {
+                    Name = old.OldName
+                })));
+        });
+
+        var daemon = new ProjectionDaemon<HarnessDbContext>(
+            NullLogger<ProjectionDaemon<HarnessDbContext>>.Instance,
+            provider,
+            lockProvider,
+            Options.Create(new ProjectionDaemonOptions()));
+
+        var method = typeof(ProjectionDaemon<HarnessDbContext>).GetMethod(
+            "ProcessProjectionAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+
+        var task = (Task)method!.Invoke(daemon, new object[] { registration, TestContext.Current.CancellationToken })!;
+        await task;
+
+        var status = await db.Set<DbProjectionStatus>().SingleAsync(TestContext.Current.CancellationToken);
+        var snapshot = await db.Set<ProjectionSnapshot>().SingleAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, status.Position);
+        Assert.Equal(dbEvent.StreamId, snapshot.Id);
+        Assert.Equal("Upcasted", snapshot.Name);
     }
 }

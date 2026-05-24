@@ -19,7 +19,10 @@ public static class EventStoreExtensions
        Action<IEventStoreBuilder>? configure = null
            )
     {
-        services.TryAddSingleton(sp => new EventTypeRegistry(sp.GetServices<EventTypeRegistration>()));
+        services.TryAddSingleton(sp => new EventTypeRegistry(
+            sp.GetServices<EventTypeRegistration>(),
+            sp.GetServices<EventTypeAliasRegistration>(),
+            sp.GetServices<EventUpcasterRegistration>()));
 
         EventStoreBuilder builder = new EventStoreBuilder(services);
 
