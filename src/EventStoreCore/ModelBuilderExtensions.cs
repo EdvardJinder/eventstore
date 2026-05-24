@@ -90,6 +90,37 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => new { e.TenantId, e.StreamType, e.Timestamp });
         });
+        modelBuilder.Entity<DbSnapshot>(entity =>
+        {
+            entity.ToTable("Snapshots");
+
+            entity.HasKey(e => new { e.StreamId, e.StreamType, e.TenantId, e.StateType });
+
+            entity.Property(e => e.StreamId)
+                .IsRequired();
+
+            entity.Property(e => e.StreamType)
+                .IsRequired();
+
+            entity.Property(e => e.TenantId)
+                .IsRequired();
+
+            entity.Property(e => e.StateType)
+                .IsRequired();
+
+            entity.Property(e => e.Version)
+                .IsRequired();
+
+            entity.Property(e => e.Data)
+                .IsRequired();
+
+            entity.Property(e => e.Timestamp)
+                .IsRequired();
+
+            entity.HasIndex(e => e.TenantId);
+
+            entity.HasIndex(e => new { e.TenantId, e.StreamId, e.StreamType });
+        });
         modelBuilder.Entity<DbSubscription>(entity =>
         {
             entity.ToTable("Subscriptions");

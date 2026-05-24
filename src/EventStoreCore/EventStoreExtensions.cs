@@ -20,6 +20,7 @@ public static class EventStoreExtensions
            )
     {
         services.TryAddSingleton(sp => new EventTypeRegistry(sp.GetServices<EventTypeRegistration>()));
+        services.TryAddSingleton<SnapshotRegistry>();
 
         EventStoreBuilder builder = new EventStoreBuilder(services);
 

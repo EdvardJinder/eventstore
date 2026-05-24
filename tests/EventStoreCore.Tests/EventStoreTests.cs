@@ -5,6 +5,7 @@ using EventStoreCore;
 using EventStoreCore.Postgres;
 
 using EventStoreCore.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore.Tests;
 
@@ -34,6 +35,36 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         }
     }
 
+    public class SnapshotState : IState
+    {
+        public string Name { get; set; } = "Initial";
+        public int ApplyCount { get; set; }
+
+        public void Apply(IEvent @event)
+        {
+            if (@event is Event<TestEvent> e)
+            {
+                Name = e.Data.Name;
+                ApplyCount++;
+            }
+        }
+    }
+
+    public class SnapshotNameLengthState : IState
+    {
+        public int NameLength { get; set; }
+        public int ApplyCount { get; set; }
+
+        public void Apply(IEvent @event)
+        {
+            if (@event is Event<TestEvent> e)
+            {
+                NameLength = e.Data.Name.Length;
+                ApplyCount++;
+            }
+        }
+    }
+
     private static async Task<long> GetCurrentVersionAsync(
         EventStoreFixture.EventStoreDbContext dbContext,
         Guid streamId,
@@ -47,6 +78,29 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
                 TestContext.Current.CancellationToken);
 
         return stream.CurrentVersion;
+    }
+
+    private ServiceProvider CreateSnapshotProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<EventStoreFixture.EventStoreDbContext>(options => options.UseNpgsql(eventStoreFixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<EventStoreFixture.EventStoreDbContext>();
+            c.UseSnapshots(snapshots =>
+            {
+                snapshots.For<SnapshotState>("orders", o => o.Interval = 2);
+                snapshots.For<SnapshotNameLengthState>("orders", o => o.Interval = 3);
+            });
+        });
+
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task RecreateAsync(DbContext dbContext)
+    {
+        await dbContext.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await dbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -191,6 +245,196 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.Equal(2, stream.Version);
         Assert.Equal("Mary Jane", stream.State.Name);
 
+    }
+
+    [Fact]
+    public async Task ConfiguredSnapshotsAreWrittenWhenAppendCrossesInterval()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var snapshots = await dbContext.Set<DbSnapshot>()
+                .AsNoTracking()
+                .Where(x => x.StreamId == streamId && x.StreamType == "orders")
+                .ToListAsync(TestContext.Current.CancellationToken);
+
+            var snapshot = Assert.Single(snapshots);
+            Assert.Equal(typeof(SnapshotState).FullName, snapshot.StateType);
+            Assert.Equal(2, snapshot.Version);
+        }
+    }
+
+    [Fact]
+    public async Task ConfiguredSnapshotsSupportMultipleStatesForOneStreamType()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }],
+                TestContext.Current.CancellationToken);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.Exact(2),
+                [new TestEvent { Name = "three" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var snapshots = await dbContext.Set<DbSnapshot>()
+                .AsNoTracking()
+                .Where(x => x.StreamId == streamId && x.StreamType == "orders")
+                .ToListAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(2, snapshots.Count);
+            Assert.Contains(snapshots, x => x.StateType == typeof(SnapshotState).FullName && x.Version == 2);
+            Assert.Contains(snapshots, x => x.StateType == typeof(SnapshotNameLengthState).FullName && x.Version == 3);
+        }
+    }
+
+    [Fact]
+    public async Task TypedReadUsesConfiguredSnapshotTransparently()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }],
+                TestContext.Current.CancellationToken);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.Exact(2),
+                [new TestEvent { Name = "three" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var stream = await dbContext.Streams.FetchForReadingAsync<SnapshotState>(
+                "orders",
+                streamId,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(stream);
+            Assert.Single(stream!.Events);
+            Assert.Equal("three", stream.State.Name);
+            Assert.Equal(3, stream.State.ApplyCount);
+        }
+    }
+
+    [Fact]
+    public async Task SnapshotBackedVersionedReadExposesOnlyReplayTail()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }],
+                TestContext.Current.CancellationToken);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.Exact(2),
+                [new TestEvent { Name = "three" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var stream = await dbContext.Streams.FetchForReadingAsync<SnapshotState>(
+                "orders",
+                streamId,
+                version: 2,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(stream);
+            Assert.Empty(stream!.Events);
+            Assert.Equal("two", stream.State.Name);
+            Assert.Equal(2, stream.State.ApplyCount);
+        }
+    }
+
+    [Fact]
+    public async Task UnregisteredTypedReadFallsBackToFullReplay()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "invoices",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }, new TestEvent { Name = "three" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var stream = await dbContext.Streams.FetchForReadingAsync<SnapshotState>(
+                "invoices",
+                streamId,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(stream);
+            Assert.Equal(3, stream!.Events.Count);
+            Assert.Equal("three", stream.State.Name);
+            Assert.Equal(3, stream.State.ApplyCount);
+        }
     }
 
     [Fact]

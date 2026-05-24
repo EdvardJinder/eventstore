@@ -1,5 +1,8 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 
 namespace EventStoreCore;
 
@@ -9,6 +12,8 @@ namespace EventStoreCore;
 /// <param name="db">The DbContext used for persistence.</param>
 public sealed class DbContextEventStore(DbContext db) : IEventStore
 {
+    private readonly SnapshotRegistry? _snapshots = ResolveSnapshotRegistry(db);
+
     /// <inheritdoc />
     public Task<IReadOnlyStream> AppendAsync(
         Guid streamId,
@@ -143,13 +148,16 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
     {
+        var snapshot = _snapshots?.LoadSnapshot<T>(db, streamType, streamId, tenantId);
+        var snapshotVersion = snapshot?.Version ?? 0;
+
         var stream = await db.Set<DbStream>()
          .AsNoTracking()
          .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
-         .Include(x => x.Events)
+         .Include(x => x.Events.Where(e => e.Version > snapshotVersion))
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream<T>(stream, db);
+        return new DbContextStream<T>(stream, db, DeserializeSnapshot<T>(snapshot));
     }
 
     /// <inheritdoc />
@@ -191,13 +199,20 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default) where T : IState, new()
     {
+        var snapshot = _snapshots?.LoadSnapshot<T>(db, streamType, streamId, tenantId);
+        if (snapshot?.Version > version)
+        {
+            snapshot = null;
+        }
+
+        var snapshotVersion = snapshot?.Version ?? 0;
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
-            .Include(x => x.Events.Where(x => x.Version <= version))
+            .Include(x => x.Events.Where(x => x.Version > snapshotVersion && x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream<T>(stream);
+        return new DbContextStream<T>(stream, db, DeserializeSnapshot<T>(snapshot));
     }
 
     /// <inheritdoc />
@@ -383,5 +398,28 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             message,
             innerException);
     }
+
+    private static SnapshotRegistry? ResolveSnapshotRegistry(DbContext db)
+    {
+        try
+        {
+            var options = db.GetService<IDbContextOptions>();
+            var appProvider = options.Extensions
+                .OfType<CoreOptionsExtension>()
+                .FirstOrDefault()
+                ?.ApplicationServiceProvider;
+
+            return appProvider?.GetService<SnapshotRegistry>();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static T? DeserializeSnapshot<T>(DbSnapshot? snapshot)
+        where T : IState, new()
+        => snapshot is null ? default : JsonSerializer.Deserialize<T>(snapshot.Data);
+
 }
 
