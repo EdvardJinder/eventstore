@@ -11,10 +11,13 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Streams");
 
-            entity.HasKey(e => e.Id);
+            entity.HasKey(e => new { e.Id, e.StreamType, e.TenantId });
 
             entity.Property(e => e.Id)
                     .IsRequired();
+
+            entity.Property(e => e.StreamType)
+                .IsRequired();
 
             entity.Property(e => e.CurrentVersion);
 
@@ -29,20 +32,17 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => e.TenantId);
 
-            entity.HasIndex(e => new { e.TenantId, e.Id })
-                .IsUnique();
+            entity.HasIndex(e => new { e.TenantId, e.StreamType, e.CurrentVersion });
 
-            entity.HasIndex(e => new { e.TenantId, e.CurrentVersion });
+            entity.HasIndex(e => new { e.TenantId, e.StreamType, e.UpdatedTimestamp });
 
-            entity.HasIndex(e => new { e.TenantId, e.UpdatedTimestamp });
-
-            entity.HasIndex(e => new { e.TenantId, e.CreatedTimestamp });
+            entity.HasIndex(e => new { e.TenantId, e.StreamType, e.CreatedTimestamp });
 
 
             entity.HasMany(e => e.Events)
                 .WithOne()
-                .HasForeignKey(e => new { e.StreamId, e.TenantId })
-                .HasPrincipalKey(e => new { e.Id, e.TenantId })
+                .HasForeignKey(e => new { e.StreamId, e.StreamType, e.TenantId })
+                .HasPrincipalKey(e => new { e.Id, e.StreamType, e.TenantId })
                 .OnDelete(DeleteBehavior.Cascade);
 
         });
@@ -50,12 +50,15 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Events");
 
-            entity.HasKey(e => new { e.StreamId, e.Version });
+            entity.HasKey(e => new { e.StreamId, e.StreamType, e.TenantId, e.Version });
 
             entity.HasAlternateKey(e => e.EventId);
 
             entity.Property(e => e.StreamId)
                     .IsRequired();
+
+            entity.Property(e => e.StreamType)
+                .IsRequired();
 
             entity.Property(e => e.Sequence)
                 .ValueGeneratedOnAdd();
@@ -81,11 +84,11 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => e.TenantId);
 
-            entity.HasIndex(e => new { e.TenantId, e.StreamId });
+            entity.HasIndex(e => new { e.TenantId, e.StreamId, e.StreamType });
 
-            entity.HasIndex(e => new { e.TenantId, e.Type });
+            entity.HasIndex(e => new { e.TenantId, e.StreamType, e.Type });
 
-            entity.HasIndex(e => new { e.TenantId, e.Timestamp });
+            entity.HasIndex(e => new { e.TenantId, e.StreamType, e.Timestamp });
         });
         modelBuilder.Entity<DbSubscription>(entity =>
         {

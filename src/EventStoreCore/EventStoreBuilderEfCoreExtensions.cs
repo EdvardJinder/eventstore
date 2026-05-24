@@ -48,11 +48,16 @@ public static class EventStoreBuilderEfCoreExtensions
     /// </summary>
     /// <typeparam name="TDbContext">The DbContext type.</typeparam>
     /// <param name="builder">The event store builder.</param>
+    /// <param name="configure">Optional daemon configuration.</param>
     /// <returns>The event store builder.</returns>
-    public static IEventStoreBuilder AddSubscriptionDaemon<TDbContext>(this IEventStoreBuilder builder)
+    public static IEventStoreBuilder AddSubscriptionDaemon<TDbContext>(
+        this IEventStoreBuilder builder,
+        Action<SubscriptionOptions>? configure = null)
         where TDbContext : DbContext
     {
-        return builder.AddSubscriptionDaemon<TDbContext>(sp => sp.GetRequiredService<IDistributedLockProvider>());
+        return builder.AddSubscriptionDaemon<TDbContext>(
+            sp => sp.GetRequiredService<IDistributedLockProvider>(),
+            configure);
     }
 
     /// <summary>
@@ -61,14 +66,16 @@ public static class EventStoreBuilderEfCoreExtensions
     /// <typeparam name="TDbContext">The DbContext type.</typeparam>
     /// <param name="builder">The event store builder.</param>
     /// <param name="factory">Factory that returns the distributed lock provider.</param>
+    /// <param name="configure">Optional daemon configuration.</param>
     /// <returns>The event store builder.</returns>
     public static IEventStoreBuilder AddSubscriptionDaemon<TDbContext>(
         this IEventStoreBuilder builder,
-        Func<IServiceProvider, IDistributedLockProvider> factory)
+        Func<IServiceProvider, IDistributedLockProvider> factory,
+        Action<SubscriptionOptions>? configure = null)
         where TDbContext : DbContext
     {
         var provider = GetProvider<TDbContext>(builder);
-        provider.Daemon.AddSubscriptionDaemon(factory);
+        provider.Daemon.AddSubscriptionDaemon(factory, configure);
         return builder;
     }
 

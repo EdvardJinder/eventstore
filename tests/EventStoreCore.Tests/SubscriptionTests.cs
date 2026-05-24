@@ -30,7 +30,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
     public class TestSub : ISubscription
     {
-        public static List<IEvent> HandledEvents { get; } = new();
+        public List<IEvent> HandledEvents { get; } = new();
         public Task Handle(IEvent @event, CancellationToken ct)
         {
             HandledEvents.Add(@event);
@@ -40,7 +40,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
     public class TestSub2 : ISubscription
     {
-        public static List<IEvent> HandledEvents { get; } = new();
+        public List<IEvent> HandledEvents { get; } = new();
         public Task Handle(IEvent @event, CancellationToken ct)
         {
             HandledEvents.Add(@event);
@@ -151,10 +151,10 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
     [Fact]
     public async Task should_handle_events()
     {
-        TestSub.HandledEvents.Clear();
         var provider = BuildProvider<EventStoreDbContext>(c => c.AddSubscription<TestSub>());
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
-        eventStoreDbContext.Database.EnsureCreated();
+        await eventStoreDbContext.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await eventStoreDbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         await ResetDatabaseAsync(eventStoreDbContext, TestContext.Current.CancellationToken);
 
         var eventStore = eventStoreDbContext.Streams;
@@ -177,23 +177,21 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.NotNull(subscriptionEntity);
         Assert.Equal(persistedEvent.Sequence, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
-        Assert.Single(TestSub.HandledEvents);
-        Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
+        Assert.Single(subscription.HandledEvents);
+        Assert.IsType<TestEvent>(subscription.HandledEvents[0].Data);
     }
 
     [Fact]
     public async Task should_create_subscription_rows_for_multiple_subscriptions()
     {
-        TestSub.HandledEvents.Clear();
-        TestSub2.HandledEvents.Clear();
-
         var provider = BuildProvider<EventStoreDbContext>(c =>
         {
             c.AddSubscription<TestSub>();
             c.AddSubscription<TestSub2>();
         });
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
-        eventStoreDbContext.Database.EnsureCreated();
+        await eventStoreDbContext.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await eventStoreDbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         await ResetDatabaseAsync(eventStoreDbContext, TestContext.Current.CancellationToken);
 
         var eventStore = eventStoreDbContext.Streams;
@@ -220,10 +218,10 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.True(subscriptionEntity2.Sequence > 0);
         Assert.True(processed1, "No event was processed");
         Assert.True(processed2, "No event was processed");
-        Assert.Single(TestSub.HandledEvents);
-        Assert.Single(TestSub2.HandledEvents);
-        Assert.IsType<TestEvent>(TestSub.HandledEvents[0].Data);
-        Assert.IsType<TestEvent>(TestSub2.HandledEvents[0].Data);
+        Assert.Single(subscription1.HandledEvents);
+        Assert.Single(subscription2.HandledEvents);
+        Assert.IsType<TestEvent>(subscription1.HandledEvents[0].Data);
+        Assert.IsType<TestEvent>(subscription2.HandledEvents[0].Data);
 
     }
 
@@ -234,6 +232,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         var provider = BuildProvider<EventStoreDbContext>(c => c.AddSubscription<RetryTrackingSubscription>());
         var eventStoreDbContext = provider.GetRequiredService<EventStoreDbContext>();
+        await eventStoreDbContext.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
         await eventStoreDbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         await ResetDatabaseAsync(eventStoreDbContext, TestContext.Current.CancellationToken);
 
@@ -282,6 +281,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         var provider = BuildProvider<DeliveryTrackingDbContext>(c => c.AddSubscription<DeduplicatingScopedSubscription>());
         var dbContext = provider.GetRequiredService<DeliveryTrackingDbContext>();
+        await dbContext.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
         await dbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         await ResetDeliveryTrackingDatabaseAsync(dbContext, TestContext.Current.CancellationToken);
 

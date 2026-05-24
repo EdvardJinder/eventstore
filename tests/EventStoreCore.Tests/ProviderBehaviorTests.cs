@@ -41,10 +41,10 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         var streamId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
 
-        store.StartStream(streamId, tenantId, new SampleEvent { Name = "Hello" });
+        store.StartStream(streamId, tenantId, events: new SampleEvent { Name = "Hello" });
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var stream = await store.FetchForReadingAsync(streamId, tenantId, TestContext.Current.CancellationToken);
+        var stream = await store.FetchForReadingAsync(streamId, tenantId, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(stream);
         Assert.Single(stream!.Events);

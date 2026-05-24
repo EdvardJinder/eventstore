@@ -16,6 +16,8 @@ public class EventStoreBuilderPostgresExtensionsTests
         public void Handles<T>() where T : class => HandlesAllCalled = true;
         public void HandlesAll() => HandlesAllCalled = true;
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;
+        public void Ignores<T>() where T : class { }
+        public void IgnoreUnknown() { }
     }
 
     private sealed class FakeRegistrar : IProjectionRegistrar, ISubscriptionDaemonRegistrar, IProjectionDaemonRegistrar
@@ -23,12 +25,16 @@ public class EventStoreBuilderPostgresExtensionsTests
         public Func<IServiceProvider, IDistributedLockProvider>? AddedFactory { get; private set; }
         public ProjectionMode? AddedMode { get; private set; }
         public Action<IProjectionOptions>? AddedConfigure { get; private set; }
+        public Action<SubscriptionOptions>? AddedSubscriptionConfigure { get; private set; }
         public bool ProjectionDaemonAdded { get; private set; }
         public Action<ProjectionDaemonOptions>? AddedDaemonConfigure { get; private set; }
 
-        public void AddSubscriptionDaemon(Func<IServiceProvider, IDistributedLockProvider> factory)
+        public void AddSubscriptionDaemon(
+            Func<IServiceProvider, IDistributedLockProvider> factory,
+            Action<SubscriptionOptions>? configure = null)
         {
             AddedFactory = factory;
+            AddedSubscriptionConfigure = configure;
         }
 
         public void AddProjection<TProjection, TSnapshot>(ProjectionMode mode, Action<IProjectionOptions>? configure) where TProjection : IProjection<TSnapshot>, new() where TSnapshot : class, new()
@@ -115,6 +121,35 @@ public class EventStoreBuilderPostgresExtensionsTests
         Assert.Same(builder, returned);
         Assert.NotNull(registrar.AddedFactory);
         Assert.Same(services, builder.Services);
+    }
+
+    [Fact]
+    public void AddSubscriptionDaemon_PassesConfigureCallback()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        var builder = new EventStoreBuilder(services);
+        var registrar = new FakeRegistrar();
+        builder.UseProvider(registrar);
+
+        var configureCalled = false;
+        var returned = builder.AddSubscriptionDaemon<EventStoreFixture.EventStoreDbContext>(options =>
+        {
+            configureCalled = true;
+            options.BatchSize = 123;
+            options.CheckpointFrequency = 7;
+        });
+
+        Assert.Same(builder, returned);
+        Assert.NotNull(registrar.AddedFactory);
+        Assert.NotNull(registrar.AddedSubscriptionConfigure);
+
+        var options = new SubscriptionOptions();
+        registrar.AddedSubscriptionConfigure!(options);
+
+        Assert.True(configureCalled);
+        Assert.Equal(123, options.BatchSize);
+        Assert.Equal(7, options.CheckpointFrequency);
     }
 
     [Fact]

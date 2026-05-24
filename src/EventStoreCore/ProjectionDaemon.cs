@@ -315,7 +315,20 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         {
             foreach (var dbEvent in events)
             {
-                var @event = dbEvent.ToEvent(registry);
+                IEvent @event;
+                try
+                {
+                    @event = dbEvent.ToEvent(registry);
+                }
+                catch (EventMaterializationException ex) when (projection.Options.ShouldIgnoreUnknown)
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Skipping unresolvable event at sequence {Sequence} for projection {Projection}",
+                        dbEvent.Sequence, projection.Name);
+                    status.Position = dbEvent.Sequence;
+                    continue;
+                }
 
                 // Check if this event type is handled by the projection
                 if (!projection.Options.IsHandeled(@event.EventType))
