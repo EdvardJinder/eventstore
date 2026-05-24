@@ -131,25 +131,81 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
 
         _logger.LogInformation("Initiating manual rebuild for projection {Projection}", projectionName);
 
-        var status = await GetOrCreateStatusAsync(projectionName, registration.Version, CheckpointScopeKey.Global, ct);
+        var existingTenantScopeIds = await _dbContext.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .Where(s =>
+                s.ProjectionName == projectionName &&
+                s.CheckpointScope == CheckpointScope.Tenant)
+            .Select(s => s.TenantId)
+            .Distinct()
+            .ToListAsync(ct);
 
-        status.State = ProjectionState.Rebuilding;
-        status.Position = 0;
-        status.Version = registration.Version;
-        status.RebuildStartedAt = DateTimeOffset.UtcNow;
-        status.RebuildCompletedAt = null;
-        status.LastError = null;
-        status.FailedEventSequence = null;
-        status.TotalEvents = await _dbContext.Events.LongCountAsync(ct);
+        var eventTenantScopeIds = existingTenantScopeIds.Count == 0
+            ? []
+            : await _dbContext.Events
+                .AsNoTracking()
+                .Select(e => e.TenantId)
+                .Distinct()
+                .ToListAsync(ct);
 
-        await _dbContext.SaveChangesAsync(ct);
+        var tenantScopeIds = existingTenantScopeIds
+            .Concat(eventTenantScopeIds)
+            .Distinct()
+            .OrderBy(tenantId => tenantId)
+            .ToArray();
 
-        await registration.ClearAction(_dbContext, ct);
-        await _dbContext.SaveChangesAsync(ct);
+        var tenantLockHandles = new List<IAsyncDisposable>();
+        try
+        {
+            foreach (var tenantId in tenantScopeIds)
+            {
+                var tenantLockName = $"projection:{projectionName}{CheckpointScopeKey.Tenant(tenantId).LockSuffix}";
+                tenantLockHandles.Add(await _lockProvider.AcquireLockAsync(tenantLockName, cancellationToken: ct));
+            }
 
-        _logger.LogInformation(
-            "Rebuild initiated for projection {Projection}, clearing data and replaying {Total} events",
-            projectionName, status.TotalEvents);
+            var statuses = await _dbContext.Set<DbProjectionStatus>()
+                .Where(s => s.ProjectionName == projectionName)
+                .ToListAsync(ct);
+
+            var globalStatus = statuses.FirstOrDefault(s =>
+                s.CheckpointScope == CheckpointScope.Global &&
+                s.TenantId == Guid.Empty);
+
+            if (globalStatus == null)
+            {
+                globalStatus = new DbProjectionStatus
+                {
+                    ProjectionName = projectionName,
+                    CheckpointScope = CheckpointScope.Global,
+                    TenantId = Guid.Empty
+                };
+                _dbContext.Set<DbProjectionStatus>().Add(globalStatus);
+                statuses.Add(globalStatus);
+            }
+
+            var rebuildStartedAt = DateTimeOffset.UtcNow;
+            foreach (var status in statuses)
+            {
+                await ResetStatusForRebuildAsync(status, registration.Version, rebuildStartedAt, ct);
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+
+            await registration.ClearAction(_dbContext, ct);
+            await _dbContext.SaveChangesAsync(ct);
+
+            _logger.LogInformation(
+                "Rebuild initiated for projection {Projection}, clearing data and resetting {CheckpointCount} checkpoint scopes",
+                projectionName,
+                statuses.Count);
+        }
+        finally
+        {
+            foreach (var tenantLockHandle in tenantLockHandles)
+            {
+                await tenantLockHandle.DisposeAsync();
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -363,6 +419,25 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         }
 
         return status;
+    }
+
+    private async Task ResetStatusForRebuildAsync(
+        DbProjectionStatus status,
+        int version,
+        DateTimeOffset rebuildStartedAt,
+        CancellationToken ct)
+    {
+        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+
+        status.State = ProjectionState.Rebuilding;
+        status.Position = 0;
+        status.Version = version;
+        status.RebuildStartedAt = rebuildStartedAt;
+        status.RebuildCompletedAt = null;
+        status.LastError = null;
+        status.FailedEventSequence = null;
+        status.TotalEvents = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+            .LongCountAsync(ct);
     }
 
     private async Task<DbProjectionStatus> GetExistingStatusAsync(
