@@ -22,16 +22,22 @@ public class Event : IEvent
     /// <param name="dbEvent">The database event record.</param>
     /// <param name="eventType">The resolved CLR type.</param>
     public Event(DbEvent dbEvent, Type eventType)
+        : this(dbEvent, eventType, Deserialize(dbEvent, eventType))
+    {
+    }
+
+    internal Event(DbEvent dbEvent, Type eventType, object data)
     {
         ArgumentNullException.ThrowIfNull(dbEvent);
         ArgumentNullException.ThrowIfNull(eventType);
+        ArgumentNullException.ThrowIfNull(data);
         Id = dbEvent.EventId;
         StreamId = dbEvent.StreamId;
         Version = dbEvent.Version;
         Timestamp = dbEvent.Timestamp;
         TenantId = dbEvent.TenantId;
         EventType = eventType;
-        Data = Deserialize(dbEvent, eventType);
+        Data = data;
     }
 
     /// <summary>
@@ -118,6 +124,11 @@ public class Event<T> : Event, IEvent<T> where T : class
     /// <param name="dbEvent">The database event record.</param>
     /// <param name="eventType">The resolved CLR type.</param>
     public Event(DbEvent dbEvent, Type eventType) : base(dbEvent, eventType)
+    {
+        Data = CastData(dbEvent, base.Data);
+    }
+
+    internal Event(DbEvent dbEvent, Type eventType, object data) : base(dbEvent, eventType, data)
     {
         Data = CastData(dbEvent, base.Data);
     }

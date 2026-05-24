@@ -36,6 +36,24 @@ public static class EventStoreBuilderEventTypeExtensions
     public static IEventStoreBuilder AddEvent<TEvent>(this IEventStoreBuilder builder, string eventTypeName)
         where TEvent : class
     {
+        return AddEvent<TEvent>(builder, eventTypeName, null);
+    }
+
+    /// <summary>
+    /// Registers an event type with a custom logical name and optional aliases or upcasters.
+    /// </summary>
+    /// <typeparam name="TEvent">The event payload type.</typeparam>
+    /// <param name="builder">The event store builder.</param>
+    /// <param name="eventTypeName">The custom event type name.</param>
+    /// <param name="configure">Configures aliases and upcasters for the event type.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when the name is null or whitespace.</exception>
+    public static IEventStoreBuilder AddEvent<TEvent>(
+        this IEventStoreBuilder builder,
+        string eventTypeName,
+        Action<IEventTypeBuilder<TEvent>>? configure)
+        where TEvent : class
+    {
         ArgumentNullException.ThrowIfNull(builder);
 
         if (string.IsNullOrWhiteSpace(eventTypeName))
@@ -44,12 +62,16 @@ public static class EventStoreBuilderEventTypeExtensions
         }
 
         RegisterEvent(builder, typeof(TEvent), eventTypeName.Trim());
+        configure?.Invoke(new EventTypeBuilder<TEvent>(builder.Services));
         return builder;
     }
 
     private static void RegisterEvent(IEventStoreBuilder builder, Type eventType, string eventTypeName)
     {
-        builder.Services.TryAddSingleton(sp => new EventTypeRegistry(sp.GetServices<EventTypeRegistration>()));
+        builder.Services.TryAddSingleton(sp => new EventTypeRegistry(
+            sp.GetServices<EventTypeRegistration>(),
+            sp.GetServices<EventTypeAliasRegistration>(),
+            sp.GetServices<EventUpcasterRegistration>()));
         builder.Services.AddSingleton(new EventTypeRegistration(eventType, eventTypeName));
     }
 }
