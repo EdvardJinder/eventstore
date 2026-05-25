@@ -170,8 +170,9 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
 
         var processed = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription, TestContext.Current.CancellationToken);
 
-        var subscriptionEntity = await eventStoreDbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { subscription.GetType().AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
+        var subscriptionEntity = await FindGlobalSubscriptionAsync(
+            eventStoreDbContext,
+            subscription.GetType().AssemblyQualifiedName!);
 
 
         Assert.NotNull(subscriptionEntity);
@@ -206,11 +207,13 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var processed1 = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription1, TestContext.Current.CancellationToken);
         var processed2 = await daemon.ProcessNextEventAsync(provider.CreateScope(), subscription2, TestContext.Current.CancellationToken);
 
-        var subscriptionEntity1 = await eventStoreDbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { subscription1.GetType().AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
+        var subscriptionEntity1 = await FindGlobalSubscriptionAsync(
+            eventStoreDbContext,
+            subscription1.GetType().AssemblyQualifiedName!);
 
-        var subscriptionEntity2 = await eventStoreDbContext.Set<DbSubscription>()
-            .FindAsync(new object[] { subscription2.GetType().AssemblyQualifiedName! }, TestContext.Current.CancellationToken);
+        var subscriptionEntity2 = await FindGlobalSubscriptionAsync(
+            eventStoreDbContext,
+            subscription2.GetType().AssemblyQualifiedName!);
 
         Assert.NotNull(subscriptionEntity1);
         Assert.NotNull(subscriptionEntity2);
@@ -257,7 +260,9 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var failedSubscriptionRow = await eventStoreDbContext.Set<DbSubscription>()
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                e => e.SubscriptionAssemblyQualifiedName == subscriptionName,
+                e => e.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                    e.CheckpointScope == CheckpointScope.Global &&
+                    e.TenantId == Guid.Empty,
                 TestContext.Current.CancellationToken);
 
         Assert.False(firstProcessed);
@@ -274,7 +279,9 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var succeededSubscriptionRow = await eventStoreDbContext.Set<DbSubscription>()
             .AsNoTracking()
             .SingleAsync(
-                e => e.SubscriptionAssemblyQualifiedName == subscriptionName,
+                e => e.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                    e.CheckpointScope == CheckpointScope.Global &&
+                    e.TenantId == Guid.Empty,
                 TestContext.Current.CancellationToken);
 
         Assert.True(processed);
@@ -319,6 +326,16 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         Assert.All(DeduplicatingScopedSubscription.DeliveredEventIds, id => Assert.Equal(DeduplicatingScopedSubscription.DeliveredEventIds[0], id));
         Assert.Single(processedEventIds);
         Assert.Equal(DeduplicatingScopedSubscription.DeliveredEventIds[0], processedEventIds[0]);
+    }
+
+    private static Task<DbSubscription?> FindGlobalSubscriptionAsync(EventStoreDbContext db, string name)
+    {
+        return db.Set<DbSubscription>()
+            .FirstOrDefaultAsync(s =>
+                s.SubscriptionAssemblyQualifiedName == name &&
+                s.CheckpointScope == CheckpointScope.Global &&
+                s.TenantId == Guid.Empty,
+                TestContext.Current.CancellationToken);
     }
 }
 

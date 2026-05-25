@@ -125,9 +125,15 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Subscriptions");
 
-            entity.HasKey(e => e.SubscriptionAssemblyQualifiedName);
+            entity.HasKey(e => new { e.SubscriptionAssemblyQualifiedName, e.CheckpointScope, e.TenantId });
 
             entity.Property(e => e.SubscriptionAssemblyQualifiedName)
+                .IsRequired();
+
+            entity.Property(e => e.CheckpointScope)
+                .IsRequired();
+
+            entity.Property(e => e.TenantId)
                 .IsRequired();
 
             entity.Property(e => e.Sequence)
@@ -148,16 +154,24 @@ internal static class ModelBuilderExtensions
             entity.Property(e => e.FailedEventSequence);
 
             entity.HasIndex(e => e.State);
+
+            entity.HasIndex(e => new { e.CheckpointScope, e.TenantId, e.State });
         });
 
         modelBuilder.Entity<DbProjectionStatus>(entity =>
         {
             entity.ToTable("ProjectionStatuses");
 
-            entity.HasKey(e => e.ProjectionName);
+            entity.HasKey(e => new { e.ProjectionName, e.CheckpointScope, e.TenantId });
 
             entity.Property(e => e.ProjectionName)
                 .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(e => e.CheckpointScope)
+                .IsRequired();
+
+            entity.Property(e => e.TenantId)
                 .IsRequired();
 
             entity.Property(e => e.Version)
@@ -182,6 +196,8 @@ internal static class ModelBuilderExtensions
             entity.Property(e => e.RebuildCompletedAt);
 
             entity.HasIndex(e => e.State);
+
+            entity.HasIndex(e => new { e.CheckpointScope, e.TenantId, e.State });
         });
     }
 

@@ -1,3 +1,5 @@
+using EventStoreCore.Abstractions;
+
 namespace EventStoreCore;
 
 
@@ -35,6 +37,12 @@ public sealed class ProjectionDaemonOptions
     /// Default is 30 seconds.
     /// </summary>
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Determines whether projection checkpoints are shared globally or stored separately per tenant.
+    /// Default is <see cref="CheckpointScope.Global" />.
+    /// </summary>
+    public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
 
     /// <summary>
     /// Optional delay between batches during rebuild (for throttling).

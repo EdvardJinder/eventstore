@@ -44,29 +44,44 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
                 try
                 {
-                    var acquired = await AcquireSubscriptionLockAsync(subscriptionType, stoppingToken);
+                    var checkpointScopes = await GetCheckpointScopesAsync(name, stoppingToken);
 
-                    if (acquired == null)
+                    if (checkpointScopes.Count == 0)
                     {
-                        await Task.Delay(_options.LockTimeout, stoppingToken);
+                        await Task.Delay(_options.PollingInterval, stoppingToken);
                         continue;
                     }
 
-                    await using (acquired)
+                    var processedAny = false;
+                    foreach (var checkpointScope in checkpointScopes)
                     {
-                        using var scope = _serviceProvider.CreateScope();
-                        var processedCount = await ProcessNextBatchAsync(scope, subscription, stoppingToken);
+                        var acquired = await AcquireSubscriptionLockAsync(subscriptionType, checkpointScope, stoppingToken);
 
-                        if (processedCount == 0)
+                        if (acquired == null)
                         {
-                            logger.LogInformation(
-                                "No new events to process for subscription {Subscription}",
-                                name);
-                            await Task.Delay(_options.PollingInterval, stoppingToken);
+                            continue;
                         }
+
+                        await using (acquired)
+                        {
+                            using var scope = _serviceProvider.CreateScope();
+                            var processedCount = await ProcessNextBatchAsync(scope, subscription, stoppingToken, checkpointScope);
+                            processedAny = processedAny || processedCount > 0;
+                        }
+
+                        logger.LogInformation(
+                            "Released lock for subscription {Subscription} in checkpoint scope {Scope}",
+                            name,
+                            checkpointScope);
                     }
 
-                    logger.LogInformation("Released lock for subscription {Subscription}", name);
+                    if (!processedAny)
+                    {
+                        logger.LogInformation(
+                            "No new events to process for subscription {Subscription}",
+                            name);
+                        await Task.Delay(_options.PollingInterval, stoppingToken);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -102,7 +117,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
     /// <returns>True when an event was processed.</returns>
     internal async Task<bool> ProcessNextEventAsync(IServiceScope scope, ISubscription subscriptionImpl, CancellationToken stoppingToken)
     {
-        return await ProcessNextBatchAsync(scope, subscriptionImpl, stoppingToken, 1, 1) > 0;
+        return await ProcessNextBatchAsync(scope, subscriptionImpl, stoppingToken, CheckpointScopeKey.Global, 1, 1) > 0;
     }
 
     /// <summary>
@@ -118,6 +133,37 @@ public sealed class SubscriptionDaemon<TDbContext>(
             scope,
             subscriptionImpl,
             stoppingToken,
+            CheckpointScopeKey.Global,
+            Math.Max(1, _options.BatchSize),
+            Math.Max(1, _options.CheckpointFrequency));
+    }
+
+    internal Task<int> ProcessNextBatchAsync(
+        IServiceScope scope,
+        ISubscription subscriptionImpl,
+        CancellationToken stoppingToken,
+        Guid tenantId)
+    {
+        return ProcessNextBatchAsync(
+            scope,
+            subscriptionImpl,
+            stoppingToken,
+            CheckpointScopeKey.Tenant(tenantId),
+            Math.Max(1, _options.BatchSize),
+            Math.Max(1, _options.CheckpointFrequency));
+    }
+
+    private Task<int> ProcessNextBatchAsync(
+        IServiceScope scope,
+        ISubscription subscriptionImpl,
+        CancellationToken stoppingToken,
+        CheckpointScopeKey checkpointScope)
+    {
+        return ProcessNextBatchAsync(
+            scope,
+            subscriptionImpl,
+            stoppingToken,
+            checkpointScope,
             Math.Max(1, _options.BatchSize),
             Math.Max(1, _options.CheckpointFrequency));
     }
@@ -126,6 +172,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
         IServiceScope scope,
         ISubscription subscriptionImpl,
         CancellationToken stoppingToken,
+        CheckpointScopeKey checkpointScope,
         int batchSize,
         int checkpointFrequency)
     {
@@ -137,7 +184,11 @@ public sealed class SubscriptionDaemon<TDbContext>(
         try
         {
             var subscriptionSet = dbContext.Set<DbSubscription>();
-            var subscription = await subscriptionSet.FindAsync([name], stoppingToken);
+            var subscription = await subscriptionSet.FirstOrDefaultAsync(
+                s => s.SubscriptionAssemblyQualifiedName == name &&
+                    s.CheckpointScope == checkpointScope.Scope &&
+                    s.TenantId == checkpointScope.TenantId,
+                stoppingToken);
             var createdSubscription = false;
 
             if (subscription is null)
@@ -145,10 +196,15 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 subscription = new DbSubscription
                 {
                     SubscriptionAssemblyQualifiedName = name,
+                    CheckpointScope = checkpointScope.Scope,
+                    TenantId = checkpointScope.TenantId
                 };
                 subscriptionSet.Add(subscription);
                 createdSubscription = true;
-                logger.LogInformation("Created new subscription entity for {Subscription}", name);
+                logger.LogInformation(
+                    "Created new subscription entity for {Subscription} in checkpoint scope {Scope}",
+                    name,
+                    checkpointScope);
             }
 
             if (!CanProcess(subscription, name))
@@ -162,7 +218,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 return 0;
             }
 
-            var nextEvents = await dbContext.Events
+            var nextEvents = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
                 .Where(e => e.Sequence > subscription.Sequence)
                 .OrderBy(e => e.Sequence)
                 .Take(batchSize)
@@ -272,7 +328,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
     internal async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync<TSub>(CancellationToken cancellationToken)
         where TSub : ISubscription
     {
-        return await AcquireSubscriptionLockAsync(typeof(TSub), cancellationToken);
+        return await AcquireSubscriptionLockAsync(typeof(TSub), CheckpointScopeKey.Global, cancellationToken);
     }
 
     /// <summary>
@@ -283,33 +339,94 @@ public sealed class SubscriptionDaemon<TDbContext>(
     /// <returns>The lock handle or null when lock acquisition fails.</returns>
     private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(Type subType, CancellationToken cancellationToken)
     {
-        var name = subType.AssemblyQualifiedName!;
+        return await AcquireSubscriptionLockAsync(subType, CheckpointScopeKey.Global, cancellationToken);
+    }
+
+    private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(
+        Type subType,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken cancellationToken)
+    {
+        var subscriptionName = subType.AssemblyQualifiedName!;
+        var lockName = $"{subscriptionName}{checkpointScope.LockSuffix}";
 
 
         try
         {
-            logger.LogInformation("Attempting to acquire lock for subscription {Subscription}", name);
+            logger.LogInformation(
+                "Attempting to acquire lock for subscription {Subscription} in checkpoint scope {Scope}",
+                subscriptionName,
+                checkpointScope);
             var acquired = await _distributedLockProvider
-                  .AcquireLockAsync(name, TimeSpan.FromSeconds(2), cancellationToken: cancellationToken);
+                  .AcquireLockAsync(lockName, TimeSpan.FromSeconds(2), cancellationToken: cancellationToken);
 
             if (acquired == null)
             {
                 logger.LogInformation(
-                    "Could not acquire lock for subscription {Subscription}, another instance may be running.",
-                    name);
+                    "Could not acquire lock for subscription {Subscription} in checkpoint scope {Scope}, another instance may be running.",
+                    subscriptionName,
+                    checkpointScope);
                 return null;
             }
 
-            logger.LogInformation("Acquired lock for subscription {Subscription}", name);
+            logger.LogInformation(
+                "Acquired lock for subscription {Subscription} in checkpoint scope {Scope}",
+                subscriptionName,
+                checkpointScope);
             return acquired as IAsyncDisposable ?? acquired;
         }
         catch (TimeoutException)
         {
             logger.LogInformation(
-                    "Could not acquire lock for subscription {Subscription}, another instance may be running.",
-                    name);
+                    "Could not acquire lock for subscription {Subscription} in checkpoint scope {Scope}, another instance may be running.",
+                    subscriptionName,
+                    checkpointScope);
             return null;
         }
+    }
+
+    private async Task<IReadOnlyList<CheckpointScopeKey>> GetCheckpointScopesAsync(
+        string subscriptionName,
+        CancellationToken cancellationToken)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Global)
+        {
+            return [CheckpointScopeKey.Global];
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
+
+        var eventTenantIds = await dbContext.Events
+            .AsNoTracking()
+            .Select(e => e.TenantId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var checkpointTenantIds = await dbContext.Set<DbSubscription>()
+            .AsNoTracking()
+            .Where(s =>
+                s.SubscriptionAssemblyQualifiedName == subscriptionName &&
+                s.CheckpointScope == CheckpointScope.Tenant)
+            .Select(s => s.TenantId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return eventTenantIds
+            .Concat(checkpointTenantIds)
+            .Distinct()
+            .OrderBy(tenantId => tenantId)
+            .Select(CheckpointScopeKey.Tenant)
+            .ToArray();
+    }
+
+    private static IQueryable<DbEvent> ApplyCheckpointScope(
+        IQueryable<DbEvent> query,
+        CheckpointScopeKey checkpointScope)
+    {
+        return checkpointScope.IsTenant
+            ? query.Where(e => e.TenantId == checkpointScope.TenantId)
+            : query;
     }
 
     private bool CanProcess(DbSubscription subscription, string name)

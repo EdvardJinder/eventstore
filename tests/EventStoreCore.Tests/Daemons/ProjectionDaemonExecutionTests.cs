@@ -68,7 +68,7 @@ public class ProjectionDaemonExecutionTests
         return db;
     }
 
-    private static ProjectionRegistration BuildRegistration()
+    private static ProjectionRegistration BuildRegistration(Guid? throwForTenantId = null)
     {
         var options = new ProjectionOptions();
         options.Handles<ProjectionEvent>();
@@ -85,6 +85,11 @@ public class ProjectionDaemonExecutionTests
             {
                 if (@event is IEvent<ProjectionEvent> evt)
                 {
+                    if (evt.TenantId == throwForTenantId)
+                    {
+                        throw new InvalidOperationException("Projection failed for tenant.");
+                    }
+
                     var entity = (ProjectionSnapshot)snapshot;
                     entity.Id = evt.StreamId;
                     entity.Name = evt.Data.Name;
@@ -161,5 +166,132 @@ public class ProjectionDaemonExecutionTests
             .FirstOrDefaultAsync(TestContext.Current.CancellationToken);
 
         Assert.True(status == null || status.Position >= 0);
+    }
+
+    [Fact]
+    public async Task ProcessProjectionAsync_TenantScopedCheckpoint_CreatesIndependentStatuses()
+    {
+        var db = BuildDbContext();
+        var registration = BuildRegistration();
+        var lockProvider = new FakeLockProvider();
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var streamA = Guid.NewGuid();
+        var streamB = Guid.NewGuid();
+
+        db.Events.AddRange(
+            CreateEvent(tenantA, streamA, 1, "Tenant A"),
+            CreateEvent(tenantB, streamB, 2, "Tenant B"));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = new ServiceCollection()
+            .AddSingleton(db)
+            .AddSingleton(registration)
+            .BuildServiceProvider();
+
+        var daemon = new ProjectionDaemon<ExecutionDbContext>(
+            NullLogger<ProjectionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            lockProvider,
+            Options.Create(new ProjectionDaemonOptions
+            {
+                CheckpointScope = CheckpointScope.Tenant,
+                AutoRebuildOnVersionChange = false
+            }));
+
+        var method = typeof(ProjectionDaemon<ExecutionDbContext>).GetMethod(
+            "ProcessProjectionAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+
+        var task = (Task)method!.Invoke(daemon, new object[] { registration, TestContext.Current.CancellationToken })!;
+        await task;
+
+        var statuses = await db.Set<DbProjectionStatus>()
+            .OrderBy(s => s.TenantId)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var snapshots = await db.Set<ProjectionSnapshot>()
+            .OrderBy(s => s.Name)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, statuses.Count);
+        Assert.All(statuses, status => Assert.Equal(CheckpointScope.Tenant, status.CheckpointScope));
+        Assert.Contains(statuses, status => status.TenantId == tenantA && status.Position == 1);
+        Assert.Contains(statuses, status => status.TenantId == tenantB && status.Position == 2);
+        Assert.Equal(2, snapshots.Count);
+        Assert.Contains(snapshots, snapshot => snapshot.Id == streamA && snapshot.Name == "Tenant A");
+        Assert.Contains(snapshots, snapshot => snapshot.Id == streamB && snapshot.Name == "Tenant B");
+    }
+
+    [Fact]
+    public async Task ProcessProjectionAsync_TenantScopedCheckpoint_ContinuesAfterPoisonTenant()
+    {
+        var db = BuildDbContext();
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var streamA = Guid.NewGuid();
+        var streamB = Guid.NewGuid();
+        var registration = BuildRegistration(tenantA);
+
+        db.Events.AddRange(
+            CreateEvent(tenantA, streamA, 1, "Tenant A"),
+            CreateEvent(tenantB, streamB, 2, "Tenant B"));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var provider = new ServiceCollection()
+            .AddSingleton(db)
+            .AddSingleton(registration)
+            .BuildServiceProvider();
+
+        var daemon = new ProjectionDaemon<ExecutionDbContext>(
+            NullLogger<ProjectionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new ProjectionDaemonOptions
+            {
+                CheckpointScope = CheckpointScope.Tenant,
+                AutoRebuildOnVersionChange = false
+            }));
+
+        var method = typeof(ProjectionDaemon<ExecutionDbContext>).GetMethod(
+            "ProcessProjectionAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+
+        var task = (Task)method!.Invoke(daemon, new object[] { registration, TestContext.Current.CancellationToken })!;
+        await task;
+
+        var statuses = await db.Set<DbProjectionStatus>()
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var snapshot = await db.Set<ProjectionSnapshot>()
+            .SingleAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains(statuses, status =>
+            status.TenantId == tenantA &&
+            status.State == ProjectionState.Faulted &&
+            status.FailedEventSequence == 1);
+        Assert.Contains(statuses, status =>
+            status.TenantId == tenantB &&
+            status.State == ProjectionState.Active &&
+            status.Position == 2);
+        Assert.Equal(streamB, snapshot.Id);
+        Assert.Equal("Tenant B", snapshot.Name);
+    }
+
+    private static DbEvent CreateEvent(Guid tenantId, Guid streamId, long sequence, string name)
+    {
+        return new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = tenantId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = sequence,
+            Type = typeof(ProjectionEvent).AssemblyQualifiedName!,
+            Data = $$"""{"Name":"{{name}}"}"""
+        };
     }
 }
