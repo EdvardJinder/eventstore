@@ -41,9 +41,13 @@ public class ProviderModelConfigurationTests
         using var context = new PostgresContext(options);
         var entityType = context.Model.FindEntityType(typeof(DbEvent));
         var property = entityType?.FindProperty(nameof(DbEvent.Data));
+        var snapshotEntityType = context.Model.FindEntityType(typeof(DbSnapshot));
+        var snapshotProperty = snapshotEntityType?.FindProperty(nameof(DbSnapshot.Data));
 
         Assert.NotNull(property);
         Assert.Equal("jsonb", property!.GetColumnType());
+        Assert.NotNull(snapshotProperty);
+        Assert.Equal("jsonb", snapshotProperty!.GetColumnType());
     }
 
     [Fact]
@@ -56,9 +60,13 @@ public class ProviderModelConfigurationTests
         using var context = new SqlServerContext(options);
         var entityType = context.Model.FindEntityType(typeof(DbEvent));
         var property = entityType?.FindProperty(nameof(DbEvent.Data));
+        var snapshotEntityType = context.Model.FindEntityType(typeof(DbSnapshot));
+        var snapshotProperty = snapshotEntityType?.FindProperty(nameof(DbSnapshot.Data));
 
         Assert.NotNull(property);
         Assert.Equal("nvarchar(max)", property!.GetColumnType());
+        Assert.NotNull(snapshotProperty);
+        Assert.Equal("nvarchar(max)", snapshotProperty!.GetColumnType());
     }
 
     

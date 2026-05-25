@@ -23,6 +23,7 @@ public static class EventStoreExtensions
             sp.GetServices<EventTypeRegistration>(),
             sp.GetServices<EventTypeAliasRegistration>(),
             sp.GetServices<EventUpcasterRegistration>()));
+        services.TryAddSingleton<SnapshotRegistry>();
 
         EventStoreBuilder builder = new EventStoreBuilder(services);
 

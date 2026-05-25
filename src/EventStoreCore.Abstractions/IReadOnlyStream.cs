@@ -16,7 +16,8 @@ public interface IReadOnlyStream
     long Version { get; }
 
     /// <summary>
-    /// The events in the stream, ordered by version.
+    /// The loaded events, ordered by version.
+    /// Snapshot-backed typed reads may contain only the events after the snapshot used to rebuild <see cref="State" />.
     /// </summary>
     IReadOnlyList<IEvent> Events { get; }
 }
