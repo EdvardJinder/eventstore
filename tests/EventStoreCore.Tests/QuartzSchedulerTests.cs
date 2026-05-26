@@ -82,4 +82,50 @@ public class QuartzSchedulerTests : SchedulerContractTestsBase
         var job = provider.GetRequiredService<QuartzScheduledJob<PaymentTimeoutArgs>>();
         await job.Execute(context);
     }
+
+    [Fact]
+    public async Task should_not_reschedule_same_event_after_original_trigger_has_fired()
+    {
+        PaymentTimeoutHandler.Reset();
+
+        var provider = BuildProvider(s =>
+        {
+            s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
+                key: e => PaymentTimeoutKey(e.Data.OrderId),
+                delay: _ => TimeSpan.FromMilliseconds(50),
+                args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+        });
+
+        var scheduler = await provider.GetRequiredService<ISchedulerFactory>().GetScheduler(TestContext.Current.CancellationToken);
+        await scheduler.Start(TestContext.Current.CancellationToken);
+
+        var orderId = Guid.NewGuid();
+        var placed = new TestEvent<OrderPlaced>(Guid.NewGuid(), new OrderPlaced { OrderId = orderId });
+        var subscription = GetSubscription(provider);
+
+        await subscription.Handle(placed, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => PaymentTimeoutHandler.Executed.Count == 1, TimeSpan.FromSeconds(2));
+
+        await subscription.Handle(placed, TestContext.Current.CancellationToken);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Single(PaymentTimeoutHandler.Executed);
+        Assert.True(await scheduler.CheckExists(QuartzScheduleIdentity.GetJobKey(PaymentTimeoutKey(orderId)), TestContext.Current.CancellationToken));
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var started = DateTime.UtcNow;
+        while (DateTime.UtcNow - started < timeout)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+
+        throw new TimeoutException("Condition was not met within the allotted timeout.");
+    }
 }

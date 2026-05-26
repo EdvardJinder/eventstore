@@ -1,6 +1,7 @@
 using EventStoreCore.Scheduling;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TickerQ.Utilities;
 using TickerQ.Utilities.Base;
 using TickerQ.Utilities.Entities;
@@ -10,6 +11,7 @@ namespace EventStoreCore.TickerQ;
 
 internal sealed class TickerQScheduledJobDispatcher(
     IServiceProvider serviceProvider,
+    IOptions<SchedulerOptions> schedulerOptions,
     ITickerPersistenceProvider<TimeTickerEntity, CronTickerEntity> persistenceProvider)
 {
     public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken ct)
@@ -26,10 +28,9 @@ internal sealed class TickerQScheduledJobDispatcher(
         }
 
         var envelope = TickerHelper.ReadTickerRequest<TickerQScheduledEnvelope>(request);
-        var argumentType = Type.GetType(envelope.ArgumentType, throwOnError: false);
-        if (argumentType is null)
+        if (!schedulerOptions.Value.PayloadTypes.TryGetValue(envelope.ArgumentType, out var argumentType))
         {
-            throw new InvalidOperationException($"Scheduled argument type '{envelope.ArgumentType}' could not be loaded.");
+            throw new InvalidOperationException($"Scheduled argument type '{envelope.ArgumentType}' is not registered.");
         }
 
         var payload = JsonSerializer.Deserialize(envelope.PayloadJson, argumentType)

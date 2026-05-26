@@ -20,7 +20,11 @@ internal sealed class SchedulerBuilder(IServiceCollection services) : IScheduler
         ArgumentNullException.ThrowIfNull(args);
 
         services.AddOptions<SchedulerOptions>()
-            .Configure(options => options.Registrations.Add(new ScheduleEventRegistration<TEvent, TArgs>(key, delay, args)));
+            .Configure(options =>
+            {
+                options.Registrations.Add(new ScheduleEventRegistration<TEvent, TArgs>(key, delay, args));
+                options.RegisterPayloadType(typeof(TArgs));
+            });
 
         return this;
     }

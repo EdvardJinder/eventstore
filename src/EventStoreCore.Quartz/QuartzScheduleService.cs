@@ -36,17 +36,20 @@ internal sealed class QuartzScheduleService(ISchedulerFactory schedulerFactory)
 
         var job = JobBuilder.Create<QuartzScheduledJob<TArgs>>()
             .WithIdentity(jobKey)
+            .StoreDurably()
             .UsingJobData(SourceEventIdKey, sourceEventId.ToString("D"))
             .UsingJobData(PayloadJsonKey, JsonSerializer.Serialize(args))
             .Build();
 
+        await scheduler.AddJob(job, replace: true, ct);
+
         var trigger = TriggerBuilder.Create()
             .WithIdentity(triggerKey)
-            .ForJob(job)
+            .ForJob(jobKey)
             .StartAt(DateTimeOffset.UtcNow.Add(delay))
             .Build();
 
-        await scheduler.ScheduleJob(job, trigger, ct);
+        await scheduler.ScheduleJob(trigger, ct);
     }
 
     public async Task CancelAsync(ScheduleKey key, CancellationToken ct)

@@ -89,12 +89,36 @@ public class TickerQSchedulerTests : SchedulerContractTestsBase
             Function = TickerQConstants.FunctionName,
             Request = TickerHelper.CreateTickerRequest(new TickerQScheduledEnvelope(
                 SourceEventId: args.SourceEventId,
-                ArgumentType: typeof(PaymentTimeoutArgs).AssemblyQualifiedName!,
+                ArgumentType: ScheduledPayloadTypeIdentity.GetId(typeof(PaymentTimeoutArgs)),
                 PayloadJson: System.Text.Json.JsonSerializer.Serialize(args)))
         };
 
         store.Upsert(entity);
         return provider.GetRequiredService<TickerQScheduledJobDispatcher>().DispatchAsync(entity.Id, ct);
+    }
+
+    [Fact]
+    public async Task should_store_version_tolerant_argument_type_identity()
+    {
+        var provider = BuildProvider(s =>
+        {
+            s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
+                key: e => PaymentTimeoutKey(e.Data.OrderId),
+                delay: _ => TimeSpan.FromMinutes(15),
+                args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+        });
+
+        var orderId = Guid.NewGuid();
+        var placed = new TestEvent<OrderPlaced>(Guid.NewGuid(), new OrderPlaced { OrderId = orderId });
+        var subscription = GetSubscription(provider);
+
+        await subscription.Handle(placed, TestContext.Current.CancellationToken);
+
+        var entity = provider.GetRequiredService<TickerQTestStore>().FindByKey(PaymentTimeoutKey(orderId).Value).Single();
+        var envelope = TickerHelper.ReadTickerRequest<TickerQScheduledEnvelope>(entity.Request);
+
+        Assert.Equal(ScheduledPayloadTypeIdentity.GetId(typeof(PaymentTimeoutArgs)), envelope.ArgumentType);
+        Assert.DoesNotContain("Version=", envelope.ArgumentType, StringComparison.Ordinal);
     }
 
     private static ITimeTickerManager<TimeTickerEntity> CreateTimeTickerManager(TickerQTestStore store)

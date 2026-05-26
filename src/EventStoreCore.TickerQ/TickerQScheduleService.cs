@@ -44,8 +44,7 @@ internal sealed class TickerQScheduleService(
             Function = TickerQConstants.FunctionName,
             Request = TickerHelper.CreateTickerRequest(new TickerQScheduledEnvelope(
                 SourceEventId: sourceEventId,
-                ArgumentType: typeof(TArgs).AssemblyQualifiedName
-                    ?? throw new InvalidOperationException($"Unable to resolve assembly-qualified name for scheduled argument type '{typeof(TArgs).FullName}'."),
+                ArgumentType: ScheduledPayloadTypeIdentity.GetId(typeof(TArgs)),
                 PayloadJson: JsonSerializer.Serialize(args)))
         };
 
