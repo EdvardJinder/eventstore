@@ -6,6 +6,10 @@
 dotnet add package EventStoreCore
 dotnet add package EventStoreCore.Postgres
 # or EventStoreCore.SqlServer
+dotnet add package EventStoreCore.Hangfire
+# or EventStoreCore.Quartz
+# or EventStoreCore.TickerQ
+# plus a TickerQ persistence package such as TickerQ.EntityFrameworkCore for durable jobs
 ```
 
 
@@ -64,6 +68,231 @@ Inline projections should therefore be:
 Avoid network calls, message publishing, HTTP requests, and other remote side effects in inline projections. Inline projections can be retried, rolled back, or skipped during rebuild flows, so external side effects belong in subscriptions or eventual projections instead.
 
 Subscriptions and eventual projections are at-least-once. Consumers should use `EventId` as a stable deduplication key when replay or retry can redeliver an event.
+
+## Durable scheduled work
+
+Use scheduler-backed subscriptions for durable delayed work. Keep scheduling out of inline projections: delayed jobs are external side effects and belong in the at-least-once subscription pipeline.
+
+### Shared contract
+
+The scheduler integrations currently supported by EventStoreCore follow the same workflow contract:
+
+- Scheduling runs through a regular subscription, so delivery is at-least-once.
+- `ScheduleKey` is the stable business identity for one logical scheduled action.
+- The same `EventId` replayed with the same `ScheduleKey` is treated as a no-op.
+- A later event using the same `ScheduleKey` replaces the previously scheduled work.
+- Cancel for a missing, already-fired, or already-replaced schedule is treated as a no-op.
+- Scheduled job handlers are resolved from DI through `IScheduledJobHandler<TArgs>`.
+- The scheduler integrations aim for effectively-once scheduling of the same event/key pair, not end-to-end exactly-once execution.
+
+### Guidance
+
+- Use a stable `ScheduleKey` derived from business identity, for example `payment-timeout:{orderId}`.
+- Include the source `EventId` in scheduled args when deduplication or audit trails matter.
+- Keep scheduled job handlers idempotent and re-check current stream state before emitting new events or commands.
+- Let the scheduler own durability and delayed execution. EventStore owns event delivery, replay, and subscription retries.
+- Expect at-least-once execution overall. Subscription retries, scheduler retries, and crash windows still require idempotent job behavior.
+
+### Support matrix
+
+| Provider | Status | Application-owned setup | Notes |
+|---|---|---|---|
+| Hangfire | Supported | Hangfire storage and server lifetime | EventStoreCore keeps `ScheduleKey -> job id` correlation internally. |
+| Quartz | Supported | Quartz scheduler storage and hosted service lifetime | EventStoreCore maps `ScheduleKey` to deterministic `JobKey`/`TriggerKey`. |
+| TickerQ | Supported | TickerQ host startup plus a persistence package for durability | `TickerQ` alone is in-memory; use `TickerQ.EntityFrameworkCore` or Redis-backed storage for durable jobs. |
+
+### Hangfire
+
+Hangfire uses provider-managed job ids internally and EventStoreCore.Hangfire keeps the `ScheduleKey` to job-id correlation for replay-safe replacement and cancellation.
+Applications remain responsible for configuring Hangfire storage and server lifetime.
+
+```csharp
+using EventStoreCore;
+using EventStoreCore.Hangfire;
+using EventStoreCore.Postgres;
+using EventStoreCore.Scheduling;
+using Hangfire;
+using Medallion.Threading.Postgres;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+public sealed record PaymentTimeoutArgs(Guid OrderId, Guid SourceEventId);
+
+public sealed class OrderPlaced
+{
+    public Guid OrderId { get; init; }
+}
+
+public sealed class PaymentDeadlineChanged
+{
+    public Guid OrderId { get; init; }
+}
+
+public sealed class PaymentCaptured
+{
+    public Guid OrderId { get; init; }
+}
+
+public sealed class PaymentTimeoutHandler(MyEventStoreDbContext dbContext)
+    : IScheduledJobHandler<PaymentTimeoutArgs>
+{
+    public async Task HandleAsync(PaymentTimeoutArgs args, CancellationToken ct)
+    {
+        var stream = await dbContext.Streams.FetchForWritingAsync<OrderState>(args.OrderId, ct);
+
+        // Re-check current business state before acting. The scheduled job may fire
+        // after newer events have already resolved the timeout.
+        if (stream is null || stream.State.IsPaid)
+        {
+            return;
+        }
+
+        stream.Append([new PaymentExpired { OrderId = args.OrderId }]);
+
+        await dbContext.SaveChangesAsync(ct);
+    }
+}
+
+var services = new ServiceCollection();
+
+services.AddDbContext<MyEventStoreDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+services.AddHangfire(config => config.UsePostgreSqlStorage(connectionString));
+services.AddSingleton<IDistributedLockProvider>(
+    _ => new PostgresDistributedSynchronizationProvider(connectionString));
+
+services.AddEventStore(builder =>
+{
+    builder.ExistingDbContext<MyEventStoreDbContext>();
+    builder.AddSubscriptionDaemon<MyEventStoreDbContext>();
+
+    builder.AddScheduler(s =>
+    {
+        s.UsingHangfire();
+
+        s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(15),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Schedule<PaymentDeadlineChanged, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(30),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Cancel<PaymentCaptured>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"));
+    });
+});
+```
+
+### Quartz
+
+Quartz maps `ScheduleKey` to deterministic `JobKey` and `TriggerKey` values. Replay-safe replacement and cancellation are implemented through those Quartz identities rather than through an external registry.
+Applications remain responsible for configuring Quartz storage and hosted service lifetime.
+
+```csharp
+using EventStoreCore;
+using EventStoreCore.Postgres;
+using EventStoreCore.Quartz;
+using EventStoreCore.Scheduling;
+using Medallion.Threading.Postgres;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Quartz;
+
+public sealed record PaymentTimeoutArgs(Guid OrderId, Guid SourceEventId);
+
+services.AddDbContext<MyEventStoreDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+services.AddQuartz();
+services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
+services.AddSingleton<IDistributedLockProvider>(
+    _ => new PostgresDistributedSynchronizationProvider(connectionString));
+
+services.AddEventStore(builder =>
+{
+    builder.ExistingDbContext<MyEventStoreDbContext>();
+    builder.AddSubscriptionDaemon<MyEventStoreDbContext>();
+
+    builder.AddScheduler(s =>
+    {
+        s.UsingQuartz();
+
+        s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(15),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Schedule<PaymentDeadlineChanged, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(30),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Cancel<PaymentCaptured>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"));
+    });
+});
+```
+
+### TickerQ
+
+TickerQ stores the `ScheduleKey` on `TimeTickerEntity.Description` and uses a single EventStore-owned TickerQ function to dispatch scheduled payloads back into `IScheduledJobHandler<TArgs>`.
+
+TickerQ uses in-memory storage by default. For durable delayed work, applications must configure a persistence package such as `TickerQ.EntityFrameworkCore` or Redis-backed storage, in addition to TickerQ host startup behavior.
+
+```csharp
+using EventStoreCore;
+using EventStoreCore.Postgres;
+using EventStoreCore.Scheduling;
+using EventStoreCore.TickerQ;
+using Medallion.Threading.Postgres;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using TickerQ.DependencyInjection;
+using TickerQ.EntityFrameworkCore.DependencyInjection;
+
+public sealed record PaymentTimeoutArgs(Guid OrderId, Guid SourceEventId);
+
+services.AddDbContext<MyEventStoreDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+services.AddTickerQ(options =>
+{
+    options.AddOperationalStore(ef =>
+    {
+        ef.UseTickerQDbContext(db => db.UseNpgsql(connectionString));
+    });
+});
+services.AddSingleton<IDistributedLockProvider>(
+    _ => new PostgresDistributedSynchronizationProvider(connectionString));
+
+services.AddEventStore(builder =>
+{
+    builder.ExistingDbContext<MyEventStoreDbContext>();
+    builder.AddSubscriptionDaemon<MyEventStoreDbContext>();
+
+    builder.AddScheduler(s =>
+    {
+        s.UsingTickerQ();
+
+        s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(15),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Schedule<PaymentDeadlineChanged, PaymentTimeoutArgs>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
+            delay: _ => TimeSpan.FromMinutes(30),
+            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+
+        s.Cancel<PaymentCaptured>(
+            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"));
+    });
+});
+```
 
 ## Tenant-scoped checkpoints
 
