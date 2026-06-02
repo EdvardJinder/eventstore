@@ -37,6 +37,7 @@
 		<InternalsVisibleTo Include="EventStoreCore.Cosmos" />
 		<InternalsVisibleTo Include="EventStoreCore.Testing" />
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />
+		<InternalsVisibleTo Include="EventStoreCore.Scheduling.Tests" />
 	</ItemGroup>
 
 

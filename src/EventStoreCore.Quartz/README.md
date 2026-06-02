@@ -1,19 +1,10 @@
 # EventStoreCore.Quartz
 
-Quartz-backed durable scheduler integration for EventStoreCore.
-
-## Install
-
-```bash
-dotnet add package EventStoreCore
-dotnet add package EventStoreCore.Quartz
-dotnet add package Quartz.Extensions.DependencyInjection
-dotnet add package Quartz.Extensions.Hosting
-```
+Quartz-backed scheduler integration for EventStoreCore subscriptions.
 
 ## Usage
 
-Configure Quartz in your application, then register the EventStoreCore integration:
+Configure Quartz normally, then register a provider-native action:
 
 ```csharp
 services.AddQuartz();
@@ -27,19 +18,38 @@ services.AddEventStore(builder =>
     {
         s.UsingQuartz();
 
-        s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
-            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
-            delay: _ => TimeSpan.FromMinutes(15),
-            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+        s.On<OrderPlaced>().Quartz("payment-timeout", async (e, scheduler, sp, ct) =>
+        {
+            var jobKey = new JobKey($"payment-timeout:{e.Data.OrderId}", "payments");
+            var triggerKey = new TriggerKey($"payment-timeout:{e.Data.OrderId}", "payments");
+
+            if (await scheduler.CheckExists(jobKey, ct))
+            {
+                await scheduler.DeleteJob(jobKey, ct);
+            }
+
+            var job = JobBuilder.Create<PaymentTimeoutQuartzJob>()
+                .WithIdentity(jobKey)
+                .UsingJobData("order-id", e.Data.OrderId.ToString("D"))
+                .UsingJobData("source-event-id", e.Id.ToString("D"))
+                .Build();
+
+            var trigger = TriggerBuilder.Create()
+                .WithIdentity(triggerKey)
+                .ForJob(job)
+                .StartAt(DateBuilder.FutureDate(15, IntervalUnit.Minute))
+                .Build();
+
+            await scheduler.ScheduleJob(job, trigger, ct);
+        });
     });
 });
 ```
 
 ## Contract
 
-- Scheduling is replay-aware for the same `EventId` and `ScheduleKey`.
-- `ScheduleKey` is mapped to deterministic Quartz identities for replacement and cancellation.
-- Cancel for a missing or already-removed schedule is a no-op.
-- Scheduled handlers are resolved from DI through `IScheduledJobHandler<TArgs>`.
-
-This package does not provide end-to-end exactly-once execution. Job handlers must remain idempotent.
+- The action receives Quartz `IScheduler`.
+- The `IServiceProvider` callback argument is scoped to the action invocation.
+- EventStoreCore invokes the action at most once for the same registration, tenant id, and EventStore `EventId`.
+- Quartz owns job persistence, trigger semantics, execution, cancellation, and replacement behavior.
+- Job bodies must remain idempotent and re-check current stream state before acting.

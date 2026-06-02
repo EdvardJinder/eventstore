@@ -2,12 +2,14 @@ namespace EventStoreCore.Scheduling;
 
 internal sealed class SchedulerOptions
 {
-    public List<IEventScheduleRegistration> Registrations { get; } = [];
+    public TimeSpan ClaimTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
-    public Dictionary<string, Type> PayloadTypes { get; } = new(StringComparer.Ordinal);
+    public List<IEventSchedulerRegistration> Registrations { get; } = [];
 
-    public void RegisterPayloadType(Type type)
+    public bool ContainsRegistration(string providerName, Type eventType, string registrationName)
     {
-        PayloadTypes[ScheduledPayloadTypeIdentity.GetId(type)] = type;
+        return Registrations.Any(x => x.ProviderName == providerName &&
+                                      x.EventType == eventType &&
+                                      x.RegistrationName == registrationName);
     }
 }

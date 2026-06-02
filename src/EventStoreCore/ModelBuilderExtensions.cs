@@ -199,6 +199,35 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => new { e.CheckpointScope, e.TenantId, e.State });
         });
+
+        modelBuilder.Entity<DbSchedulerEventApplication>(entity =>
+        {
+            entity.ToTable("SchedulerEventApplications");
+
+            entity.HasKey(e => new { e.ProviderName, e.RegistrationName, e.TenantId, e.EventId });
+
+            entity.Property(e => e.ProviderName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(e => e.RegistrationName)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(e => e.TenantId)
+                .IsRequired();
+
+            entity.Property(e => e.EventId)
+                .IsRequired();
+
+            entity.Property(e => e.ClaimId)
+                .IsRequired();
+
+            entity.Property(e => e.CreatedAtUtc)
+                .IsRequired();
+
+            entity.Property(e => e.CompletedAtUtc);
+        });
     }
 
 }

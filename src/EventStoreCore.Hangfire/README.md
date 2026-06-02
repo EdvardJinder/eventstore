@@ -1,18 +1,10 @@
 # EventStoreCore.Hangfire
 
-Hangfire-backed durable scheduler integration for EventStoreCore.
-
-## Install
-
-```bash
-dotnet add package EventStoreCore
-dotnet add package EventStoreCore.Hangfire
-dotnet add package Hangfire.Core
-```
+Hangfire-backed scheduler integration for EventStoreCore subscriptions.
 
 ## Usage
 
-Configure Hangfire in your application, then register the EventStoreCore integration:
+Configure Hangfire normally, then register a provider-native action:
 
 ```csharp
 services.AddHangfire(config => config.UsePostgreSqlStorage(connectionString));
@@ -25,19 +17,22 @@ services.AddEventStore(builder =>
     {
         s.UsingHangfire();
 
-        s.Schedule<OrderPlaced, PaymentTimeoutArgs>(
-            key: e => ScheduleKey.Create($"payment-timeout:{e.Data.OrderId}"),
-            delay: _ => TimeSpan.FromMinutes(15),
-            args: e => new PaymentTimeoutArgs(e.Data.OrderId, e.Id));
+        s.On<OrderPlaced>().Hangfire("payment-timeout", (e, client, sp, ct) =>
+        {
+            client.Schedule<PaymentTimeoutJob>(
+                job => job.ExecuteAsync(e.Data.OrderId, e.Id, CancellationToken.None),
+                TimeSpan.FromMinutes(15));
+
+            return ValueTask.CompletedTask;
+        });
     });
 });
 ```
 
 ## Contract
 
-- Scheduling is replay-aware for the same `EventId` and `ScheduleKey`.
-- A later event using the same `ScheduleKey` replaces the existing Hangfire job.
-- Cancel for a missing or already-removed job is a no-op.
-- Scheduled handlers are resolved from DI through `IScheduledJobHandler<TArgs>`.
-
-This package does not provide end-to-end exactly-once execution. Job handlers must remain idempotent.
+- The action receives Hangfire `IBackgroundJobClient`.
+- The `IServiceProvider` callback argument is scoped to the action invocation.
+- EventStoreCore invokes the action at most once for the same registration, tenant id, and EventStore `EventId`.
+- Hangfire owns job persistence, execution, retries, cancellation, and replacement behavior.
+- Job bodies must remain idempotent and re-check current stream state before acting.

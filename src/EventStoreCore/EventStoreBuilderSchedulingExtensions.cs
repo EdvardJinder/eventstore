@@ -1,4 +1,6 @@
 using EventStoreCore.Scheduling;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace EventStoreCore;
 
 /// <summary>
@@ -21,6 +23,8 @@ public static class EventStoreBuilderSchedulingExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
+
+        builder.Services.TryAddSingleton<ISchedulerEventApplicationStore, InMemorySchedulerEventApplicationStore>();
 
         var schedulerBuilder = new SchedulerBuilder(builder.Services);
         configure(schedulerBuilder);

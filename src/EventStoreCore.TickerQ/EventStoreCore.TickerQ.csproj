@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EventStoreCore.Tests" />
+    <InternalsVisibleTo Include="EventStoreCore.Scheduling.Tests" />
   </ItemGroup>
 
   <ItemGroup>

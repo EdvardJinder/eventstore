@@ -1,4 +1,5 @@
 using EventStoreCore.Abstractions;
+using EventStoreCore.Scheduling;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ public static class EventStoreBuilderEfCoreExtensions
     }
 
     /// <summary>
-    /// Registers an existing DbContext and enables event store integrations.
+    /// Registers an existing DbContext and enables event store integrations, including EF-backed scheduler registration tracking.
     /// </summary>
     /// <typeparam name="TDbContext">The DbContext type.</typeparam>
     /// <param name="builder">The event store builder.</param>
@@ -32,6 +33,8 @@ public static class EventStoreBuilderEfCoreExtensions
         where TDbContext : DbContext
     {
         var efBuilder = new EfCoreEventEventStoreBuilder<TDbContext>(builder.Services);
+
+        builder.Services.AddSingleton<ISchedulerEventApplicationStore, EfCoreSchedulerEventApplicationStore<TDbContext>>();
 
         efBuilder.Services.AddDbContext<TDbContext>((sp, options) =>
         {

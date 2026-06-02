@@ -11,6 +11,8 @@ namespace EventStoreCore.Hangfire;
 /// </summary>
 public static class HangfireSchedulerExtensions
 {
+    internal const string ProviderName = "Hangfire";
+
     /// <summary>
     /// Configures Hangfire as the scheduler provider for the current EventStore registration.
     /// Hangfire itself must be configured separately by the application.
@@ -21,13 +23,40 @@ public static class HangfireSchedulerExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Services.AddSchedulerProvider("Hangfire");
+        builder.Services.AddSchedulerProvider(ProviderName);
 
-        builder.Services.TryAddSingleton<HangfireScheduleRegistry>();
-        builder.Services.TryAddSingleton<ISchedulerExecutionAdapter, HangfireScheduleService>();
-        builder.Services.TryAddTransient(typeof(HangfireScheduledJob<>));
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ISubscription, HangfireSubscription>());
 
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a Hangfire action that is invoked at most once per EventStore event id for this registration.
+    /// The action owns all Hangfire scheduling, cancellation, and replacement semantics.
+    /// Prefer the named overload for production integrations so replay identity survives type renames.
+    /// </summary>
+    public static IEventSchedulerBuilder<TEvent> Hangfire<TEvent>(
+        this IEventSchedulerBuilder<TEvent> builder,
+        Func<IEvent<TEvent>, IBackgroundJobClient, IServiceProvider, CancellationToken, ValueTask> action)
+        where TEvent : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddProviderAction(ProviderName, registrationName: null, action);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a named Hangfire action that is invoked at most once per EventStore event id for this registration.
+    /// Use a stable name for long-lived integrations where dedupe identity must survive refactors.
+    /// </summary>
+    public static IEventSchedulerBuilder<TEvent> Hangfire<TEvent>(
+        this IEventSchedulerBuilder<TEvent> builder,
+        string name,
+        Func<IEvent<TEvent>, IBackgroundJobClient, IServiceProvider, CancellationToken, ValueTask> action)
+        where TEvent : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddProviderAction(ProviderName, name, action);
         return builder;
     }
 }

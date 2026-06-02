@@ -1,14 +1,16 @@
 using EventStoreCore.Abstractions;
 using EventStoreCore.Scheduling;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace EventStoreCore.TickerQ;
 
 internal sealed class TickerQSubscription(
-    ISchedulerExecutionAdapter service,
+    IServiceScopeFactory scopeFactory,
+    ISchedulerEventApplicationStore applicationStore,
     IOptions<SchedulerOptions> options) : ISubscription
 {
-    private readonly IReadOnlyList<IEventScheduleRegistration> _registrations = options.Value.Registrations;
+    private readonly IReadOnlyList<IEventSchedulerRegistration> _registrations = options.Value.Registrations;
 
     public async Task Handle(IEvent @event, CancellationToken ct)
     {
@@ -19,7 +21,13 @@ internal sealed class TickerQSubscription(
                 continue;
             }
 
-            await registration.ApplyAsync(@event, service, ct);
+            if (registration.ProviderName != TickerQSchedulerExtensions.ProviderName)
+            {
+                continue;
+            }
+
+            await using var scope = scopeFactory.CreateAsyncScope();
+            await registration.ApplyAsync(@event, scope.ServiceProvider, applicationStore, ct);
         }
     }
 }

@@ -1,5 +1,7 @@
+using EventStoreCore.Hangfire;
 using EventStoreCore.Scheduling;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace EventStoreCore.Tests;
 
@@ -23,14 +25,7 @@ public class EventStoreBuilderSchedulingExtensionsTests
         var services = new ServiceCollection();
         var builder = new EventStoreBuilder(services);
 
-        var returned = builder.AddScheduler(scheduler =>
-        {
-            scheduler.Services.AddSchedulerProvider("Hangfire");
-            scheduler.Schedule<DummyEvent, DummyArgs>(
-                e => ScheduleKey.Create($"dummy:{e.Data.Id}"),
-                _ => TimeSpan.FromMinutes(1),
-                e => new DummyArgs(e.Data.Id, e.Id));
-        });
+        var returned = builder.AddScheduler(scheduler => scheduler.UsingHangfire());
 
         Assert.Same(builder, returned);
 
@@ -66,11 +61,11 @@ public class EventStoreBuilderSchedulingExtensionsTests
         var services = new ServiceCollection();
         var builder = new EventStoreBuilder(services);
 
-        builder.AddScheduler(scheduler => scheduler.Services.AddSchedulerProvider("Hangfire"));
+        builder.AddScheduler(scheduler => scheduler.UsingHangfire());
         var returned = builder.AddScheduler(scheduler =>
         {
-            scheduler.Services.AddSchedulerProvider("Hangfire");
-            scheduler.Cancel<DummyEvent>(e => ScheduleKey.Create($"dummy:{e.Data.Id}"));
+            scheduler.UsingHangfire();
+            scheduler.On<DummyEvent>().Hangfire(static (_, _, _, _) => ValueTask.CompletedTask);
         });
 
         Assert.Same(builder, returned);
@@ -93,37 +88,46 @@ public class EventStoreBuilderSchedulingExtensionsTests
     }
 
     [Fact]
-    public void ScheduleKey_Create_ThrowsWhenValueIsBlank()
-    {
-        var exception = Assert.Throws<ArgumentException>(() => ScheduleKey.Create(" "));
-
-        Assert.Equal("value", exception.ParamName);
-    }
-
-    [Fact]
-    public void AddScheduler_RegistersCommonScheduleMappings()
+    public void AddScheduler_RegistersProviderNativeActions()
     {
         var services = new ServiceCollection();
         var builder = new EventStoreBuilder(services);
 
         builder.AddScheduler(scheduler =>
         {
-            scheduler.Services.AddSchedulerProvider("Hangfire");
-            scheduler.Schedule<DummyEvent, DummyArgs>(
-                e => ScheduleKey.Create($"dummy:{e.Data.Id}"),
-                _ => TimeSpan.FromMinutes(1),
-                e => new DummyArgs(e.Data.Id, e.Id));
-            scheduler.Cancel<DummyEvent>(e => ScheduleKey.Create($"dummy:{e.Data.Id}"));
+            scheduler.UsingHangfire();
+            scheduler.On<DummyEvent>().Hangfire(static (_, _, _, _) => ValueTask.CompletedTask);
+            scheduler.On<DummyEvent>().Hangfire("second-dummy-action", static (_, _, _, _) => ValueTask.CompletedTask);
         });
 
-        var optionsFactory = services.BuildServiceProvider().GetRequiredService<Microsoft.Extensions.Options.IOptions<SchedulerOptions>>();
-        Assert.Equal(2, optionsFactory.Value.Registrations.Count);
+        var options = services.BuildServiceProvider().GetRequiredService<IOptions<SchedulerOptions>>().Value;
+
+        Assert.Equal(2, options.Registrations.Count);
+        Assert.Contains(options.Registrations, r => r.RegistrationName.EndsWith("DummyEvent", StringComparison.Ordinal));
+        Assert.Contains(options.Registrations, r => r.RegistrationName == "second-dummy-action");
+    }
+
+    [Fact]
+    public void AddScheduler_ThrowsWhenSameProviderEventActionNameIsRegisteredTwice()
+    {
+        var services = new ServiceCollection();
+        var builder = new EventStoreBuilder(services);
+
+        builder.AddScheduler(scheduler =>
+        {
+            scheduler.UsingHangfire();
+            scheduler.On<DummyEvent>().Hangfire(static (_, _, _, _) => ValueTask.CompletedTask);
+            scheduler.On<DummyEvent>().Hangfire(static (_, _, _, _) => ValueTask.CompletedTask);
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.BuildServiceProvider().GetRequiredService<IOptions<SchedulerOptions>>().Value);
+
+        Assert.Contains("Use an explicit unique name for each action.", exception.Message, StringComparison.Ordinal);
     }
 
     private sealed class DummyEvent
     {
         public Guid Id { get; init; }
     }
-
-    private sealed record DummyArgs(Guid AggregateId, Guid SourceEventId);
 }
