@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>1.0.0-beta.1</Version>
+
+    <PackageId>EventStoreCore.TickerQ</PackageId>
+    <Authors>Edvard Jinder</Authors>
+    <Company>Intromedia Digital AB</Company>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>TickerQ-backed durable scheduler integration for EventStoreCore subscriptions.</Description>
+    <PackageTags>eventstore event-sourcing tickerq scheduling background-jobs</PackageTags>
+    <PackageProjectUrl>https://github.com/EdvardJinder/eventstore</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/EdvardJinder/eventstore</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TickerQ" Version="10.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventStoreCore.Scheduling\EventStoreCore.Scheduling.csproj" />
+    <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EventStoreCore.Tests" />
+    <InternalsVisibleTo Include="EventStoreCore.Scheduling.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

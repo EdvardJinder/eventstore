@@ -12,6 +12,12 @@
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+		<Description>Core event sourcing and projection infrastructure for .NET applications using EventStoreCore.</Description>
+		<PackageTags>eventstore event-sourcing projections subscriptions efcore</PackageTags>
+		<PackageProjectUrl>https://github.com/EdvardJinder/eventstore</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/EdvardJinder/eventstore</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 
 	</PropertyGroup>
 
@@ -31,6 +37,7 @@
 		<InternalsVisibleTo Include="EventStoreCore.Cosmos" />
 		<InternalsVisibleTo Include="EventStoreCore.Testing" />
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />
+		<InternalsVisibleTo Include="EventStoreCore.Scheduling.Tests" />
 	</ItemGroup>
 
 
@@ -39,6 +46,11 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
+	  <ProjectReference Include="..\EventStoreCore.Scheduling\EventStoreCore.Scheduling.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Include="README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 </Project>
