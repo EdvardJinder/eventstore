@@ -1,35 +1,25 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/EventStoreCore.Abstractions/EventStoreCore.Abstractions.csproj" />
-    <Project Path="src/EventStoreCore.Scheduling/EventStoreCore.Scheduling.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="src/EventStoreCore.Scheduling/EventStoreCore.Scheduling.csproj" />
     <Project Path="src/EventStoreCore.SDK/EventStoreCore.SDK.csproj" />
     <Project Path="src/EventStoreCore.Endpoints/EventStoreCore.Endpoints.csproj" />
     <Project Path="src/EventStoreCore.Postgres/EventStoreCore.Postgres.csproj" />
     <Project Path="src/EventStoreCore.SqlServer/EventStoreCore.SqlServer.csproj" />
     <Project Path="src/EventStoreCore.Testing/EventStoreCore.Testing.csproj" />
-    <Project Path="src/EventStoreCore.TickerQ/EventStoreCore.TickerQ.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="src/EventStoreCore.TickerQ/EventStoreCore.TickerQ.csproj" />
     <Project Path="src/EventStoreCore/EventStoreCore.csproj" />
   </Folder>
   <Folder Name="/src/integrations/">
     <Project Path="src/EventStoreCore.CloudEvents/EventStoreCore.CloudEvents.csproj" />
     <Project Path="src/EventStoreCore.EventGrid/EventStoreCore.EventGrid.csproj" />
-    <Project Path="src/EventStoreCore.Hangfire/EventStoreCore.Hangfire.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="src/EventStoreCore.Hangfire/EventStoreCore.Hangfire.csproj" />
     <Project Path="src/EventStoreCore.MassTransit/EventStoreCore.MassTransit.csproj" />
-    <Project Path="src/EventStoreCore.Quartz/EventStoreCore.Quartz.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="src/EventStoreCore.Quartz/EventStoreCore.Quartz.csproj" />
   </Folder>
 
   <Folder Name="/tests/">
-    <Project Path="tests/EventStoreCore.Scheduling.Tests/EventStoreCore.Scheduling.Tests.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="tests/EventStoreCore.Scheduling.Tests/EventStoreCore.Scheduling.Tests.csproj" />
     <Project Path="tests/EventStoreCore.Tests/EventStoreCore.Tests.csproj" />
   </Folder>
 </Solution>
