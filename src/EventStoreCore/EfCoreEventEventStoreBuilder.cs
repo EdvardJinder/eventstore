@@ -30,7 +30,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         var projectionName = typeof(TProjection).FullName ?? typeof(TProjection).Name;
 
         services.AddSingleton<ProjectionRegistration>(sp =>
-            CreateProjectionRegistration<TProjection, TSnapshot>(projectionName, version, options));
+            CreateProjectionRegistration<TProjection, TSnapshot>(projectionName, mode, version, options));
 
         if (mode == ProjectionMode.Inline)
         {
@@ -101,6 +101,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
 
     private static ProjectionRegistration CreateProjectionRegistration<TProjection, TSnapshot>(
         string projectionName,
+        ProjectionMode mode,
         int version,
         ProjectionOptions options)
         where TProjection : IProjection<TSnapshot>, new()
@@ -135,6 +136,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         return new ProjectionRegistration
         {
             Name = projectionName,
+            Mode = mode,
             Version = version,
             ProjectionType = typeof(TProjection),
             SnapshotType = typeof(TSnapshot),

@@ -141,6 +141,7 @@ public class DaemonHarnessTests
         return new ProjectionRegistration
         {
             Name = "Projection",
+            Mode = ProjectionMode.Eventual,
             Version = version,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),

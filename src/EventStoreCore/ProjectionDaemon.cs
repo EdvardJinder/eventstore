@@ -42,7 +42,9 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         _serviceProvider = serviceProvider;
         _distributedLockProvider = distributedLockProvider;
         _options = options.Value;
-        _projections = serviceProvider.GetServices<ProjectionRegistration>().ToList();
+        _projections = serviceProvider.GetServices<ProjectionRegistration>()
+            .Where(projection => projection.Mode == ProjectionMode.Eventual)
+            .ToList();
     }
 
     /// <inheritdoc />
