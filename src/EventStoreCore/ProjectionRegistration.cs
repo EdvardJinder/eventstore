@@ -5,7 +5,7 @@ namespace EventStoreCore;
 
 
 /// <summary>
-/// Internal registration information for a projection used by the daemon.
+/// Internal registration information for a projection.
 /// </summary>
 internal sealed class ProjectionRegistration
 {
@@ -13,6 +13,11 @@ internal sealed class ProjectionRegistration
     /// The unique name of the projection (typically the fully qualified type name).
     /// </summary>
     public required string Name { get; init; }
+
+    /// <summary>
+    /// The configured execution mode.
+    /// </summary>
+    public required ProjectionMode Mode { get; init; }
 
     /// <summary>
     /// The version of the projection from the attribute or options.

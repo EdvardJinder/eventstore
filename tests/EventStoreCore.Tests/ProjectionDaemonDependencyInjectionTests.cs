@@ -100,7 +100,7 @@ public class ProjectionDaemonDependencyInjectionTests
     }
 
     [Fact]
-    public void ProjectionDaemon_FindsInlineAndEventualProjections()
+    public void ProjectionDaemon_OnlyFindsEventualProjections()
     {
         var services = new ServiceCollection();
         services.AddDbContext<TestDbContext>(options =>
@@ -126,8 +126,8 @@ public class ProjectionDaemonDependencyInjectionTests
         var daemon = provider.GetRequiredService<ProjectionDaemon<TestDbContext>>();
         var projections = daemon.Projections;
 
-        Assert.Equal(2, projections.Count);
-        Assert.Contains(projections, projection => projection.ProjectionType == typeof(InlineProjection));
-        Assert.Contains(projections, projection => projection.ProjectionType == typeof(EventualProjection));
+        var projection = Assert.Single(projections);
+        Assert.Equal(ProjectionMode.Eventual, projection.Mode);
+        Assert.Equal(typeof(EventualProjection), projection.ProjectionType);
     }
 }

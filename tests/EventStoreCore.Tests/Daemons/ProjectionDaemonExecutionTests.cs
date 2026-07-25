@@ -76,6 +76,7 @@ public class ProjectionDaemonExecutionTests
         return new ProjectionRegistration
         {
             Name = "ExecutionProjection",
+            Mode = ProjectionMode.Eventual,
             Version = 1,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),

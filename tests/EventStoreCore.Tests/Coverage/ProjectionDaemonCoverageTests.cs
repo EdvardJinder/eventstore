@@ -41,6 +41,7 @@ public class ProjectionDaemonCoverageTests
         return new ProjectionRegistration
         {
             Name = "Projection",
+            Mode = ProjectionMode.Eventual,
             Version = version,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
@@ -180,6 +181,7 @@ public class ProjectionDaemonCoverageTests
         var registration = new ProjectionRegistration
         {
             Name = "Projection",
+            Mode = ProjectionMode.Eventual,
             Version = 1,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
@@ -251,6 +253,7 @@ public class ProjectionDaemonCoverageTests
         var registration = new ProjectionRegistration
         {
             Name = "Projection",
+            Mode = ProjectionMode.Eventual,
             Version = 1,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
@@ -399,6 +402,7 @@ public class ProjectionDaemonCoverageTests
         var registration = new ProjectionRegistration
         {
             Name = "Projection",
+            Mode = ProjectionMode.Eventual,
             Version = 1,
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
