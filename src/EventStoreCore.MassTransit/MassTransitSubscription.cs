@@ -26,7 +26,7 @@ internal class MassTransitSubscription : ISubscription
 
     public async Task Handle(IEvent @event, CancellationToken ct)
     {
-        var scope = sp.CreateScope();
+        using var scope = sp.CreateScope();
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<MassTransitSubscription>>();
 
