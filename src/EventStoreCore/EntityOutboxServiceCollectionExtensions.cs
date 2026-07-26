@@ -3,6 +3,7 @@ using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace EventStoreCore;
 
@@ -58,8 +59,75 @@ public static class EntityOutboxServiceCollectionExtensions
     public static IServiceCollection AddOutboxSubscription<TSubscription>(this IServiceCollection services)
         where TSubscription : class, IOutboxSubscription
     {
-        services.TryAddSingleton<TSubscription>();
-        services.AddSingleton<IOutboxSubscription>(sp => sp.GetRequiredService<TSubscription>());
+        return services.AddOutboxSubscription<TSubscription>(_ => { });
+    }
+
+    /// <summary>
+    /// Registers a custom outbox subscription with a stable logical identity.
+    /// </summary>
+    /// <typeparam name="TSubscription">The outbox subscription implementation.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">The subscription registration configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOutboxSubscription<TSubscription>(
+        this IServiceCollection services,
+        Action<OutboxSubscriptionRegistrationOptions> configure)
+        where TSubscription : class, IOutboxSubscription
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var options = new OutboxSubscriptionRegistrationOptions();
+        configure(options);
+        var name = string.IsNullOrWhiteSpace(options.Name)
+            ? typeof(TSubscription).AssemblyQualifiedName!
+            : options.Name.Trim();
+        EnsureRegistrationIsUnique(services, name, typeof(TSubscription));
+
+        services.TryAddScoped<TSubscription>();
+        services.AddScoped<IOutboxSubscription>(sp => sp.GetRequiredService<TSubscription>());
+        services.AddSingleton(new OutboxSubscriptionRegistration(
+            name,
+            typeof(TSubscription),
+            options,
+            sp => sp.GetRequiredService<TSubscription>()));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a strongly typed custom outbox subscription.
+    /// </summary>
+    /// <typeparam name="TSubscription">The outbox subscription implementation.</typeparam>
+    /// <typeparam name="TEvent">The handled outbox event payload type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional subscription registration configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOutboxSubscription<TSubscription, TEvent>(
+        this IServiceCollection services,
+        Action<OutboxSubscriptionRegistrationOptions>? configure = null)
+        where TSubscription : class, IOutboxSubscription<TEvent>
+        where TEvent : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = new OutboxSubscriptionRegistrationOptions();
+        configure?.Invoke(options);
+        options.IncludeEventType(typeof(TEvent));
+        var name = string.IsNullOrWhiteSpace(options.Name)
+            ? typeof(TSubscription).AssemblyQualifiedName!
+            : options.Name.Trim();
+        EnsureRegistrationIsUnique(services, name, typeof(TSubscription));
+
+        services.TryAddScoped<TSubscription>();
+        services.AddScoped<IOutboxSubscription>(sp =>
+            new TypedOutboxSubscriptionAdapter<TSubscription, TEvent>(
+                sp.GetRequiredService<TSubscription>()));
+        services.AddSingleton(new OutboxSubscriptionRegistration(
+            name,
+            typeof(TSubscription),
+            options,
+            sp => new TypedOutboxSubscriptionAdapter<TSubscription, TEvent>(
+                sp.GetRequiredService<TSubscription>())));
         return services;
     }
 
@@ -98,9 +166,41 @@ public static class EntityOutboxServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(lockProviderFactory);
 
         services.TryAddSingleton(lockProviderFactory);
+        services.TryAddSingleton<DaemonHealthMonitor>();
         services.Configure<EntityOutboxOptions>(options => configure?.Invoke(options));
         services.TryAddSingleton<EntityOutboxDaemon<TDbContext>>();
+        services.TryAddScoped<IOutboxSubscriptionManager>(sp =>
+            new EntityOutboxManager<TDbContext>(
+                sp.GetRequiredService<TDbContext>(),
+                sp.GetRequiredService<IDistributedLockProvider>(),
+                sp.GetServices<OutboxSubscriptionRegistration>(),
+                sp.GetRequiredService<ILogger<EntityOutboxManager<TDbContext>>>()));
         services.AddHostedService(sp => sp.GetRequiredService<EntityOutboxDaemon<TDbContext>>());
         return services;
+    }
+
+    private static void EnsureRegistrationIsUnique(
+        IServiceCollection services,
+        string name,
+        Type subscriptionType)
+    {
+        var registrations = services
+            .Where(descriptor => descriptor.ServiceType == typeof(OutboxSubscriptionRegistration))
+            .Select(descriptor => descriptor.ImplementationInstance)
+            .OfType<OutboxSubscriptionRegistration>()
+            .ToArray();
+        if (registrations.Any(registration =>
+                string.Equals(registration.Name, name, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"An outbox subscription with logical name '{name}' is already registered.");
+        }
+
+        if (registrations.Any(registration =>
+                registration.SubscriptionType == subscriptionType))
+        {
+            throw new InvalidOperationException(
+                $"Outbox subscription type '{subscriptionType}' is already registered.");
+        }
     }
 }

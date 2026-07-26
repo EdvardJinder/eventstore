@@ -292,6 +292,108 @@ public interface IEventStoreEndpointsClient
         [Query] long? startSequence = null,
         [Query] DateTimeOffset? fromTimestamp = null,
         CancellationToken ct = default);
+
+    /// <summary>Gets all global entity-outbox subscription statuses.</summary>
+    [Get("/outbox-subscriptions")]
+    Task<IReadOnlyList<OutboxSubscriptionStatusDto>> GetAllOutboxSubscriptionsAsync(
+        CancellationToken ct = default);
+
+    /// <summary>Gets all entity-outbox subscription statuses for one tenant.</summary>
+    [Get("/outbox-subscriptions")]
+    Task<IReadOnlyList<OutboxSubscriptionStatusDto>> GetAllOutboxSubscriptionsForTenantAsync(
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Gets one global entity-outbox subscription status.</summary>
+    [Get("/outbox-subscriptions/{name}")]
+    Task<ApiResponse<OutboxSubscriptionStatusDto>> GetOutboxSubscriptionAsync(
+        string name,
+        CancellationToken ct = default);
+
+    /// <summary>Gets one tenant-scoped entity-outbox subscription status.</summary>
+    [Get("/outbox-subscriptions/{name}")]
+    Task<ApiResponse<OutboxSubscriptionStatusDto>> GetOutboxSubscriptionForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Pauses a global entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/pause")]
+    Task PauseOutboxSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>Pauses a tenant-scoped entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/pause")]
+    Task PauseOutboxSubscriptionForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Resumes a global entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/resume")]
+    Task ResumeOutboxSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>Resumes a tenant-scoped entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/resume")]
+    Task ResumeOutboxSubscriptionForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Gets the failed event for a global entity-outbox subscription.</summary>
+    [Get("/outbox-subscriptions/{name}/failed-event")]
+    Task<ApiResponse<OutboxFailedEventDto>> GetOutboxSubscriptionFailedEventAsync(
+        string name,
+        CancellationToken ct = default);
+
+    /// <summary>Gets the failed event for a tenant-scoped entity-outbox subscription.</summary>
+    [Get("/outbox-subscriptions/{name}/failed-event")]
+    Task<ApiResponse<OutboxFailedEventDto>> GetOutboxSubscriptionFailedEventForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Retries the failed event for a global entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/retry")]
+    Task RetryOutboxSubscriptionFailedEventAsync(
+        string name,
+        CancellationToken ct = default);
+
+    /// <summary>Retries the failed event for a tenant-scoped entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/retry")]
+    Task RetryOutboxSubscriptionFailedEventForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Skips the failed event for a global entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/skip")]
+    Task SkipOutboxSubscriptionFailedEventAsync(
+        string name,
+        CancellationToken ct = default);
+
+    /// <summary>Skips the failed event for a tenant-scoped entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/skip")]
+    Task SkipOutboxSubscriptionFailedEventForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Replays a global entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/replay")]
+    Task ReplayOutboxSubscriptionAsync(
+        string name,
+        [Query] long? startSequence = null,
+        [Query] DateTimeOffset? fromTimestamp = null,
+        CancellationToken ct = default);
+
+    /// <summary>Replays a tenant-scoped entity-outbox subscription.</summary>
+    [Post("/outbox-subscriptions/{name}/replay")]
+    Task ReplayOutboxSubscriptionForTenantAsync(
+        string name,
+        [Query] Guid tenantId,
+        [Query] long? startSequence = null,
+        [Query] DateTimeOffset? fromTimestamp = null,
+        CancellationToken ct = default);
 }
 
 

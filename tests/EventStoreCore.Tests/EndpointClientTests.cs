@@ -21,11 +21,16 @@ public sealed class EndpointClientTests
         using var subscription = await client.GetSubscriptionAsync(
             "missing",
             TestContext.Current.CancellationToken);
+        using var outboxSubscription = await client.GetOutboxSubscriptionAsync(
+            "missing",
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, projection.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, subscription.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, outboxSubscription.StatusCode);
         Assert.False(projection.IsSuccessful);
         Assert.False(subscription.IsSuccessful);
+        Assert.False(outboxSubscription.IsSuccessful);
     }
 
     private sealed class StubHandler(HttpStatusCode statusCode) : HttpMessageHandler

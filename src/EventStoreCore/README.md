@@ -27,6 +27,7 @@ infrastructure remains application-owned.
 - Subscription daemons with checkpointing
 - Atomic domain-event capture from ordinary EF entities
 - Standalone outbox reader and independently checkpointed outbox subscriptions
+- Stable outbox subscription identities and recovery/replay management
 - Replay-aware scheduler integrations
 - Provider packages for common infrastructure
 

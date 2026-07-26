@@ -12,4 +12,5 @@ services.AddEventStoreEndpointsClient(client =>
 
 The application owns authentication headers, resilience policies, and base
 address configuration. Tenant-scoped operations use the same optional tenant ID
-query parameter as the server endpoints.
+query parameter as the server endpoints. The client includes projection,
+subscription, and entity-outbox subscription status and recovery operations.

@@ -102,7 +102,8 @@ Outbox payloads must use values that are stable before `SaveChanges`. Client-gen
 Read explicitly through `IOutboxReader`, or register independently checkpointed at-least-once subscriptions and the optional daemon:
 
 ```csharp
-services.AddOutboxSubscription<PublishOrderEvents>();
+services.AddOutboxSubscription<PublishOrderEvents>(
+    options => options.Name = "publish-order-events");
 services.AddEntityOutboxDaemon<AppDbContext>();
 
 public sealed class PublishOrderEvents : IOutboxSubscription
@@ -137,7 +138,74 @@ The CloudEvents package also exposes `AddCloudEventOutboxSubscription<TPublisher
 `ICloudEventSubscription` publishers. Adapter mappings receive `IOutboxEvent<T>`, including the
 stable outbox ID, tenant, sequence, source-entity metadata, and change kind.
 
+Strongly typed subscriptions and filters use the registration options:
+
+```csharp
+services.AddOutboxSubscription<PublishOrderEvents, OrderCreated>(options =>
+{
+    options.Name = "publish-order-events";
+    options.IncludeTenant(tenantId);
+    options.IncludeSourceEntity<Order>();
+    options.IncludeChangeKind(EntityChangeKind.Added);
+    options.IncludeLogicalEventType("order_created");
+});
+
+public sealed class PublishOrderEvents : IOutboxSubscription<OrderCreated>
+{
+    public Task Handle(IOutboxEvent<OrderCreated> @event, CancellationToken ct)
+    {
+        // The envelope retains its outbox ID, sequence, tenant, entity key, and change kind.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Multiple values in one filter category are ORed and categories are ANDed.
+Filtered events still advance the subscription checkpoint. Handlers are resolved
+from a dependency-injection scope for each processed batch, so they may depend on
+scoped services.
+
+Unmaterializable events fail and enter the retry flow by default. Set
+`UnknownEventPolicy` to `Skip` to advance, `Quarantine` to dead-letter
+immediately, or call `HandleUnknown` to inspect the raw persisted event before
+advancing.
+
 Each outbox subscription has its own checkpoint, retry state, and distributed lock. One failed destination does not block another. Successfully consumed rows are retained for audit and replay; `IOutboxReader.CleanupAsync` deletes only through the slowest persisted subscription checkpoint. Stream subscriptions and entity-outbox subscriptions are separate logs and have no combined ordering.
+
+Cleanup returns without deleting rows while any registered subscription has not
+created its first checkpoint, preventing a newly added destination from losing
+events before its daemon initializes.
+
+Use an explicit stable name for long-lived subscriptions. The name is used by
+checkpoints, distributed locks, logs, management APIs, and admin endpoints.
+Without one, the assembly-qualified subscription type name is used for
+compatibility, so renaming or moving the type creates a new checkpoint.
+
+Resolve `IOutboxSubscriptionManager` to inspect and recover subscriptions:
+
+```csharp
+var status = await manager.GetStatusAsync("publish-order-events", ct);
+var failed = await manager.GetFailedEventAsync("publish-order-events", ct);
+
+await manager.RetryFailedEventAsync("publish-order-events", ct);
+await manager.SkipFailedEventAsync("publish-order-events", ct);
+await manager.PauseAsync("publish-order-events", ct);
+await manager.ResumeAsync("publish-order-events", ct);
+await manager.ReplayAsync("publish-order-events", startSequence: 42, ct: ct);
+```
+
+All operations have tenant-scoped overloads. The admin endpoint package exposes
+the same operations under `/outbox-subscriptions`. To adopt a stable name for an
+existing unnamed subscription without replaying it, stop every daemon instance,
+update `OutboxSubscriptions.SubscriptionAssemblyQualifiedName`, deploy the
+explicit name, and then restart the daemon.
+
+The dispatcher records activities and metrics under `EventStoreCore.Daemons`
+with daemon kind `outbox-subscription`, publishes `IDaemonFaultObserver`
+notifications, and participates in `DaemonHealthMonitor`. It does not keep a
+database transaction open while invoking a handler. Checkpoints are persisted
+after successful delivery, so a crash between delivery and checkpointing can
+redeliver the event and handlers must remain idempotent.
 
 Add migrations for the `OutboxMessages` and `OutboxSubscriptions` tables after enabling the feature.
 
