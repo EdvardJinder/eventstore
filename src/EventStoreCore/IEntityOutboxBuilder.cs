@@ -80,23 +80,47 @@ public interface IEntityOutboxChangeBuilder<TEntity>
     where TEntity : class
 {
     /// <summary>
-    /// Adds an event factory for added entities. Return an empty array to suppress emission.
+    /// Adds a zero-or-one event factory for added entities. Return <see langword="null" /> to suppress emission.
+    /// </summary>
+    /// <param name="factory">Creates the event for an added entity.</param>
+    /// <returns>The change builder for chaining.</returns>
+    IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object?> factory);
+
+    /// <summary>
+    /// Adds a zero-or-many event factory for added entities. Return an empty collection to suppress emission.
     /// </summary>
     /// <param name="factory">Creates the events for an added entity.</param>
     /// <returns>The change builder for chaining.</returns>
-    IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object[]> factory);
+    IEntityOutboxChangeBuilder<TEntity> Added(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory);
 
     /// <summary>
-    /// Adds an event factory for modified entities. Return an empty array to suppress emission.
+    /// Adds a zero-or-one event factory for modified entities. Return <see langword="null" /> to suppress emission.
+    /// </summary>
+    /// <param name="factory">Creates the event for a modified entity.</param>
+    /// <returns>The change builder for chaining.</returns>
+    IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object?> factory);
+
+    /// <summary>
+    /// Adds a zero-or-many event factory for modified entities. Return an empty collection to suppress emission.
     /// </summary>
     /// <param name="factory">Creates the events for a modified entity.</param>
     /// <returns>The change builder for chaining.</returns>
-    IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object[]> factory);
+    IEntityOutboxChangeBuilder<TEntity> Modified(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory);
 
     /// <summary>
-    /// Adds an event factory for deleted entities. Return an empty array to suppress emission.
+    /// Adds a zero-or-one event factory for deleted entities. Return <see langword="null" /> to suppress emission.
+    /// </summary>
+    /// <param name="factory">Creates the event for a deleted entity.</param>
+    /// <returns>The change builder for chaining.</returns>
+    IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object?> factory);
+
+    /// <summary>
+    /// Adds a zero-or-many event factory for deleted entities. Return an empty collection to suppress emission.
     /// </summary>
     /// <param name="factory">Creates the events for a deleted entity.</param>
     /// <returns>The change builder for chaining.</returns>
-    IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object[]> factory);
+    IEntityOutboxChangeBuilder<TEntity> Deleted(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory);
 }

@@ -76,7 +76,7 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
     IEntityOutboxRegistration
     where TEntity : class
 {
-    private readonly Dictionary<EntityChangeKind, List<Func<EntityChange<TEntity>, object[]>>> _factories = [];
+    private readonly Dictionary<EntityChangeKind, List<Func<EntityChange<TEntity>, IReadOnlyCollection<object>>>> _factories = [];
     private Func<TEntity, Guid> _tenantSelector = _ => Guid.Empty;
 
     public Type EntityType => typeof(TEntity);
@@ -95,14 +95,26 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
         return this;
     }
 
-    public IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object[]> factory)
-        => Add(EntityChangeKind.Added, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object?> factory)
+        => AddSingle(EntityChangeKind.Added, factory);
 
-    public IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object[]> factory)
-        => Add(EntityChangeKind.Modified, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Added(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory)
+        => AddMany(EntityChangeKind.Added, factory);
 
-    public IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object[]> factory)
-        => Add(EntityChangeKind.Deleted, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object?> factory)
+        => AddSingle(EntityChangeKind.Modified, factory);
+
+    public IEntityOutboxChangeBuilder<TEntity> Modified(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory)
+        => AddMany(EntityChangeKind.Modified, factory);
+
+    public IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object?> factory)
+        => AddSingle(EntityChangeKind.Deleted, factory);
+
+    public IEntityOutboxChangeBuilder<TEntity> Deleted(
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory)
+        => AddMany(EntityChangeKind.Deleted, factory);
 
     public IReadOnlyList<object> CreateEvents(EntityEntry entry, EntityChangeKind changeKind)
     {
@@ -115,7 +127,7 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
         var change = new EntityChange<TEntity>(typedEntry);
         var events = factories
             .SelectMany(factory => factory(change)
-                ?? throw new InvalidOperationException("An entity outbox event factory returned null. Return an empty array instead."))
+                ?? throw new InvalidOperationException("An entity outbox event factory returned null. Return an empty collection instead."))
             .ToArray();
 
         if (events.Any(@event => @event is null))
@@ -128,9 +140,21 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
 
     public Guid GetTenantId(object entity) => _tenantSelector((TEntity)entity);
 
-    private IEntityOutboxChangeBuilder<TEntity> Add(
+    private IEntityOutboxChangeBuilder<TEntity> AddSingle(
         EntityChangeKind changeKind,
-        Func<EntityChange<TEntity>, object[]> factory)
+        Func<EntityChange<TEntity>, object?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        return AddMany(changeKind, change =>
+        {
+            var @event = factory(change);
+            return @event is null ? [] : [@event];
+        });
+    }
+
+    private IEntityOutboxChangeBuilder<TEntity> AddMany(
+        EntityChangeKind changeKind,
+        Func<EntityChange<TEntity>, IReadOnlyCollection<object>> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 

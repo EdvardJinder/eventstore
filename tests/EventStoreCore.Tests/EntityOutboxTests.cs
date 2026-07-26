@@ -22,13 +22,13 @@ public sealed class EntityOutboxTests
             outbox.For<Order>()
                 .TenantId(order => order.TenantId)
                 .On(change => change
-                    .Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])
+                    .Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))
                     .Modified(entity => entity.IsModified(order => order.Status)
-                        ? [new OrderModified(
+                        ? new OrderModified(
                             entity.Entity.Id,
                             entity.Original(order => order.Status)!,
-                            entity.Current(order => order.Status)!)]
-                        : [])
+                            entity.Current(order => order.Status)!)
+                        : null)
                     .Deleted(entity =>
                     [
                         new OrderDeleted(entity.Entity.Id),
@@ -84,8 +84,9 @@ public sealed class EntityOutboxTests
         await using var fixture = await OutboxFixture.CreateAsync();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
         {
-            outbox.For<Order>().On(change =>
-                change.Added(_ => throw new InvalidOperationException("capture failed")));
+            Func<EntityChange<Order>, object?> factory =
+                _ => throw new InvalidOperationException("capture failed");
+            outbox.For<Order>().On(change => change.Added(factory));
         });
 
         await using var provider = fixture.Build();
@@ -130,7 +131,7 @@ public sealed class EntityOutboxTests
         {
             outbox.AddEvent<OrderAdded>("order_added_v1");
             outbox.For<Order>().On(change =>
-                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)]));
+                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status)));
         });
 
         await using var provider = fixture.Build();
@@ -192,7 +193,7 @@ public sealed class EntityOutboxTests
         await using var fixture = await OutboxFixture.CreateAsync();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().TenantId(order => order.TenantId).On(change =>
-                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
+                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
 
         await using var provider = fixture.Build();
         await fixture.CreateSchemaAsync(provider);
@@ -238,7 +239,7 @@ public sealed class EntityOutboxTests
         fixture.Services.AddLogging();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().On(change =>
-                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
+                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
         fixture.Services.AddOutboxSubscription<RecordingSubscription>();
         fixture.Services.AddEntityOutboxDaemon<OutboxDbContext>(
             _ => Substitute.For<IDistributedLockProvider>(),
@@ -281,7 +282,7 @@ public sealed class EntityOutboxTests
         fixture.Services.AddLogging();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().On(change =>
-                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
+                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
         fixture.Services.AddOutboxSubscription<RecordingSubscription>();
         fixture.Services.AddOutboxSubscription<FailingSubscription>();
         fixture.Services.AddEntityOutboxDaemon<OutboxDbContext>(

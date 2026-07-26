@@ -80,13 +80,13 @@ services.AddEntityOutbox<AppDbContext>(outbox =>
     outbox.For<Order>()
         .TenantId(order => order.TenantId)
         .On(change => change
-            .Added(entry => [new OrderCreated(entry.Entity.Id)])
+            .Added(entry => new OrderCreated(entry.Entity.Id))
             .Modified(entry => entry.IsModified(order => order.Status)
-                ? [new OrderStatusChanged(
+                ? new OrderStatusChanged(
                     entry.Entity.Id,
                     entry.Original(order => order.Status),
-                    entry.Current(order => order.Status))]
-                : [])
+                    entry.Current(order => order.Status))
+                : null)
             .Deleted(entry =>
             [
                 new OrderDeleted(entry.Entity.Id),
@@ -95,7 +95,7 @@ services.AddEntityOutbox<AppDbContext>(outbox =>
 });
 ```
 
-`Added`, `Modified`, and `Deleted` return event arrays. Return `[]` when the change should not emit an event. Factories run synchronously before EF sends database commands, and exceptions abort `SaveChanges`.
+`Added`, `Modified`, and `Deleted` each have single-event and collection overloads. Return `null` from the single-event overload or `[]` from the collection overload when the change should not emit an event. Factories run synchronously before EF sends database commands, and exceptions abort `SaveChanges`.
 
 Outbox payloads must use values that are stable before `SaveChanges`. Client-generated identifiers work naturally. Database-generated keys and other store-generated values are not available to the atomic capture callback.
 
