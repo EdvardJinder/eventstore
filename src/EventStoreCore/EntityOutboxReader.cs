@@ -124,6 +124,7 @@ internal sealed class EntityOutboxReader<TDbContext>(
 
         if (eventTypes.TryResolveMaterializedEvent(
             compatibilityEvent,
+            registry.Serializer,
             out var registeredType,
             out var upcastData))
         {

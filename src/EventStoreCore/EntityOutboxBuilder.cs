@@ -177,4 +177,7 @@ internal sealed class EntityOutboxRegistry<TDbContext>(
     internal IReadOnlyDictionary<Type, IEntityOutboxRegistration> Registrations { get; } = registrations;
 
     internal JsonSerializerOptions SerializerOptions { get; } = serializerOptions;
+
+    internal IEventStoreSerializer Serializer { get; } =
+        new SystemTextJsonEventStoreSerializer(serializerOptions);
 }
