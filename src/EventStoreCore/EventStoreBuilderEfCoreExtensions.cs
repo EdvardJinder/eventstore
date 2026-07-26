@@ -54,6 +54,8 @@ public static class EventStoreBuilderEfCoreExtensions
         builder.Services.AddSingleton<ISchedulerEventApplicationStore, EfCoreSchedulerEventApplicationStore<TDbContext>>();
         builder.Services.TryAddScoped<IEventLogReader>(serviceProvider =>
             new DbContextEventLogReader(serviceProvider.GetRequiredService<TDbContext>()));
+        builder.Services.TryAddScoped<IStreamLifecycleManager>(serviceProvider =>
+            new DbContextStreamLifecycleManager(serviceProvider.GetRequiredService<TDbContext>()));
 
         efBuilder.Services.AddDbContext<TDbContext>((sp, options) =>
         {
@@ -162,4 +164,3 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder;
     }
 }
-

@@ -283,7 +283,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
         // Get total events for progress tracking
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
-        status.TotalEvents = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+        status.TotalEvents = await ApplyCheckpointScope(dbContext.Set<DbEvent>(), checkpointScope)
             .LongCountAsync(ct);
 
         await dbContext.SaveChangesAsync(ct);
@@ -373,7 +373,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
         var startedAt = _timeProvider.GetTimestamp();
         using var activity = EventStoreDaemonDiagnostics.StartBatch(projection.Name, "projection");
-        var events = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+        var events = await ApplyCheckpointScope(dbContext.Set<DbEvent>(), checkpointScope)
             .Where(e => e.Sequence > status.Position)
             .OrderBy(e => e.Sequence)
             .Take(_options.BatchSize)
@@ -456,7 +456,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 await Task.Delay(_options.BatchDelay, _timeProvider, ct);
             }
 
-            var checkpointLag = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+            var checkpointLag = await ApplyCheckpointScope(dbContext.Set<DbEvent>(), checkpointScope)
                 .LongCountAsync(e => e.Sequence > status.Position, ct);
             EventStoreDaemonDiagnostics.BatchCompleted(
                 projection.Name,
@@ -515,7 +515,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        var eventTenantIds = await dbContext.Events
+        var eventTenantIds = await dbContext.Set<DbEvent>()
             .AsNoTracking()
             .Select(e => e.TenantId)
             .Distinct()

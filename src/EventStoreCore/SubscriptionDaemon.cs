@@ -236,7 +236,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 return 0;
             }
 
-            var nextEvents = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+            var nextEvents = await ApplyCheckpointScope(dbContext.Set<DbEvent>(), checkpointScope)
                 .Where(e => e.Sequence > subscription.Sequence)
                 .OrderBy(e => e.Sequence)
                 .Take(batchSize)
@@ -420,7 +420,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 processedCount,
                 lastProcessedSequence,
                 name);
-            var checkpointLag = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+            var checkpointLag = await ApplyCheckpointScope(dbContext.Set<DbEvent>(), checkpointScope)
                 .LongCountAsync(e => e.Sequence > subscription.Sequence, stoppingToken);
             EventStoreDaemonDiagnostics.BatchCompleted(
                 name,
@@ -537,7 +537,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        var eventTenantIds = await dbContext.Events
+        var eventTenantIds = await dbContext.Set<DbEvent>()
             .AsNoTracking()
             .Select(e => e.TenantId)
             .Distinct()

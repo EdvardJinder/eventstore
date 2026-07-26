@@ -227,7 +227,7 @@ public class SubscriptionDaemonExecutionTests
         db.Streams.StartStream(Guid.NewGuid(), events: [new object()]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var storedEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var storedEvent = await db.Set<DbEvent>().FirstAsync(TestContext.Current.CancellationToken);
         if (storedEvent.Sequence == 0)
         {
             storedEvent.Sequence = 1;
@@ -532,7 +532,7 @@ public class SubscriptionDaemonExecutionTests
                 RetryDelay = TimeSpan.FromSeconds(5)
             }));
 
-        db.Events.AddRange(
+        db.Set<DbEvent>().AddRange(
             CreateEvent(tenantA, 1),
             CreateEvent(tenantB, 2));
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -565,7 +565,7 @@ public class SubscriptionDaemonExecutionTests
 
     private static async Task EnsureSequenceAsync(ExecutionDbContext db)
     {
-        var storedEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var storedEvent = await db.Set<DbEvent>().FirstAsync(TestContext.Current.CancellationToken);
         if (storedEvent.Sequence == 0)
         {
             storedEvent.Sequence = 1;
@@ -575,7 +575,7 @@ public class SubscriptionDaemonExecutionTests
 
     private static async Task EnsureSequencesAsync(ExecutionDbContext db)
     {
-        var events = await db.Events
+        var events = await db.Set<DbEvent>()
             .OrderBy(e => e.Version)
             .ToListAsync(TestContext.Current.CancellationToken);
 

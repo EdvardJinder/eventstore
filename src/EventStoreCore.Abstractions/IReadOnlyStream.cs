@@ -26,6 +26,11 @@ public interface IReadOnlyStream
     long Version { get; }
 
     /// <summary>
+    /// The stream lifecycle state. Normal reads never return tombstoned streams.
+    /// </summary>
+    StreamLifecycleState LifecycleState { get; }
+
+    /// <summary>
     /// The loaded events, ordered by version.
     /// Snapshot-backed typed reads may contain only the events after the snapshot used to rebuild the typed stream state.
     /// </summary>
@@ -44,4 +49,3 @@ public interface IReadOnlyStream<out T> : IReadOnlyStream
     /// </summary>
     T State { get; }
 }
-

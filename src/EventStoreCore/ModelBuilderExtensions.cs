@@ -19,7 +19,13 @@ internal static class ModelBuilderExtensions
             entity.Property(e => e.StreamType)
                 .IsRequired();
 
-            entity.Property(e => e.CurrentVersion);
+            entity.Property(e => e.CurrentVersion)
+                .IsConcurrencyToken();
+
+            entity.Property(e => e.LifecycleState)
+                .HasConversion<int>()
+                .HasDefaultValue(StreamLifecycleState.Active)
+                .IsConcurrencyToken();
 
             entity.Property(e => e.CreatedTimestamp)
                 .IsRequired();
@@ -45,6 +51,55 @@ internal static class ModelBuilderExtensions
                 .HasPrincipalKey(e => new { e.Id, e.StreamType, e.TenantId })
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasMany(e => e.LifecycleEntries)
+                .WithOne()
+                .HasForeignKey(e => new { e.StreamId, e.StreamType, e.TenantId })
+                .HasPrincipalKey(e => new { e.Id, e.StreamType, e.TenantId })
+                .OnDelete(DeleteBehavior.Cascade);
+
+        });
+        modelBuilder.Entity<DbStreamLifecycleEntry>(entity =>
+        {
+            entity.ToTable("StreamLifecycleEntries");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.StreamId)
+                .IsRequired();
+
+            entity.Property(e => e.StreamType)
+                .IsRequired();
+
+            entity.Property(e => e.TenantId)
+                .IsRequired();
+
+            entity.Property(e => e.FromState)
+                .HasConversion<int>()
+                .IsRequired();
+
+            entity.Property(e => e.ToState)
+                .HasConversion<int>()
+                .IsRequired();
+
+            entity.Property(e => e.StreamVersion)
+                .IsRequired();
+
+            entity.Property(e => e.ChangedAtUtc)
+                .IsRequired();
+
+            entity.Property(e => e.Actor)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(e => e.Reason)
+                .HasMaxLength(2000)
+                .IsRequired();
+
+            entity.Property(e => e.CorrelationId)
+                .HasMaxLength(500);
+
+            entity.HasIndex(e => new { e.StreamId, e.StreamType, e.TenantId, e.ChangedAtUtc });
+            entity.HasIndex(e => new { e.TenantId, e.ChangedAtUtc });
         });
         modelBuilder.Entity<DbEvent>(entity =>
         {

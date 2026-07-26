@@ -3,6 +3,8 @@
 Provider-neutral contracts for EventStoreCore events, streams, projections,
 subscriptions, entity-outbox management, checkpoints, metadata, serialization,
 bounded stream reads, and global event-log reads.
+It also contains the provider-neutral `IStreamLifecycleManager` archive,
+restore, tombstone, and lifecycle-audit contracts.
 
 ```bash
 dotnet add package EventStoreCore.Abstractions

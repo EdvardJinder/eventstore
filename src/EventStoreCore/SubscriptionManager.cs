@@ -301,7 +301,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             return null;
         }
 
-        var dbEvent = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+        var dbEvent = await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Sequence == status.FailedEventSequence, ct);
 
@@ -412,7 +412,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
 
         if (fromTimestamp.HasValue)
         {
-            var firstSequence = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+            var firstSequence = await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
                 .AsNoTracking()
                 .Where(e => e.Timestamp >= fromTimestamp.Value)
                 .OrderBy(e => e.Sequence)
@@ -424,7 +424,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
                 return Math.Max(firstSequence.Value - 1, 0);
             }
 
-            return await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+            return await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
                 .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
         }
 
@@ -515,7 +515,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
 
     private Task<long> CountEventsAsync(CheckpointScopeKey checkpointScope, CancellationToken ct)
     {
-        return ApplyCheckpointScope(_dbContext.Events, checkpointScope).LongCountAsync(ct);
+        return ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope).LongCountAsync(ct);
     }
 
     private Task<long> CountProcessedEventsAsync(
@@ -528,7 +528,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             return Task.FromResult(0L);
         }
 
-        return ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+        return ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
             .LongCountAsync(e => e.Sequence <= position, ct);
     }
 
@@ -542,7 +542,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
             return null;
         }
 
-        return await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+        return await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
             .AsNoTracking()
             .Where(e => e.Sequence == position)
             .Select(e => (DateTimeOffset?)e.Timestamp)

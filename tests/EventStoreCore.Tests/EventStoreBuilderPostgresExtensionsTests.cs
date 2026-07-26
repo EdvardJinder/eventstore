@@ -226,6 +226,20 @@ public class EventStoreBuilderPostgresExtensionsTests
         Assert.Throws<InvalidOperationException>(() => builder.ExistingDbContext<ContextA>());
     }
 
+    [Fact]
+    public void ExistingDbContext_RegistersScopedLifecycleManager()
+    {
+        var services = new ServiceCollection();
+        var builder = new EventStoreBuilder(services);
+
+        builder.ExistingDbContext<ContextA>();
+
+        var descriptor = Assert.Single(
+            services,
+            service => service.ServiceType == typeof(IStreamLifecycleManager));
+        Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
+    }
+
 
     private class DummyProjection : IProjection<DummySnapshot>
     {

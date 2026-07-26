@@ -26,6 +26,7 @@ infrastructure remains application-owned.
 - Inline and eventual projections
 - Subscription daemons with checkpointing
 - Stable global event-log paging across streams
+- Audited archive, restore, and tombstone metadata without event deletion
 - Atomic domain-event capture from ordinary EF entities
 - Standalone outbox reader and independently checkpointed outbox subscriptions
 - Stable outbox subscription identities and recovery/replay management
@@ -43,6 +44,22 @@ infrastructure remains application-owned.
   idempotent.
 - Provider-specific storage types and migration considerations are documented by
   the PostgreSQL and SQL Server packages.
+- Archived streams remain readable and reject writes. Tombstoned streams are
+  hidden from normal stream reads, reject writes, and retain their event history
+  for global-log consumers, projections, subscriptions, and audit integrity.
+
+## Stream lifecycle
+
+Inject the scoped `IStreamLifecycleManager` registered by
+`ExistingDbContext<TDbContext>()`, or use `dbContext.StreamLifecycle`, for
+explicit administrative transitions. Every transition requires the complete
+stream identity, an exact stream version, an actor, and a reason. Archive is
+reversible; tombstone is terminal. `GetAsync` returns current lifecycle metadata
+and immutable audit history, including for tombstoned streams.
+
+Lifecycle governance does not physically delete or redact payloads. Add an
+application migration for `Streams.LifecycleState` and
+`StreamLifecycleEntries` after upgrading.
 
 ## Bounded stream reads
 

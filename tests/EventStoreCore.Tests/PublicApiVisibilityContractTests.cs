@@ -23,6 +23,7 @@ public sealed class PublicApiVisibilityContractTests
     [Theory]
     [InlineData(typeof(DbEvent))]
     [InlineData(typeof(DbStream))]
+    [InlineData(typeof(DbStreamLifecycleEntry))]
     [InlineData(typeof(DbSnapshot))]
     [InlineData(typeof(DbProjectionStatus))]
     [InlineData(typeof(DbSubscription))]

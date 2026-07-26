@@ -163,7 +163,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             : [];
 
         var eventTenantScopeIds = _options.CheckpointScope == CheckpointScope.Tenant
-            ? await _dbContext.Events
+            ? await _dbContext.Set<DbEvent>()
                 .AsNoTracking()
                 .Select(e => e.TenantId)
                 .Distinct()
@@ -405,7 +405,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             return null;
         }
 
-        var dbEvent = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+        var dbEvent = await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Sequence == status.FailedEventSequence, ct);
 
@@ -476,7 +476,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         status.RebuildCompletedAt = null;
         status.LastError = null;
         status.FailedEventSequence = null;
-        status.TotalEvents = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
+        status.TotalEvents = await ApplyCheckpointScope(_dbContext.Set<DbEvent>(), checkpointScope)
             .LongCountAsync(ct);
     }
 
@@ -542,7 +542,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         CancellationToken ct)
     {
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
-        var events = ApplyCheckpointScope(_dbContext.Events.AsNoTracking(), checkpointScope);
+        var events = ApplyCheckpointScope(_dbContext.Set<DbEvent>().AsNoTracking(), checkpointScope);
         var totalEvents = await events.LongCountAsync(ct);
         var processedEvents = status.Position <= 0
             ? 0

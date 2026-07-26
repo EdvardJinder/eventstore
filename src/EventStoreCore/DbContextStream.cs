@@ -69,12 +69,23 @@ internal class DbContextStream : IStream
     public long Version => _dbStream.CurrentVersion;
 
     /// <inheritdoc />
+    public StreamLifecycleState LifecycleState => _dbStream.LifecycleState;
+
+    /// <inheritdoc />
     public IReadOnlyList<IEvent> Events => _events ??= MaterializeEvents(_dbStream.Events);
 
     /// <inheritdoc />
     public void Append(params IEnumerable<object> events)
     {
         ArgumentNullException.ThrowIfNull(events);
+        if (_dbStream.LifecycleState != StreamLifecycleState.Active)
+        {
+            throw new StreamNotWritableException(
+                _dbStream.StreamType,
+                _dbStream.Id,
+                _dbStream.TenantId,
+                _dbStream.LifecycleState);
+        }
 
         var previousVersion = _dbStream.CurrentVersion;
         foreach (var @event in events)
@@ -174,4 +185,3 @@ internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState
         }
     }
 }
-

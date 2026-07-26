@@ -32,7 +32,10 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
 
         var capturedVersion = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.Id == streamId && x.StreamType == streamType && x.TenantId == tenantId)
+            .Where(x => x.Id == streamId
+                && x.StreamType == streamType
+                && x.TenantId == tenantId
+                && x.LifecycleState != StreamLifecycleState.Tombstoned)
             .Select(x => (long?)x.CurrentVersion)
             .SingleOrDefaultAsync(cancellationToken);
         if (!capturedVersion.HasValue)
@@ -201,6 +204,15 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
 
+        if (stream is not null && stream.LifecycleState != StreamLifecycleState.Active)
+        {
+            throw new StreamNotWritableException(
+                streamType,
+                streamId,
+                tenantId,
+                stream.LifecycleState);
+        }
+
         stream = expectedVersion.Mode switch
         {
             ExpectedVersionMode.Any => stream ?? CreateStream(streamType, streamId, tenantId),
@@ -239,12 +251,24 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             await db.SaveChangesAsync(cancellationToken);
             return new DbContextStream(stream, db);
         }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            DetachFailedWriteEntries();
+
+            var actualVersion = await GetActualVersionAsync(streamType, streamId, tenantId, cancellationToken);
+
+            throw CreateConcurrencyException(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                actualVersion,
+                "Append failed because another writer or lifecycle transition modified the stream concurrently.",
+                ex);
+        }
         catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
         {
-            foreach (var entry in ex.Entries.Where(entry => entry.Entity is DbEvent or DbStream))
-            {
-                entry.State = EntityState.Detached;
-            }
+            DetachFailedWriteEntries();
 
             var actualVersion = await GetActualVersionAsync(streamType, streamId, tenantId, cancellationToken);
 
@@ -280,7 +304,9 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+            .Where(x => x.TenantId == tenantId
+                && x.StreamType == streamType
+                && x.LifecycleState != StreamLifecycleState.Tombstoned)
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -302,12 +328,19 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
     {
+        if (!await IsReadableAsync(streamType, streamId, tenantId, cancellationToken))
+        {
+            return null;
+        }
+
         var snapshot = _snapshots?.LoadSnapshot<T>(db, streamType, streamId, tenantId);
         var snapshotVersion = snapshot?.Version ?? 0;
 
         var stream = await db.Set<DbStream>()
          .AsNoTracking()
-         .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+         .Where(x => x.TenantId == tenantId
+             && x.StreamType == streamType
+             && x.LifecycleState != StreamLifecycleState.Tombstoned)
          .Include(x => x.Events.Where(e => e.Version > snapshotVersion))
          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -331,7 +364,9 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     {
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+            .Where(x => x.TenantId == tenantId
+                && x.StreamType == streamType
+                && x.LifecycleState != StreamLifecycleState.Tombstoned)
             .Include(x => x.Events.Where(x => x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -354,6 +389,11 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public async Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default) where T : IState, new()
     {
+        if (!await IsReadableAsync(streamType, streamId, tenantId, cancellationToken))
+        {
+            return null;
+        }
+
         var snapshot = _snapshots?.LoadSnapshot<T>(db, streamType, streamId, tenantId);
         if (snapshot?.Version > version)
         {
@@ -363,7 +403,9 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
         var snapshotVersion = snapshot?.Version ?? 0;
         var stream = await db.Set<DbStream>()
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+            .Where(x => x.TenantId == tenantId
+                && x.StreamType == streamType
+                && x.LifecycleState != StreamLifecycleState.Tombstoned)
             .Include(x => x.Events.Where(x => x.Version > snapshotVersion && x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
@@ -391,6 +433,14 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
+        if (stream.LifecycleState != StreamLifecycleState.Active)
+        {
+            throw new StreamNotWritableException(
+                streamType,
+                streamId,
+                tenantId,
+                stream.LifecycleState);
+        }
         return new DbContextStream(stream, db);
     }
 
@@ -414,6 +464,14 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
           .Include(x => x.Events)
           .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
+        if (stream.LifecycleState != StreamLifecycleState.Active)
+        {
+            throw new StreamNotWritableException(
+                streamType,
+                streamId,
+                tenantId,
+                stream.LifecycleState);
+        }
         return new DbContextStream<T>(stream, db);
     }
 
@@ -507,6 +565,31 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             .Where(stream => stream.Id == streamId && stream.StreamType == streamType && stream.TenantId == tenantId)
             .Select(stream => (long?)stream.CurrentVersion)
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private Task<bool> IsReadableAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+        => db.Set<DbStream>()
+            .AsNoTracking()
+            .AnyAsync(
+                stream => stream.Id == streamId
+                    && stream.StreamType == streamType
+                    && stream.TenantId == tenantId
+                    && stream.LifecycleState != StreamLifecycleState.Tombstoned,
+                cancellationToken);
+
+    private void DetachFailedWriteEntries()
+    {
+        foreach (var entry in db.ChangeTracker.Entries()
+            .Where(entry => entry.Entity is DbEvent or DbStream or DbSnapshot)
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToArray())
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     private IReadOnlyList<SuppressedEntry> CaptureUnrelatedChanges()
@@ -651,4 +734,3 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             : (T?)_serializer.Deserialize(snapshot.Data, typeof(T));
 
 }
-

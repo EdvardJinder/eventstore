@@ -7,6 +7,7 @@ public interface IStream : IReadOnlyStream
 {
     /// <summary>
     /// Appends one or more events to the stream.
+    /// Archived and tombstoned streams do not accept events.
     /// </summary>
     /// <param name="events">Events to append.</param>
     void Append(params IEnumerable<object> events);
@@ -20,4 +21,3 @@ public interface IStream<T> : IStream, IReadOnlyStream<T>
     where T : IState
 {
 }
-

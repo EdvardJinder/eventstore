@@ -30,6 +30,8 @@ The following changes are intentional for the next beta:
 
 - `IReadOnlyStream<T>` now inherits `IReadOnlyStream`, and `IStream<T>` now inherits both `IReadOnlyStream<T>` and `IStream`.
 - All stream interfaces expose the complete persistence identity: `Id`, `StreamType`, and `TenantId`.
+- Read-only stream interfaces expose lifecycle state, and the explicit `IStreamLifecycleManager`
+  contract governs audited archive, restore, tombstone, and administrative metadata access.
 - Generic stream interfaces inherit common members instead of declaring duplicates.
 - Projection versions are configured exclusively with `ProjectionVersionAttribute`; the default is version 1. The concrete projection-options implementation and its former `Version(int)` method are no longer public.
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.

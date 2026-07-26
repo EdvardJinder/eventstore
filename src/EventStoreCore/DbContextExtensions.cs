@@ -20,9 +20,12 @@ public static class DbContextExtensions
         /// </summary>
         public IEventLogReader EventLog => dbContext.EventLog();
 
-        internal DbSet<DbEvent> Events => dbContext.Events();
-
+        /// <summary>
+        /// Gets the explicit administrative stream lifecycle manager for the current context.
+        /// </summary>
+        public IStreamLifecycleManager StreamLifecycle => dbContext.StreamLifecycle();
     }
+
     private static IEventStore Streams(this DbContext dbContext)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
@@ -35,10 +38,9 @@ public static class DbContextExtensions
         return new DbContextEventLogReader(dbContext);
     }
 
-    private static DbSet<DbEvent> Events(this DbContext dbContext)
+    private static IStreamLifecycleManager StreamLifecycle(this DbContext dbContext)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
-        return dbContext.Set<DbEvent>();
+        return new DbContextStreamLifecycleManager(dbContext);
     }
 }
-

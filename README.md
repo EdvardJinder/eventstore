@@ -641,6 +641,20 @@ When an expected-version check fails, or when two writers race and the database 
 
 The final optimistic concurrency guard is enforced by the event table key over stream identity plus event version. This means concurrent writers to the same stream cannot both commit the same next version.
 
+## Stream lifecycle and governance
+
+EventStoreCore supports explicit stream archive and tombstone metadata without deleting or rewriting
+events. Archived streams remain readable but reject writes; tombstoned streams behave as not found
+to normal stream reads and reject writes. Historical events retain their global positions and remain
+available to projections, subscriptions, and global log readers.
+
+Administrative transitions are tenant-scoped, require an exact stream version plus actor and reason,
+and write immutable audit entries. Archive can be restored; tombstone is terminal. This is not
+physical erasure, retention, or payload redaction.
+
+See [Stream lifecycle and governance](docs/stream-lifecycle-and-governance.md) for the complete read,
+append, concurrency, daemon, tenant, audit, and migration contract.
+
 ## Project guidelines
 
 - Keep public APIs small, composable, and backwards compatible.

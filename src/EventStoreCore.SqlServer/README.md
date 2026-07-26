@@ -49,8 +49,13 @@ calling `UseEventStore()`.
 - Inline projections share the append transaction. Subscription and eventual
   projection delivery is at-least-once.
 - Daemons require an application-provided `IDistributedLockProvider`.
+- Stream archive and tombstone metadata uses `Streams.LifecycleState` plus the
+  immutable `StreamLifecycleEntries` audit table.
 
 Provider-specific database migrations remain application owned. Review generated
 migrations when upgrading EventStoreCore, especially changes to keys, indexes,
 or required metadata columns. Existing databases adding global event-log reads
 need a migration for the new event sequence indexes.
+The package ships `migrations/20260726_StreamLifecycle.sql` as a direct-SQL
+template; application-generated EF Core migrations remain the preferred source
+of truth.

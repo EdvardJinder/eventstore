@@ -13,7 +13,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier.</param>
     /// <param name="options">Range, direction, and page-size options.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A page when the stream exists; otherwise null.</returns>
+    /// <returns>A page when the stream exists and is not tombstoned; otherwise null.</returns>
     Task<StreamPage?> ReadPageAsync(
         string streamType,
         Guid streamId,
@@ -29,7 +29,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier.</param>
     /// <param name="options">Range, direction, and internal page-size options.</param>
     /// <param name="cancellationToken">Cancellation token observed between and during page queries.</param>
-    /// <returns>Events in the requested ordering. A missing stream and an empty range both enumerate no events.</returns>
+    /// <returns>Events in the requested ordering. A missing or tombstoned stream and an empty range all enumerate no events.</returns>
     IAsyncEnumerable<IEvent> ReadAsync(
         string streamType,
         Guid streamId,
@@ -106,7 +106,7 @@ public interface IEventStore
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream?> FetchForWritingAsync(Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -115,7 +115,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -124,7 +124,7 @@ public interface IEventStore
     /// <param name="streamType">The stream type for distinguishing multiple streams with the same ID.</param>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -134,7 +134,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -143,7 +143,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -154,7 +154,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -165,7 +165,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -177,7 +177,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>The writable stream, or null when it does not exist. Archived and tombstoned streams throw when fetched for writing.</returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -266,7 +266,7 @@ public interface IEventStore
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -275,7 +275,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -284,7 +284,7 @@ public interface IEventStore
     /// <param name="streamType">The stream type for distinguishing multiple streams with the same ID.</param>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -294,7 +294,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -303,7 +303,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, long version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -313,7 +313,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -323,7 +323,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, long version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -334,7 +334,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream?> FetchForReadingAsync(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -343,7 +343,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -354,7 +354,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -365,7 +365,7 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -377,7 +377,7 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -388,7 +388,7 @@ public interface IEventStore
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -400,7 +400,7 @@ public interface IEventStore
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -412,7 +412,7 @@ public interface IEventStore
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -425,9 +425,8 @@ public interface IEventStore
     /// <param name="version">The maximum version to read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The read-only stream, or null when it does not exist.</returns>
+    /// <returns>The read-only stream, or null when it does not exist or is tombstoned.</returns>
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 }
-
 

@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Update="Migrations\*.sql" Pack="true" PackagePath="migrations\" />
   </ItemGroup>
 
 </Project>

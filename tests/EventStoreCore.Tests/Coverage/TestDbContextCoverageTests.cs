@@ -20,7 +20,7 @@ public class TestDbContextCoverageTests
     {
         var dbContext = new TestDbContext(Guid.NewGuid().ToString("N"));
 
-        Assert.NotNull(dbContext.Events);
+        Assert.NotNull(dbContext.Set<DbEvent>());
         Assert.NotNull(dbContext.Stream);
     }
 }

@@ -1,7 +1,14 @@
+using EventStoreCore.Abstractions;
+
 namespace EventStoreCore;
 
 internal sealed class DbStream
 {
+    /// <summary>
+    /// The current stream lifecycle state.
+    /// </summary>
+    public StreamLifecycleState LifecycleState { get; set; }
+
     /// <summary>
     /// The tenant identifier for multi-tenant scenarios.
     /// </summary>
@@ -36,5 +43,9 @@ internal sealed class DbStream
     /// The events associated with this stream.
     /// </summary>
     public ICollection<DbEvent> Events { get; set; } = new List<DbEvent>();
-}
 
+    /// <summary>
+    /// The immutable lifecycle audit entries associated with this stream.
+    /// </summary>
+    public ICollection<DbStreamLifecycleEntry> LifecycleEntries { get; set; } = new List<DbStreamLifecycleEntry>();
+}

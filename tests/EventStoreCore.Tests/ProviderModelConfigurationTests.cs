@@ -59,11 +59,16 @@ public class ProviderModelConfigurationTests
         var property = entityType?.FindProperty(nameof(DbEvent.Data));
         var snapshotEntityType = context.Model.FindEntityType(typeof(DbSnapshot));
         var snapshotProperty = snapshotEntityType?.FindProperty(nameof(DbSnapshot.Data));
+        var streamEntityType = context.Model.FindEntityType(typeof(DbStream));
+        var lifecycleEntityType = context.Model.FindEntityType(typeof(DbStreamLifecycleEntry));
 
         Assert.NotNull(property);
         Assert.Equal("jsonb", property!.GetColumnType());
         Assert.NotNull(snapshotProperty);
         Assert.Equal("jsonb", snapshotProperty!.GetColumnType());
+        Assert.True(streamEntityType?.FindProperty(nameof(DbStream.CurrentVersion))?.IsConcurrencyToken);
+        Assert.True(streamEntityType?.FindProperty(nameof(DbStream.LifecycleState))?.IsConcurrencyToken);
+        Assert.NotNull(lifecycleEntityType);
     }
 
     [Fact]
@@ -78,11 +83,16 @@ public class ProviderModelConfigurationTests
         var property = entityType?.FindProperty(nameof(DbEvent.Data));
         var snapshotEntityType = context.Model.FindEntityType(typeof(DbSnapshot));
         var snapshotProperty = snapshotEntityType?.FindProperty(nameof(DbSnapshot.Data));
+        var streamEntityType = context.Model.FindEntityType(typeof(DbStream));
+        var lifecycleEntityType = context.Model.FindEntityType(typeof(DbStreamLifecycleEntry));
 
         Assert.NotNull(property);
         Assert.Equal("nvarchar(max)", property!.GetColumnType());
         Assert.NotNull(snapshotProperty);
         Assert.Equal("nvarchar(max)", snapshotProperty!.GetColumnType());
+        Assert.True(streamEntityType?.FindProperty(nameof(DbStream.CurrentVersion))?.IsConcurrencyToken);
+        Assert.True(streamEntityType?.FindProperty(nameof(DbStream.LifecycleState))?.IsConcurrencyToken);
+        Assert.NotNull(lifecycleEntityType);
     }
 
     [Fact]
