@@ -64,6 +64,11 @@ public class ProviderModelConfigurationTests
         Assert.Equal("jsonb", property!.GetColumnType());
         Assert.NotNull(snapshotProperty);
         Assert.Equal("jsonb", snapshotProperty!.GetColumnType());
+        Assert.Contains(
+            "pg_advisory_xact_lock",
+            Assert.IsType<string>(context.Model
+                .FindAnnotation(SequenceCommitOrder.AcquireLockSqlAnnotation)!
+                .Value));
     }
 
     [Fact]
@@ -83,6 +88,11 @@ public class ProviderModelConfigurationTests
         Assert.Equal("nvarchar(max)", property!.GetColumnType());
         Assert.NotNull(snapshotProperty);
         Assert.Equal("nvarchar(max)", snapshotProperty!.GetColumnType());
+        Assert.Contains(
+            "sp_getapplock",
+            Assert.IsType<string>(context.Model
+                .FindAnnotation(SequenceCommitOrder.AcquireLockSqlAnnotation)!
+                .Value));
     }
 
     [Fact]
@@ -98,6 +108,11 @@ public class ProviderModelConfigurationTests
         Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
         Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
+        Assert.Contains(
+            "pg_advisory_xact_lock",
+            Assert.IsType<string>(context.Model
+                .FindAnnotation(SequenceCommitOrder.AcquireLockSqlAnnotation)!
+                .Value));
     }
 
     [Fact]
@@ -113,5 +128,10 @@ public class ProviderModelConfigurationTests
         Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
         Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
+        Assert.Contains(
+            "sp_getapplock",
+            Assert.IsType<string>(context.Model
+                .FindAnnotation(SequenceCommitOrder.AcquireLockSqlAnnotation)!
+                .Value));
     }
 }

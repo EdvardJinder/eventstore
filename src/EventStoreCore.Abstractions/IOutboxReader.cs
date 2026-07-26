@@ -6,7 +6,8 @@ namespace EventStoreCore.Abstractions;
 public interface IOutboxReader
 {
     /// <summary>
-    /// Reads an ordered batch after the supplied sequence.
+    /// Reads a commit-ordered batch after the supplied sequence. With a supported provider and registered
+    /// entity-outbox context, a later commit cannot appear at or below an observed sequence.
     /// </summary>
     /// <param name="afterSequence">The exclusive lower sequence bound.</param>
     /// <param name="maxCount">The maximum number of events to return.</param>

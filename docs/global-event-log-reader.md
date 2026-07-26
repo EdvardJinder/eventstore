@@ -10,8 +10,8 @@ streams. Resolve it from dependency injection after
 - `AfterSequence` is an exclusive lower bound.
 - `ThroughSequence` is an optional inclusive upper bound.
 - A read with no explicit upper bound first captures the highest currently
-  visible unfiltered global sequence.
-- `EventLogPage.HeadSequence` contains that visible high-water mark, lowered by
+  committed unfiltered global sequence.
+- `EventLogPage.HeadSequence` contains that commit high-water mark, lowered by
   an explicit `ThroughSequence` when supplied.
 - `EventLogPage.NextSequence` is the exclusive lower bound for the next page.
 
@@ -42,11 +42,20 @@ side effects. A custom catch-up consumer should store its checkpoint only after
 its side effect succeeds and remain idempotent if those two writes cannot share
 a transaction.
 
-Database sequences are allocated before the append transaction commits.
-Concurrent transactions can therefore become visible out of allocation order.
-For a live feed, reread a suitable sequence overlap and deduplicate by stable
-`IEvent.Id`. In particular, an empty filtered page does not make
-`HeadSequence` a strict commit fence while append transactions are in flight.
+PostgreSQL and SQL Server contexts registered through
+`ExistingDbContext<TDbContext>()` acquire a provider transaction-scoped lock
+before allocating event or entity-outbox sequences and hold it through commit.
+Consequently, a later transaction cannot commit an event at or below an observed
+`HeadSequence`; the head is a strict commit fence for participating writers.
+Rolled-back transactions can leave harmless sequence gaps.
+
+All writers to the database must participate. During upgrade, quiesce writers,
+deploy the updated registration everywhere, and only then restart checkpointed
+consumers. An older process or direct SQL writer can bypass the lock and
+invalidate the fence. Existing checkpoints that may already have skipped an
+event should be replayed from a known-safe sequence, and affected eventual
+projections should be rebuilt. The change requires no database schema migration
+but serializes sequence-allocating transactions until they commit.
 
 ## Database migration
 

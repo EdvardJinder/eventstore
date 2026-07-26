@@ -12,7 +12,7 @@ public sealed class EventLogReadOptions
 
     /// <summary>
     /// The inclusive upper global-sequence bound. When omitted, the reader captures
-    /// the highest currently visible global sequence before querying.
+    /// the highest currently committed global sequence before querying.
     /// </summary>
     public long? ThroughSequence { get; set; }
 

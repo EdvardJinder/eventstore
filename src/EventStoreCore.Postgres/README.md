@@ -46,6 +46,10 @@ calling `UseEventStore()`.
   must not rely on GUID ordering.
 - Global event-log reads use the unique `Events.Sequence` index plus filtered
   sequence indexes for tenant, logical stream type, and logical event type.
+- Registered event-store and entity-outbox writers acquire a PostgreSQL
+  transaction-scoped advisory lock before generated sequence allocation and
+  hold it through commit. This makes sequence checkpoints gap-safe; rollbacks
+  can leave gaps but lower sequences cannot commit late.
 - Inline projections share the append transaction. Subscription and eventual
   projection delivery is at-least-once.
 - Daemons require an application-provided `IDistributedLockProvider`.
@@ -54,3 +58,12 @@ Provider-specific database migrations remain application owned. Review generated
 migrations when upgrading EventStoreCore, especially changes to keys, indexes,
 or required metadata columns. Existing databases adding global event-log reads
 need a migration for the new event sequence indexes.
+
+The commit-ordering change itself has no schema migration. Upgrade every writer
+for a database together; a mixed deployment or direct SQL writer that does not
+acquire the advisory lock can invalidate the checkpoint fence. Sequence-
+allocating transactions serialize until commit, so keep explicit transactions
+short and replay or rebuild consumers whose old checkpoints may already have
+skipped an event. A direct SQL writer participates by calling
+`pg_advisory_xact_lock(1163281236, 1397048149)` in its transaction before the
+first insert into `Events` or `OutboxMessages`.

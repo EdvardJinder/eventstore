@@ -10,7 +10,7 @@ public sealed class EventLogPage
     /// </summary>
     /// <param name="events">Events in ascending global sequence order.</param>
     /// <param name="headSequence">
-    /// The highest visible sequence captured before the page query and bounded by the requested upper sequence.
+    /// The highest committed sequence captured before the page query and bounded by the requested upper sequence.
     /// </param>
     /// <param name="nextSequence">
     /// The exclusive lower bound to use for the next page, or null when the filtered range is exhausted.
@@ -32,8 +32,9 @@ public sealed class EventLogPage
     public IReadOnlyList<IEvent> Events { get; }
 
     /// <summary>
-    /// The highest visible sequence captured before the page query. Events allocated a higher sequence are excluded,
-    /// and an explicit upper sequence can lower this value.
+    /// The highest committed sequence captured before the page query. Events allocated a higher sequence are excluded,
+    /// and an explicit upper sequence can lower this value. With a supported provider and registered EventStoreCore
+    /// context, no later commit can appear at or below this value.
     /// </summary>
     public long HeadSequence { get; }
 
