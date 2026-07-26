@@ -70,10 +70,13 @@ public sealed class DbProjectionStatus
     /// <summary>
     /// Converts this entity to a DTO for external consumption.
     /// </summary>
-    public ProjectionStatusDto ToDto()
+    /// <param name="totalEvents">The current number of events in this checkpoint scope.</param>
+    /// <param name="processedEvents">The number of events at or before <see cref="Position" />.</param>
+    public ProjectionStatusDto ToDto(long? totalEvents = null, long? processedEvents = null)
     {
-        var progress = CheckpointScope == Abstractions.CheckpointScope.Global && TotalEvents.HasValue && TotalEvents.Value > 0
-            ? Math.Round((double)Position / TotalEvents.Value * 100, 2)
+        var effectiveTotal = totalEvents ?? TotalEvents;
+        var progress = effectiveTotal.HasValue && effectiveTotal.Value > 0
+            ? Math.Min(100, Math.Round((double)(processedEvents ?? Position) / effectiveTotal.Value * 100, 2))
             : (double?)null;
 
         return new ProjectionStatusDto(
@@ -81,7 +84,7 @@ public sealed class DbProjectionStatus
             Version,
             State,
             Position,
-            TotalEvents,
+            effectiveTotal,
             progress,
             LastProcessedAt,
             LastError,

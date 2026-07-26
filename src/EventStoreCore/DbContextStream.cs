@@ -71,10 +71,21 @@ public class DbContextStream : IStream
     /// <inheritdoc />
     public void Append(params IEnumerable<object> events)
     {
+        ArgumentNullException.ThrowIfNull(events);
+
         var previousVersion = _dbStream.CurrentVersion;
         foreach (var @event in events)
         {
+            ArgumentNullException.ThrowIfNull(@event);
+
             var eventType = @event.GetType();
+            if (eventType.IsValueType)
+            {
+                throw new ArgumentException(
+                    $"Event payload type '{eventType.FullName}' is a value type. Event payloads must be reference types.",
+                    nameof(events));
+            }
+
             var typeName = _registry?.ResolveName(eventType) ?? EventTypeNameHelper.ToSnakeCase(eventType);
             var dbEvent = new DbEvent
             {

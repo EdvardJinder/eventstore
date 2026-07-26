@@ -56,12 +56,22 @@ internal class MassTransitSubscription : ISubscription
 
             if(eventData is null)
             {
-                logger.LogError("Transform returned null for {EventType} (output type: {OutType})", @event.EventType, outType);
-                continue;
+                throw new InvalidOperationException(
+                    $"Transform returned null for event type '{@event.EventType}' (output type: '{outType}').");
             }
 
             logger.LogDebug("Publishing transformed event for {EventType}", @event.EventType);
-            await bus.Publish(eventData, outType, ct);
+            await bus.Publish(
+                eventData,
+                outType,
+                context =>
+                {
+                    context.MessageId = @event.Id;
+                    context.Headers.Set("EventStore-StreamId", @event.StreamId);
+                    context.Headers.Set("EventStore-TenantId", @event.TenantId);
+                    context.Headers.Set("EventStore-StreamVersion", @event.Version);
+                },
+                ct);
             logger.LogDebug("Published transformed event successfully");
         }
 

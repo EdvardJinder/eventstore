@@ -31,9 +31,9 @@ public interface IEventStoreEndpointsClient
     /// </summary>
     /// <param name="name">The projection name.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The projection status, or null when not found.</returns>
+    /// <returns>The HTTP response. A missing projection is represented by a 404 status.</returns>
     [Get("/projections/{name}")]
-    Task<ProjectionStatusDto?> GetProjectionAsync(string name, CancellationToken ct = default);
+    Task<ApiResponse<ProjectionStatusDto>> GetProjectionAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Gets the tenant-scoped status of a specific projection.
@@ -41,9 +41,9 @@ public interface IEventStoreEndpointsClient
     /// <param name="name">The projection name.</param>
     /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The projection status, or null when not found.</returns>
+    /// <returns>The HTTP response. A missing projection is represented by a 404 status.</returns>
     [Get("/projections/{name}")]
-    Task<ProjectionStatusDto?> GetProjectionForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+    Task<ApiResponse<ProjectionStatusDto>> GetProjectionForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
 
     /// <summary>
     /// Triggers a rebuild of the specified projection.
@@ -92,9 +92,9 @@ public interface IEventStoreEndpointsClient
     /// </summary>
     /// <param name="name">The projection name.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The failed event details, or null when not found.</returns>
+    /// <returns>The HTTP response. Missing failed-event details are represented by a 404 status.</returns>
     [Get("/projections/{name}/failed-event")]
-    Task<FailedEventDto?> GetFailedEventAsync(string name, CancellationToken ct = default);
+    Task<ApiResponse<FailedEventDto>> GetFailedEventAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Gets details about the failed event for a tenant-scoped faulted projection.
@@ -102,9 +102,9 @@ public interface IEventStoreEndpointsClient
     /// <param name="name">The projection name.</param>
     /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The failed event details, or null when not found.</returns>
+    /// <returns>The HTTP response. Missing failed-event details are represented by a 404 status.</returns>
     [Get("/projections/{name}/failed-event")]
-    Task<FailedEventDto?> GetFailedEventForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+    Task<ApiResponse<FailedEventDto>> GetFailedEventForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
 
     /// <summary>
     /// Retries processing the failed event.
@@ -162,9 +162,9 @@ public interface IEventStoreEndpointsClient
     /// </summary>
     /// <param name="name">The subscription name.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The subscription status, or null when not found.</returns>
+    /// <returns>The HTTP response. A missing subscription is represented by a 404 status.</returns>
     [Get("/subscriptions/{name}")]
-    Task<SubscriptionStatusDto?> GetSubscriptionAsync(string name, CancellationToken ct = default);
+    Task<ApiResponse<SubscriptionStatusDto>> GetSubscriptionAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Gets the tenant-scoped status of a specific subscription.
@@ -172,9 +172,9 @@ public interface IEventStoreEndpointsClient
     /// <param name="name">The subscription name.</param>
     /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The subscription status, or null when not found.</returns>
+    /// <returns>The HTTP response. A missing subscription is represented by a 404 status.</returns>
     [Get("/subscriptions/{name}")]
-    Task<SubscriptionStatusDto?> GetSubscriptionForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+    Task<ApiResponse<SubscriptionStatusDto>> GetSubscriptionForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
 
     /// <summary>
     /// Pauses processing of the specified subscription.
@@ -215,9 +215,9 @@ public interface IEventStoreEndpointsClient
     /// </summary>
     /// <param name="name">The subscription name.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The failed event details, or null when not found.</returns>
+    /// <returns>The HTTP response. Missing failed-event details are represented by a 404 status.</returns>
     [Get("/subscriptions/{name}/failed-event")]
-    Task<SubscriptionFailedEventDto?> GetSubscriptionFailedEventAsync(string name, CancellationToken ct = default);
+    Task<ApiResponse<SubscriptionFailedEventDto>> GetSubscriptionFailedEventAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Gets details about the failed event for a tenant-scoped faulted or dead-lettered subscription.
@@ -225,9 +225,9 @@ public interface IEventStoreEndpointsClient
     /// <param name="name">The subscription name.</param>
     /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The failed event details, or null when not found.</returns>
+    /// <returns>The HTTP response. Missing failed-event details are represented by a 404 status.</returns>
     [Get("/subscriptions/{name}/failed-event")]
-    Task<SubscriptionFailedEventDto?> GetSubscriptionFailedEventForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+    Task<ApiResponse<SubscriptionFailedEventDto>> GetSubscriptionFailedEventForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
 
     /// <summary>
     /// Retries processing the failed subscription event.

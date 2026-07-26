@@ -270,6 +270,70 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         Assert.Equal("Mary Jane", snapshot.Name);
     }
 
+    public sealed class StreamTypeSnapshot
+    {
+        public string Id { get; set; } = string.Empty;
+        public int ApplyCount { get; set; }
+    }
+
+    public sealed class StreamTypeProjection : IProjection<StreamTypeSnapshot>
+    {
+        public static Task Evolve(
+            StreamTypeSnapshot snapshot,
+            IEvent @event,
+            IProjectionContext context,
+            CancellationToken ct)
+        {
+            var typed = (IEvent<UserCreated>)@event;
+            snapshot.Id = typed.Data.Name;
+            snapshot.ApplyCount++;
+            return Task.CompletedTask;
+        }
+
+        public static Task ClearAsync(IProjectionContext context, CancellationToken ct) =>
+            context.DbContext.Set<StreamTypeSnapshot>().ExecuteDeleteAsync(ct);
+    }
+
+    public sealed class StreamTypeProjectionDbContext(
+        DbContextOptions<StreamTypeProjectionDbContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.UseEventStore();
+            modelBuilder.Entity<StreamTypeSnapshot>().HasKey(x => x.Id);
+        }
+    }
+
+    [Fact]
+    public void InlineProjectionRunsForSynchronousSaveChanges()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddProjection<EventStoreDbContext, UserProjection, UserSnapshot>(
+                ProjectionMode.Inline,
+                p => p.Handles<UserCreated>());
+        });
+        services.AddLogging();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        db.Database.EnsureDeleted();
+        db.Database.EnsureCreated();
+
+        var streamId = Guid.NewGuid();
+        db.Streams.StartStream(streamId, events: [new UserCreated { Name = "sync" }]);
+        db.SaveChanges();
+
+        var snapshot = db.Set<UserSnapshot>().Single(x => x.UserId == streamId);
+        Assert.Equal("sync", snapshot.Name);
+        Assert.NotNull(db.Set<DbProjectionStatus>()
+            .SingleOrDefault(x => x.ProjectionName == typeof(UserProjection).FullName));
+    }
+
     [Fact]
     public async Task InlineProjectionUpdatesStatus()
     {
@@ -447,6 +511,41 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         Assert.Equal(tenantA, snapshotA.TenantId);
         Assert.Equal("Tenant B", snapshotB.Name);
         Assert.Equal(tenantB, snapshotB.TenantId);
+    }
+
+    [Fact]
+    public async Task InlineProjectionMatchesStreamTypeWhenStreamIdsOverlap()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<StreamTypeProjectionDbContext>(
+            options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<StreamTypeProjectionDbContext>();
+            c.AddProjection<StreamTypeProjectionDbContext, StreamTypeProjection, StreamTypeSnapshot>(
+                ProjectionMode.Inline,
+                p => p.Handles<UserCreated>(e => e.Data.Name));
+        });
+        services.AddLogging();
+
+        using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<StreamTypeProjectionDbContext>();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var streamId = Guid.NewGuid();
+        db.Streams.StartStream("orders", streamId, events: [new UserCreated { Name = "orders" }]);
+        db.Streams.StartStream("audit", streamId, events: [new UserCreated { Name = "audit" }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var snapshots = await db.Set<StreamTypeSnapshot>()
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, snapshots.Count);
+        Assert.All(snapshots, snapshot => Assert.Equal(1, snapshot.ApplyCount));
     }
 
     [Fact]

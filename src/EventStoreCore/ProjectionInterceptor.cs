@@ -38,6 +38,17 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
     }
 
     /// <inheritdoc />
+    public override InterceptionResult<int> SavingChanges(
+        DbContextEventData eventData,
+        InterceptionResult<int> result)
+    {
+        return SavingChangesAsync(eventData, result)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    /// <inheritdoc />
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData,
         InterceptionResult<int> result,
@@ -72,6 +83,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
             var dbEventEntries = db.ChangeTracker.Entries<DbEvent>()
                 .Where(e => e.State is EntityState.Added &&
                     e.Entity.StreamId == stream.Entity.Id &&
+                    e.Entity.StreamType == stream.Entity.StreamType &&
                     e.Entity.TenantId == stream.Entity.TenantId)
                 .OrderBy(e => e.Entity.Version)
                 .ToArray();
@@ -222,6 +234,26 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
         }
 
         return result;
+    }
+
+    /// <inheritdoc />
+    public override int SavedChanges(
+        SaveChangesCompletedEventData eventData,
+        int result)
+    {
+        return SavedChangesAsync(eventData, result)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    /// <inheritdoc />
+    public override void SaveChangesFailed(DbContextErrorEventData eventData)
+    {
+        if (eventData.Context is DbContext db)
+        {
+            PendingEvents.Remove(db);
+        }
     }
 
     /// <inheritdoc />

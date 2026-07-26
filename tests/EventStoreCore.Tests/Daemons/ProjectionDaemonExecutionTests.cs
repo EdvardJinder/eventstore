@@ -81,7 +81,7 @@ public class ProjectionDaemonExecutionTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = (_, _) => Task.CompletedTask,
+            ClearAction = (_, _, _) => Task.CompletedTask,
             EvolveAction = async (_, _, snapshot, @event, _) =>
             {
                 if (@event is IEvent<ProjectionEvent> evt)

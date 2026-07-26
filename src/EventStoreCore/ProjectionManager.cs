@@ -2,6 +2,7 @@ using EventStoreCore.Abstractions;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EventStoreCore;
 
@@ -17,6 +18,8 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     private readonly IDistributedLockProvider _lockProvider;
     private readonly IEnumerable<ProjectionRegistration> _projections;
     private readonly ILogger<ProjectionManager<TDbContext>> _logger;
+    private readonly IServiceProvider _services;
+    private readonly ProjectionDaemonOptions _options;
 
     /// <summary>
     /// Creates a new projection manager.
@@ -25,16 +28,22 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     /// <param name="lockProvider">The distributed lock provider.</param>
     /// <param name="projections">Registered projection metadata.</param>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="services">The active application service scope.</param>
+    /// <param name="options">Projection daemon configuration.</param>
     internal ProjectionManager(
         TDbContext dbContext,
         IDistributedLockProvider lockProvider,
         IEnumerable<ProjectionRegistration> projections,
-        ILogger<ProjectionManager<TDbContext>> logger)
+        ILogger<ProjectionManager<TDbContext>> logger,
+        IServiceProvider services,
+        IOptions<ProjectionDaemonOptions> options)
     {
         _dbContext = dbContext;
         _lockProvider = lockProvider;
         _projections = projections;
         _logger = logger;
+        _services = services;
+        _options = options.Value;
     }
 
     /// <inheritdoc />
@@ -65,7 +74,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
                 : CreateDefaultStatus(projectionName, registration.Version, checkpointScope);
         }
 
-        return status.ToDto();
+        return await ToStatusDtoAsync(status, ct);
     }
 
     /// <inheritdoc />
@@ -75,9 +84,11 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             .AsNoTracking()
             .ToListAsync(ct);
 
-        var result = statuses
-            .Select(status => status.ToDto())
-            .ToList();
+        var result = new List<ProjectionStatusDto>();
+        foreach (var status in statuses)
+        {
+            result.Add(await ToStatusDtoAsync(status, ct));
+        }
 
         foreach (var registration in _projections)
         {
@@ -104,9 +115,11 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
                 s.TenantId == checkpointScope.TenantId)
             .ToListAsync(ct);
 
-        var result = statuses
-            .Select(status => status.ToDto())
-            .ToList();
+        var result = new List<ProjectionStatusDto>();
+        foreach (var status in statuses)
+        {
+            result.Add(await ToStatusDtoAsync(status, ct));
+        }
 
         foreach (var registration in _projections)
         {
@@ -124,29 +137,38 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     {
         var registration = _projections.FirstOrDefault(p => p.Name == projectionName)
             ?? throw new InvalidOperationException($"Projection '{projectionName}' is not registered.");
+        if (registration.Mode != ProjectionMode.Eventual)
+        {
+            throw new InvalidOperationException(
+                $"Projection '{projectionName}' runs inline and cannot be rebuilt by the eventual projection daemon.");
+        }
 
-        var lockName = $"projection:{projectionName}";
+        var lockName = _options.CheckpointScope == CheckpointScope.Global
+            ? $"projection:{projectionName}"
+            : $"projection-rebuild:{projectionName}";
 
         await using var lockHandle = await _lockProvider.AcquireLockAsync(lockName, cancellationToken: ct);
 
         _logger.LogInformation("Initiating manual rebuild for projection {Projection}", projectionName);
 
-        var existingTenantScopeIds = await _dbContext.Set<DbProjectionStatus>()
-            .AsNoTracking()
-            .Where(s =>
-                s.ProjectionName == projectionName &&
-                s.CheckpointScope == CheckpointScope.Tenant)
-            .Select(s => s.TenantId)
-            .Distinct()
-            .ToListAsync(ct);
+        var existingTenantScopeIds = _options.CheckpointScope == CheckpointScope.Tenant
+            ? await _dbContext.Set<DbProjectionStatus>()
+                .AsNoTracking()
+                .Where(s =>
+                    s.ProjectionName == projectionName &&
+                    s.CheckpointScope == CheckpointScope.Tenant)
+                .Select(s => s.TenantId)
+                .Distinct()
+                .ToListAsync(ct)
+            : [];
 
-        var eventTenantScopeIds = existingTenantScopeIds.Count == 0
-            ? []
-            : await _dbContext.Events
+        var eventTenantScopeIds = _options.CheckpointScope == CheckpointScope.Tenant
+            ? await _dbContext.Events
                 .AsNoTracking()
                 .Select(e => e.TenantId)
                 .Distinct()
-                .ToListAsync(ct);
+                .ToListAsync(ct)
+            : [];
 
         var tenantScopeIds = existingTenantScopeIds
             .Concat(eventTenantScopeIds)
@@ -164,16 +186,15 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             }
 
             var statuses = await _dbContext.Set<DbProjectionStatus>()
-                .Where(s => s.ProjectionName == projectionName)
+                .Where(s =>
+                    s.ProjectionName == projectionName &&
+                    s.CheckpointScope == _options.CheckpointScope)
                 .ToListAsync(ct);
 
-            var globalStatus = statuses.FirstOrDefault(s =>
-                s.CheckpointScope == CheckpointScope.Global &&
-                s.TenantId == Guid.Empty);
-
-            if (globalStatus == null)
+            if (_options.CheckpointScope == CheckpointScope.Global &&
+                statuses.All(s => s.TenantId != Guid.Empty))
             {
-                globalStatus = new DbProjectionStatus
+                var globalStatus = new DbProjectionStatus
                 {
                     ProjectionName = projectionName,
                     CheckpointScope = CheckpointScope.Global,
@@ -181,6 +202,25 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
                 };
                 _dbContext.Set<DbProjectionStatus>().Add(globalStatus);
                 statuses.Add(globalStatus);
+            }
+            else if (_options.CheckpointScope == CheckpointScope.Tenant)
+            {
+                foreach (var tenantId in tenantScopeIds)
+                {
+                    if (statuses.Any(s => s.TenantId == tenantId))
+                    {
+                        continue;
+                    }
+
+                    var tenantStatus = new DbProjectionStatus
+                    {
+                        ProjectionName = projectionName,
+                        CheckpointScope = CheckpointScope.Tenant,
+                        TenantId = tenantId
+                    };
+                    _dbContext.Set<DbProjectionStatus>().Add(tenantStatus);
+                    statuses.Add(tenantStatus);
+                }
             }
 
             var rebuildStartedAt = DateTimeOffset.UtcNow;
@@ -191,7 +231,7 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
 
             await _dbContext.SaveChangesAsync(ct);
 
-            await registration.ClearAction(_dbContext, ct);
+            await registration.ClearAction(_dbContext, _services, ct);
             await _dbContext.SaveChangesAsync(ct);
 
             _logger.LogInformation(
@@ -495,5 +535,19 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
         return checkpointScope.IsTenant
             ? query.Where(e => e.TenantId == checkpointScope.TenantId)
             : query;
+    }
+
+    private async Task<ProjectionStatusDto> ToStatusDtoAsync(
+        DbProjectionStatus status,
+        CancellationToken ct)
+    {
+        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+        var events = ApplyCheckpointScope(_dbContext.Events.AsNoTracking(), checkpointScope);
+        var totalEvents = await events.LongCountAsync(ct);
+        var processedEvents = status.Position <= 0
+            ? 0
+            : await events.LongCountAsync(e => e.Sequence <= status.Position, ct);
+
+        return status.ToDto(totalEvents, processedEvents);
     }
 }

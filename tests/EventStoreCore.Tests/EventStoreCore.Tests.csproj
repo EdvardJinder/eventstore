@@ -52,6 +52,7 @@
     <ProjectReference Include="..\..\src\EventStoreCore.EventGrid\EventStoreCore.EventGrid.csproj" />
     <ProjectReference Include="..\..\src\EventStoreCore.MassTransit\EventStoreCore.MassTransit.csproj" />
     <ProjectReference Include="..\..\src\EventStoreCore.Postgres\EventStoreCore.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\EventStoreCore.SDK\EventStoreCore.SDK.csproj" />
     <ProjectReference Include="..\..\src\EventStoreCore.SqlServer\EventStoreCore.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\EventStoreCore.Testing\EventStoreCore.Testing.csproj" />
     <ProjectReference Include="..\..\src\EventStoreCore\EventStoreCore.csproj" />

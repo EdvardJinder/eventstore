@@ -92,7 +92,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
             throw new NotSupportedException("Use HandleAsync for scoped subscription execution.");
         }
 
-        public async Task HandleAsync(DbContext dbContext, IEvent @event, CancellationToken ct)
+        public async Task HandleAsync(DbContext dbContext, IServiceProvider services, IEvent @event, CancellationToken ct)
         {
             DeliveredEventIds.Add(@event.Id);
 

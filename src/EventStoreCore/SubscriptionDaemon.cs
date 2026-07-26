@@ -241,14 +241,25 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
             foreach (var nextEvent in nextEvents)
             {
+                var savepointName = $"before_event_{nextEvent.Sequence}";
+                if (transaction.SupportsSavepoints)
+                {
+                    await transaction.CreateSavepointAsync(savepointName, stoppingToken);
+                }
+
                 try
                 {
                     subscription.LastAttemptAt = DateTimeOffset.UtcNow;
                     var @event = nextEvent.ToEvent(registry);
 
+                    var isScopedSubscription = subscriptionImpl is IScopedSubscription;
                     if (subscriptionImpl is IScopedSubscription scoped)
                     {
-                        await scoped.HandleAsync(dbContext, @event, stoppingToken);
+                        await scoped.HandleAsync(
+                            dbContext,
+                            scope.ServiceProvider,
+                            @event,
+                            stoppingToken);
                     }
                     else
                     {
@@ -264,10 +275,21 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     subscription.NextAttemptAt = null;
                     subscription.FailedEventSequence = null;
 
-                    if (processedCount % checkpointFrequency == 0)
+                    var shouldCheckpoint = processedCount % checkpointFrequency == 0;
+                    if (shouldCheckpoint)
                     {
                         subscription.Sequence = nextEvent.Sequence;
+                    }
+
+                    // Persist handler mutations inside the batch transaction before establishing
+                    // the next event savepoint. They remain invisible until the batch commits.
+                    if (isScopedSubscription || shouldCheckpoint)
+                    {
                         await dbContext.SaveChangesAsync(stoppingToken);
+                    }
+                    if (transaction.SupportsSavepoints)
+                    {
+                        await transaction.ReleaseSavepointAsync(savepointName, stoppingToken);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -282,7 +304,30 @@ public sealed class SubscriptionDaemon<TDbContext>(
                         nextEvent.Sequence,
                         name);
 
-                    if (lastProcessedSequence is long persistedSequence && subscription.Sequence != persistedSequence)
+                    if (transaction.SupportsSavepoints)
+                    {
+                        await transaction.RollbackToSavepointAsync(savepointName, stoppingToken);
+                    }
+                    dbContext.ChangeTracker.Clear();
+
+                    subscription = await subscriptionSet.FirstOrDefaultAsync(
+                        s => s.SubscriptionAssemblyQualifiedName == name &&
+                            s.CheckpointScope == checkpointScope.Scope &&
+                            s.TenantId == checkpointScope.TenantId,
+                        stoppingToken)
+                        ?? new DbSubscription
+                        {
+                            SubscriptionAssemblyQualifiedName = name,
+                            CheckpointScope = checkpointScope.Scope,
+                            TenantId = checkpointScope.TenantId
+                        };
+
+                    if (dbContext.Entry(subscription).State == EntityState.Detached)
+                    {
+                        subscriptionSet.Add(subscription);
+                    }
+
+                    if (lastProcessedSequence is long persistedSequence)
                     {
                         subscription.Sequence = persistedSequence;
                     }
@@ -358,7 +403,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 subscriptionName,
                 checkpointScope);
             var acquired = await _distributedLockProvider
-                  .AcquireLockAsync(lockName, TimeSpan.FromSeconds(2), cancellationToken: cancellationToken);
+                  .AcquireLockAsync(lockName, ValidateLockTimeout(_options.LockTimeout), cancellationToken: cancellationToken);
 
             if (acquired == null)
             {
@@ -383,6 +428,17 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     checkpointScope);
             return null;
         }
+    }
+
+    private static TimeSpan ValidateLockTimeout(TimeSpan timeout)
+    {
+        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(SubscriptionOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.");
+        }
+
+        return timeout;
     }
 
     private async Task<IReadOnlyList<CheckpointScopeKey>> GetCheckpointScopesAsync(

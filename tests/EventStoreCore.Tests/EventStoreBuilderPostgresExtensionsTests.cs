@@ -2,6 +2,7 @@ using EventStoreCore;
 using EventStoreCore.Abstractions;
 using EventStoreCore.Testing;
 using Medallion.Threading;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -20,8 +21,13 @@ public class EventStoreBuilderPostgresExtensionsTests
         public void IgnoreUnknown() { }
     }
 
-    private sealed class FakeRegistrar : IProjectionRegistrar, ISubscriptionDaemonRegistrar, IProjectionDaemonRegistrar
+    private sealed class FakeRegistrar :
+        IEfCoreEventStoreBuilder<EventStoreFixture.EventStoreDbContext>,
+        IProjectionRegistrar,
+        ISubscriptionDaemonRegistrar,
+        IProjectionDaemonRegistrar
     {
+        public IServiceCollection Services { get; } = new ServiceCollection();
         public Func<IServiceProvider, IDistributedLockProvider>? AddedFactory { get; private set; }
         public ProjectionMode? AddedMode { get; private set; }
         public Action<IProjectionOptions>? AddedConfigure { get; private set; }
@@ -196,6 +202,29 @@ public class EventStoreBuilderPostgresExtensionsTests
         Assert.Equal(123, options.BatchSize);
     }
 
+    [Fact]
+    public void BuilderExtensions_RejectMismatchedDbContextType()
+    {
+        var services = new ServiceCollection();
+        var builder = new EventStoreBuilder(services);
+        builder.ExistingDbContext<ContextA>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            builder.AddProjection<ContextB, DummyProjection, DummySnapshot>());
+
+        Assert.Contains(typeof(ContextA).FullName!, exception.Message);
+        Assert.Contains(typeof(ContextB).FullName!, exception.Message);
+    }
+
+    [Fact]
+    public void ExistingDbContext_RejectsRepeatedProviderConfiguration()
+    {
+        var builder = new EventStoreBuilder(new ServiceCollection());
+        builder.ExistingDbContext<ContextA>();
+
+        Assert.Throws<InvalidOperationException>(() => builder.ExistingDbContext<ContextA>());
+    }
+
 
     private class DummyProjection : IProjection<DummySnapshot>
     {
@@ -207,4 +236,7 @@ public class EventStoreBuilderPostgresExtensionsTests
     private class DummySnapshot
     {
     }
+
+    private sealed class ContextA(DbContextOptions<ContextA> options) : DbContext(options);
+    private sealed class ContextB(DbContextOptions<ContextB> options) : DbContext(options);
 }

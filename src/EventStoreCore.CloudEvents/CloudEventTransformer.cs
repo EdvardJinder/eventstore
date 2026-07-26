@@ -12,6 +12,13 @@ internal sealed class CloudEventTransformer(IOptions<CloudEventTransformerOption
         if (options is not null && options.Value._mappings.TryGetValue(@event.EventType, out var transform))
         {
             cloudEvent = transform(@event);
+            if (!options.Value._preservedCloudEventIds.Contains(@event.EventType))
+            {
+                cloudEvent.Id = @event.Id.ToString("D");
+            }
+            cloudEvent.ExtensionAttributes.TryAdd("streamid", @event.StreamId.ToString("D"));
+            cloudEvent.ExtensionAttributes.TryAdd("tenantid", @event.TenantId.ToString("D"));
+            cloudEvent.ExtensionAttributes.TryAdd("streamversion", @event.Version.ToString());
             return true;
         }
 

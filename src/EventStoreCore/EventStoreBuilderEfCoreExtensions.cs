@@ -14,13 +14,23 @@ public static class EventStoreBuilderEfCoreExtensions
     private static (IProjectionRegistrar Projections, ISubscriptionDaemonRegistrar Daemon, IProjectionDaemonRegistrar ProjectionDaemon) GetProvider<TDbContext>(IEventStoreBuilder builder)
         where TDbContext : DbContext
     {
-        if (builder.Provider is IProjectionRegistrar proj &&
+        if (builder.Provider is IEfCoreEventStoreBuilder<TDbContext> &&
+            builder.Provider is IProjectionRegistrar proj &&
             builder.Provider is ISubscriptionDaemonRegistrar daemon &&
             builder.Provider is IProjectionDaemonRegistrar projectionDaemon)
         {
             return (proj, daemon, projectionDaemon);
         }
-        throw new InvalidOperationException("No EF Core provider is registered. Call ExistingDbContext<TDbContext>() first.");
+        var configuredType = builder.Provider?.GetType().GetInterfaces()
+            .FirstOrDefault(type =>
+                type.IsGenericType &&
+                type.GetGenericTypeDefinition() == typeof(IEfCoreEventStoreBuilder<>))
+            ?.GetGenericArguments()[0];
+
+        throw configuredType is null
+            ? new InvalidOperationException("No EF Core provider is registered. Call ExistingDbContext<TDbContext>() first.")
+            : new InvalidOperationException(
+                $"The EF Core provider is configured for DbContext '{configuredType.FullName}', not '{typeof(TDbContext).FullName}'.");
     }
 
     /// <summary>
@@ -32,6 +42,12 @@ public static class EventStoreBuilderEfCoreExtensions
     public static IEfCoreEventStoreBuilder<TDbContext> ExistingDbContext<TDbContext>(this IEventStoreBuilder builder)
         where TDbContext : DbContext
     {
+        if (builder.Provider is not null)
+        {
+            throw new InvalidOperationException(
+                $"An event-store provider is already configured as '{builder.Provider.GetType().FullName}'. Configure exactly one EF Core DbContext.");
+        }
+
         var efBuilder = new EfCoreEventEventStoreBuilder<TDbContext>(builder.Services);
 
         builder.Services.AddSingleton<ISchedulerEventApplicationStore, EfCoreSchedulerEventApplicationStore<TDbContext>>();

@@ -46,7 +46,7 @@ public class ProjectionDaemonCoverageTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = async (db, ct) =>
+            ClearAction = async (db, _, ct) =>
             {
                 var set = db.Set<ProjectionSnapshot>();
                 foreach (var snapshot in set)
@@ -146,9 +146,10 @@ public class ProjectionDaemonCoverageTests
         db.Set<ProjectionSnapshot>().Add(new ProjectionSnapshot { Id = Guid.NewGuid(), Name = "Old" });
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
+        var provider = new ServiceCollection().AddSingleton(db).BuildServiceProvider();
         var daemon = new ProjectionDaemon<ProjectionDbContext>(
             NullLogger<ProjectionDaemon<ProjectionDbContext>>.Instance,
-            new ServiceCollection().AddSingleton(db).BuildServiceProvider(),
+            provider,
             Substitute.For<IDistributedLockProvider>(),
             Options.Create(new ProjectionDaemonOptions()));
 
@@ -158,7 +159,12 @@ public class ProjectionDaemonCoverageTests
             projectionSet.Remove(snapshot);
         }
 
-        await daemon.InitiateRebuildAsync(db, registration, status, TestContext.Current.CancellationToken);
+        await daemon.InitiateRebuildAsync(
+            db,
+            provider,
+            registration,
+            status,
+            TestContext.Current.CancellationToken);
 
         var updated = await db.Set<DbProjectionStatus>().SingleAsync(TestContext.Current.CancellationToken);
         var snapshotCount = await db.Set<ProjectionSnapshot>().CountAsync(TestContext.Current.CancellationToken);
@@ -186,7 +192,7 @@ public class ProjectionDaemonCoverageTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = (_, _) => Task.CompletedTask,
+            ClearAction = (_, _, _) => Task.CompletedTask,
             EvolveAction = (_, _, _, _, _) => throw new InvalidOperationException("boom"),
             GetOrCreateSnapshotAction = (_, _, _) => Task.FromResult<object>(new ProjectionSnapshot()),
             AddSnapshotAction = (_, _) => { }
@@ -232,7 +238,7 @@ public class ProjectionDaemonCoverageTests
 
         Assert.NotNull(processBatchMethod);
 
-        var task = (Task)processBatchMethod!.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var task = (Task)processBatchMethod!.Invoke(daemon, new object[] { db, provider, registration, status, TestContext.Current.CancellationToken })!;
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () => await task);
 
         var updated = await db.Set<DbProjectionStatus>().SingleAsync(TestContext.Current.CancellationToken);
@@ -258,7 +264,7 @@ public class ProjectionDaemonCoverageTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = (_, _) => Task.CompletedTask,
+            ClearAction = (_, _, _) => Task.CompletedTask,
             EvolveAction = (_, _, snapshot, @event, _) =>
             {
                 evolved = true;
@@ -328,7 +334,7 @@ public class ProjectionDaemonCoverageTests
         var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
             .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
-        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, provider, registration, status, TestContext.Current.CancellationToken })!;
         var result = await task;
 
         Assert.True(result);
@@ -384,7 +390,7 @@ public class ProjectionDaemonCoverageTests
         var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
             .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
-        var task = (Task)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var task = (Task)processBatchMethod.Invoke(daemon, new object[] { db, provider, registration, status, TestContext.Current.CancellationToken })!;
         await Assert.ThrowsAsync<EventMaterializationException>(async () => await task);
     }
 
@@ -407,7 +413,7 @@ public class ProjectionDaemonCoverageTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = (_, _) => Task.CompletedTask,
+            ClearAction = (_, _, _) => Task.CompletedTask,
             EvolveAction = (_, _, snapshot, @event, _) =>
             {
                 evolved = true;
@@ -475,7 +481,7 @@ public class ProjectionDaemonCoverageTests
         var processBatchMethod = typeof(ProjectionDaemon<ProjectionDbContext>)
             .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
 
-        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, registration, status, TestContext.Current.CancellationToken })!;
+        var task = (Task<bool>)processBatchMethod.Invoke(daemon, new object[] { db, provider, registration, status, TestContext.Current.CancellationToken })!;
         var result = await task;
 
         Assert.True(result);

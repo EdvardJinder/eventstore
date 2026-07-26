@@ -52,6 +52,8 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         ArgumentNullException.ThrowIfNull(events);
 
         var eventList = events.ToArray();
+        ValidateEventPayloads(eventList, nameof(events));
+        var unrelatedChanges = CaptureUnrelatedChanges();
         var stream = await db.Set<DbStream>()
             .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events)
@@ -88,6 +90,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         };
 
         new DbContextStream(stream, db).Append(eventList);
+        SuppressUnrelatedChanges(unrelatedChanges);
 
         try
         {
@@ -96,6 +99,11 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         }
         catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
         {
+            foreach (var entry in ex.Entries.Where(entry => entry.Entity is DbEvent or DbStream))
+            {
+                entry.State = EntityState.Detached;
+            }
+
             var actualVersion = await GetActualVersionAsync(streamType, streamId, tenantId, cancellationToken);
 
             throw CreateConcurrencyException(
@@ -106,6 +114,10 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
                 actualVersion,
                 "Append failed because another writer modified the stream concurrently.",
                 ex);
+        }
+        finally
+        {
+            RestoreUnrelatedChanges(unrelatedChanges);
         }
     }
 
@@ -181,6 +193,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events.Where(x => x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
+        stream.CurrentVersion = Math.Min(version, stream.CurrentVersion);
         return new DbContextStream(stream);
     }
 
@@ -212,6 +225,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
             .Include(x => x.Events.Where(x => x.Version > snapshotVersion && x.Version <= version))
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
+        stream.CurrentVersion = Math.Min(version, stream.CurrentVersion);
         return new DbContextStream<T>(stream, db, DeserializeSnapshot<T>(snapshot));
     }
 
@@ -276,6 +290,10 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public IStream StartStream(string streamType, Guid streamId, Guid tenantId, params IEnumerable<object> events)
     {
+        ArgumentNullException.ThrowIfNull(events);
+        var eventList = events.ToArray();
+        ValidateEventPayloads(eventList, nameof(events));
+
         var dbStream = new DbStream
         {
             Id = streamId,
@@ -288,7 +306,7 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         db.Add(dbStream);
         var stream = new DbContextStream(dbStream, db);
 
-        stream.Append(events);
+        stream.Append(eventList);
         return stream;
     }
 
@@ -307,10 +325,14 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public IStream<T> StartStream<T>(string streamType, Guid streamId, Guid tenantId, params IEnumerable<object> events) where T : IState, new()
     {
+        ArgumentNullException.ThrowIfNull(events);
+        var eventList = events.ToArray();
+        ValidateEventPayloads(eventList, nameof(events));
+
         var dbStream = CreateStream(streamType, streamId, tenantId);
         var stream = new DbContextStream<T>(dbStream, db);
 
-        stream.Append(events);
+        stream.Append(eventList);
         return stream;
     }
 
@@ -338,13 +360,57 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
 
     private async Task<long?> GetActualVersionAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken)
     {
-        db.ChangeTracker.Clear();
-
         return await db.Set<DbStream>()
             .AsNoTracking()
             .Where(stream => stream.Id == streamId && stream.StreamType == streamType && stream.TenantId == tenantId)
             .Select(stream => (long?)stream.CurrentVersion)
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private IReadOnlyList<SuppressedEntry> CaptureUnrelatedChanges()
+    {
+        return db.ChangeTracker.Entries()
+            .Where(entry =>
+                entry.Entity is not DbEvent and not DbStream &&
+                entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .Select(entry => new SuppressedEntry(entry.Entity, entry.State))
+            .ToArray();
+    }
+
+    private void SuppressUnrelatedChanges(IEnumerable<SuppressedEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            db.Entry(entry.Entity).State = entry.State == EntityState.Added
+                ? EntityState.Detached
+                : EntityState.Unchanged;
+        }
+    }
+
+    private void RestoreUnrelatedChanges(IEnumerable<SuppressedEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            var trackedEntry = db.Entry(entry.Entity);
+            trackedEntry.State = entry.State;
+        }
+    }
+
+    private sealed record SuppressedEntry(object Entity, EntityState State);
+
+    private static void ValidateEventPayloads(IEnumerable<object> events, string parameterName)
+    {
+        foreach (var @event in events)
+        {
+            ArgumentNullException.ThrowIfNull(@event, parameterName);
+            var eventType = @event.GetType();
+            if (eventType.IsValueType)
+            {
+                throw new ArgumentException(
+                    $"Event payload type '{eventType.FullName}' is a value type. Event payloads must be reference types.",
+                    parameterName);
+            }
+        }
     }
 
     private static bool IsUniqueConstraintViolation(Exception exception)

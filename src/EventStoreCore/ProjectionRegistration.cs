@@ -42,7 +42,7 @@ internal sealed class ProjectionRegistration
     /// <summary>
     /// Action to clear all projection data via IProjection.ClearAsync.
     /// </summary>
-    public required Func<DbContext, CancellationToken, Task> ClearAction { get; init; }
+    public required Func<DbContext, IServiceProvider, CancellationToken, Task> ClearAction { get; init; }
 
     /// <summary>
     /// Action to evolve a snapshot with an event via IProjection.Evolve.
