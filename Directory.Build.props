@@ -1,6 +1,7 @@
 <Project>
-  <!-- Source projects are independently shipped; the two test projects are not. -->
+  <!-- Source projects are independently shipped; test projects are not. -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' != 'EventStoreCore.Tests'
+                            and '$(MSBuildProjectName)' != 'EventStoreCore.Testing.Tests'
                             and '$(MSBuildProjectName)' != 'EventStoreCore.Scheduling.Tests'">
     <!-- XML files are emitted beside each assembly and are included by NuGet pack. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

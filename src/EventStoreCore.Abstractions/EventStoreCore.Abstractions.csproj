@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EventStoreCore" />
+    <InternalsVisibleTo Include="EventStoreCore.Testing" />
   </ItemGroup>
 
   <ItemGroup>

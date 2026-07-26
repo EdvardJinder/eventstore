@@ -12,7 +12,7 @@
   	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-	  <Description>Behavior-style event stream testing helpers for EventStoreCore.</Description>
+	  <Description>Application test harnesses for EventStoreCore streams, projections, subscriptions, schema evolution, concurrency, and daemons.</Description>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EventStoreCore.Tests" />
+    <InternalsVisibleTo Include="EventStoreCore.Testing.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,4 +38,3 @@
   </ItemGroup>
 
 </Project>
-

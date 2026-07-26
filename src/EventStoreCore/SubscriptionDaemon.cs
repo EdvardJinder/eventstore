@@ -168,7 +168,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
             Math.Max(1, _options.CheckpointFrequency));
     }
 
-    private Task<int> ProcessNextBatchAsync(
+    internal Task<int> ProcessNextBatchAsync(
         IServiceScope scope,
         SubscriptionRegistration registration,
         CancellationToken stoppingToken,

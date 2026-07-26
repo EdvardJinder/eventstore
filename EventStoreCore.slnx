@@ -20,6 +20,7 @@
 
   <Folder Name="/tests/">
     <Project Path="tests/EventStoreCore.Scheduling.Tests/EventStoreCore.Scheduling.Tests.csproj" />
+    <Project Path="tests/EventStoreCore.Testing.Tests/EventStoreCore.Testing.Tests.csproj" />
     <Project Path="tests/EventStoreCore.Tests/EventStoreCore.Tests.csproj" />
   </Folder>
 </Solution>
