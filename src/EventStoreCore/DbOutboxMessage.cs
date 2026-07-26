@@ -45,12 +45,12 @@ public sealed class DbOutboxMessage
     /// <summary>
     /// The assembly-qualified source entity type name.
     /// </summary>
-    public string EntityType { get; set; } = string.Empty;
+    public string SourceEntityType { get; set; } = string.Empty;
 
     /// <summary>
     /// A JSON object containing the source entity's primary-key values.
     /// </summary>
-    public string EntityKey { get; set; } = "{}";
+    public string SourceEntityKey { get; set; } = "{}";
 
     /// <summary>
     /// The entity change that produced the event.

@@ -90,10 +90,10 @@ internal sealed class EntityOutboxInterceptor<TDbContext>(
                     TypeName = eventTypes.ResolveName(eventType),
                     Data = JsonSerializer.Serialize(@event, eventType, registry.SerializerOptions),
                     Timestamp = timeProvider.GetUtcNow(),
-                    EntityType = registration.EntityType.AssemblyQualifiedName
+                    SourceEntityType = registration.EntityType.AssemblyQualifiedName
                         ?? registration.EntityType.FullName
                         ?? registration.EntityType.Name,
-                    EntityKey = SerializeKey(entry, registry.SerializerOptions),
+                    SourceEntityKey = SerializeKey(entry, registry.SerializerOptions),
                     ChangeKind = changeKind
                 });
             }

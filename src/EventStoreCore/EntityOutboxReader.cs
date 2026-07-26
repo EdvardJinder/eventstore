@@ -71,20 +71,23 @@ internal sealed class EntityOutboxReader<TDbContext>(
 
     internal IOutboxEvent Materialize(DbOutboxMessage message)
     {
-        var eventType = ResolveType(message);
-        object data;
+        var (eventType, upcastData) = ResolveTypeAndUpcastData(message);
+        object data = upcastData!;
 
-        try
+        if (data is null)
         {
-            data = JsonSerializer.Deserialize(message.Data, eventType, registry.SerializerOptions)
-                ?? throw new InvalidOperationException(
-                    $"Could not deserialize outbox event {message.EventId} as '{eventType}'.");
-        }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException)
-        {
-            throw new InvalidOperationException(
-                $"Could not deserialize outbox event {message.EventId} as '{eventType}'.",
-                ex);
+            try
+            {
+                data = JsonSerializer.Deserialize(message.Data, eventType, registry.SerializerOptions)
+                    ?? throw new InvalidOperationException(
+                        $"Could not deserialize outbox event {message.EventId} as '{eventType}'.");
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                throw new InvalidOperationException(
+                    $"Could not deserialize outbox event {message.EventId} as '{eventType}'.",
+                    ex);
+            }
         }
 
         var wrapperType = typeof(OutboxEvent<>).MakeGenericType(eventType);
@@ -106,16 +109,30 @@ internal sealed class EntityOutboxReader<TDbContext>(
         }
     }
 
-    private Type ResolveType(DbOutboxMessage message)
+    private (Type EventType, object? UpcastData) ResolveTypeAndUpcastData(DbOutboxMessage message)
     {
-        if (!string.IsNullOrWhiteSpace(message.TypeName) &&
-            eventTypes.TryResolveMaterializedEventType(message.TypeName, out var registeredType))
+        var compatibilityEvent = new DbEvent
         {
-            return registeredType;
+            EventId = message.EventId,
+            Sequence = message.Sequence,
+            TenantId = message.TenantId,
+            Timestamp = message.Timestamp,
+            Type = message.Type,
+            TypeName = message.TypeName,
+            Data = message.Data
+        };
+
+        if (eventTypes.TryResolveMaterializedEvent(
+            compatibilityEvent,
+            out var registeredType,
+            out var upcastData))
+        {
+            return (registeredType, upcastData);
         }
 
-        return Type.GetType(message.Type, throwOnError: false)
+        var eventType = Type.GetType(message.Type, throwOnError: false)
             ?? throw new InvalidOperationException(
                 $"Could not resolve CLR type '{message.Type}' for outbox event {message.EventId}.");
+        return (eventType, null);
     }
 }

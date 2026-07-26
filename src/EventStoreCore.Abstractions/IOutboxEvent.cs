@@ -38,12 +38,12 @@ public interface IOutboxEvent
     /// <summary>
     /// The assembly-qualified CLR type name of the source entity.
     /// </summary>
-    string EntityType { get; }
+    string SourceEntityType { get; }
 
     /// <summary>
     /// A JSON object containing the source entity's primary-key values.
     /// </summary>
-    string EntityKey { get; }
+    string SourceEntityKey { get; }
 
     /// <summary>
     /// The entity change that produced the event.

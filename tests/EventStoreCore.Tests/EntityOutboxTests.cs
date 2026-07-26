@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EventStoreCore.Abstractions;
 using Medallion.Threading;
 using Microsoft.Data.Sqlite;
@@ -21,14 +22,14 @@ public sealed class EntityOutboxTests
             outbox.For<Order>()
                 .TenantId(order => order.TenantId)
                 .On(change => change
-                    .Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))
+                    .Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])
                     .Modified(entity => entity.IsModified(order => order.Status)
-                        ? new OrderModified(
+                        ? [new OrderModified(
                             entity.Entity.Id,
                             entity.Original(order => order.Status)!,
-                            entity.Current(order => order.Status)!)
-                        : null)
-                    .DeletedMany(entity =>
+                            entity.Current(order => order.Status)!)]
+                        : [])
+                    .Deleted(entity =>
                     [
                         new OrderDeleted(entity.Entity.Id),
                         new OrderAudit(entity.Entity.Id, "deleted")
@@ -64,7 +65,7 @@ public sealed class EntityOutboxTests
                 Assert.Equal("new", typed.Data.Status);
                 Assert.Equal(EntityChangeKind.Added, typed.ChangeKind);
                 Assert.Equal(tenantId, typed.TenantId);
-                Assert.Contains(orderId.ToString(), typed.EntityKey, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains(orderId.ToString(), typed.SourceEntityKey, StringComparison.OrdinalIgnoreCase);
             },
             @event =>
             {
@@ -104,6 +105,24 @@ public sealed class EntityOutboxTests
     }
 
     [Fact]
+    public async Task Empty_event_array_skips_outbox_capture()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync();
+        fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
+            outbox.For<Order>().On(change => change.Added(_ => [])));
+
+        await using var provider = fixture.Build();
+        await fixture.CreateSchemaAsync(provider);
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<OutboxDbContext>();
+        db.Orders.Add(new Order { Id = Guid.NewGuid(), Status = "new" });
+
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await db.Set<DbOutboxMessage>().ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Synchronous_save_captures_a_registered_logical_event_name()
     {
         await using var fixture = await OutboxFixture.CreateAsync();
@@ -111,7 +130,7 @@ public sealed class EntityOutboxTests
         {
             outbox.AddEvent<OrderAdded>("order_added_v1");
             outbox.For<Order>().On(change =>
-                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status)));
+                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)]));
         });
 
         await using var provider = fixture.Build();
@@ -127,12 +146,53 @@ public sealed class EntityOutboxTests
     }
 
     [Fact]
+    public async Task Reader_applies_event_type_upcasters_registered_through_the_outbox_builder()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync();
+        fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
+            outbox.AddEvent<OrderAdded>(
+                "order_added_v2",
+                eventType => eventType.AddUpcaster<LegacyOrderAdded>(
+                    "order_added_v1",
+                    oldEvent => new OrderAdded(oldEvent.OrderId, oldEvent.State))));
+
+        await using var provider = fixture.Build();
+        await fixture.CreateSchemaAsync(provider);
+        var orderId = Guid.NewGuid();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OutboxDbContext>();
+            db.Add(new DbOutboxMessage
+            {
+                EventId = Guid.NewGuid(),
+                Type = typeof(LegacyOrderAdded).AssemblyQualifiedName!,
+                TypeName = "order_added_v1",
+                Data = JsonSerializer.Serialize(new LegacyOrderAdded(orderId, "new")),
+                Timestamp = DateTimeOffset.UtcNow,
+                SourceEntityType = typeof(Order).AssemblyQualifiedName!,
+                SourceEntityKey = JsonSerializer.Serialize(new { Id = orderId }),
+                ChangeKind = EntityChangeKind.Added
+            });
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using var readScope = provider.CreateAsyncScope();
+        var reader = readScope.ServiceProvider.GetRequiredService<IOutboxReader>();
+        var events = await reader.ReadAsync(0, ct: TestContext.Current.CancellationToken);
+
+        var typed = Assert.IsAssignableFrom<IOutboxEvent<OrderAdded>>(Assert.Single(events));
+        Assert.Equal(orderId, typed.Data.Id);
+        Assert.Equal("new", typed.Data.Status);
+    }
+
+    [Fact]
     public async Task Reader_filters_by_tenant_and_cleanup_stops_at_slowest_checkpoint()
     {
         await using var fixture = await OutboxFixture.CreateAsync();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().TenantId(order => order.TenantId).On(change =>
-                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
+                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
 
         await using var provider = fixture.Build();
         await fixture.CreateSchemaAsync(provider);
@@ -178,7 +238,7 @@ public sealed class EntityOutboxTests
         fixture.Services.AddLogging();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().On(change =>
-                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
+                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
         fixture.Services.AddOutboxSubscription<RecordingSubscription>();
         fixture.Services.AddEntityOutboxDaemon<OutboxDbContext>(
             _ => Substitute.For<IDistributedLockProvider>(),
@@ -221,7 +281,7 @@ public sealed class EntityOutboxTests
         fixture.Services.AddLogging();
         fixture.Services.AddEntityOutbox<OutboxDbContext>(outbox =>
             outbox.For<Order>().On(change =>
-                change.Added(entity => new OrderAdded(entity.Entity.Id, entity.Entity.Status))));
+                change.Added(entity => [new OrderAdded(entity.Entity.Id, entity.Entity.Status)])));
         fixture.Services.AddOutboxSubscription<RecordingSubscription>();
         fixture.Services.AddOutboxSubscription<FailingSubscription>();
         fixture.Services.AddEntityOutboxDaemon<OutboxDbContext>(
@@ -324,6 +384,8 @@ public sealed class EntityOutboxTests
     }
 
     private sealed record OrderAdded(Guid Id, string Status);
+
+    private sealed record LegacyOrderAdded(Guid OrderId, string State);
 
     private sealed record OrderModified(Guid Id, string OriginalStatus, string CurrentStatus);
 

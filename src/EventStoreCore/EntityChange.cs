@@ -25,6 +25,9 @@ public sealed class EntityChange<TEntity>
     /// <summary>
     /// Gets the original value of a property.
     /// </summary>
+    /// <typeparam name="TProperty">The property value type.</typeparam>
+    /// <param name="property">Selects a direct mapped property.</param>
+    /// <returns>The property's original value.</returns>
     public TProperty? Original<TProperty>(Expression<Func<TEntity, TProperty>> property)
     {
         return (TProperty?)_entry.Property(GetPropertyName(property)).OriginalValue;
@@ -33,6 +36,9 @@ public sealed class EntityChange<TEntity>
     /// <summary>
     /// Gets the current value of a property.
     /// </summary>
+    /// <typeparam name="TProperty">The property value type.</typeparam>
+    /// <param name="property">Selects a direct mapped property.</param>
+    /// <returns>The property's current value.</returns>
     public TProperty? Current<TProperty>(Expression<Func<TEntity, TProperty>> property)
     {
         return (TProperty?)_entry.Property(GetPropertyName(property)).CurrentValue;
@@ -41,6 +47,9 @@ public sealed class EntityChange<TEntity>
     /// <summary>
     /// Determines whether a property is marked as modified.
     /// </summary>
+    /// <typeparam name="TProperty">The property value type.</typeparam>
+    /// <param name="property">Selects a direct mapped property.</param>
+    /// <returns><see langword="true" /> when EF marks the property as modified.</returns>
     public bool IsModified<TProperty>(Expression<Func<TEntity, TProperty>> property)
     {
         return _entry.Property(GetPropertyName(property)).IsModified;

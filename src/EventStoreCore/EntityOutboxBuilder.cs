@@ -2,14 +2,20 @@ using System.Text.Json;
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore;
 
 internal sealed class EntityOutboxBuilder<TDbContext> : IEntityOutboxBuilder
     where TDbContext : DbContext
 {
+    private readonly IServiceCollection _services;
     private readonly Dictionary<Type, IEntityOutboxRegistration> _registrations = [];
-    private readonly List<EventTypeRegistration> _eventTypes = [];
+
+    internal EntityOutboxBuilder(IServiceCollection services)
+    {
+        _services = services;
+    }
 
     public JsonSerializerOptions SerializerOptions { get; } = new();
 
@@ -26,7 +32,17 @@ internal sealed class EntityOutboxBuilder<TDbContext> : IEntityOutboxBuilder
         return registration;
     }
 
+    public IEntityOutboxBuilder AddEvent<TEvent>()
+        where TEvent : class
+        => AddEvent<TEvent>(EventTypeNameHelper.ToSnakeCase(typeof(TEvent)), null);
+
     public IEntityOutboxBuilder AddEvent<TEvent>(string eventTypeName)
+        where TEvent : class
+        => AddEvent<TEvent>(eventTypeName, null);
+
+    public IEntityOutboxBuilder AddEvent<TEvent>(
+        string eventTypeName,
+        Action<IEventTypeBuilder<TEvent>>? configure)
         where TEvent : class
     {
         if (string.IsNullOrWhiteSpace(eventTypeName))
@@ -34,11 +50,10 @@ internal sealed class EntityOutboxBuilder<TDbContext> : IEntityOutboxBuilder
             throw new ArgumentException("Event type name cannot be empty.", nameof(eventTypeName));
         }
 
-        _eventTypes.Add(new EventTypeRegistration(typeof(TEvent), eventTypeName.Trim()));
+        _services.AddSingleton(new EventTypeRegistration(typeof(TEvent), eventTypeName.Trim()));
+        configure?.Invoke(new EventTypeBuilder<TEvent>(_services));
         return this;
     }
-
-    internal IReadOnlyList<EventTypeRegistration> EventTypes => _eventTypes;
 
     internal EntityOutboxRegistry<TDbContext> Build()
     {
@@ -61,7 +76,7 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
     IEntityOutboxRegistration
     where TEntity : class
 {
-    private readonly Dictionary<EntityChangeKind, List<Func<EntityChange<TEntity>, IEnumerable<object?>>>> _factories = [];
+    private readonly Dictionary<EntityChangeKind, List<Func<EntityChange<TEntity>, object[]>>> _factories = [];
     private Func<TEntity, Guid> _tenantSelector = _ => Guid.Empty;
 
     public Type EntityType => typeof(TEntity);
@@ -80,23 +95,14 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
         return this;
     }
 
-    public IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object?> factory)
-        => AddSingle(EntityChangeKind.Added, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Added(Func<EntityChange<TEntity>, object[]> factory)
+        => Add(EntityChangeKind.Added, factory);
 
-    public IEntityOutboxChangeBuilder<TEntity> AddedMany(Func<EntityChange<TEntity>, IEnumerable<object?>> factory)
-        => AddMany(EntityChangeKind.Added, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object[]> factory)
+        => Add(EntityChangeKind.Modified, factory);
 
-    public IEntityOutboxChangeBuilder<TEntity> Modified(Func<EntityChange<TEntity>, object?> factory)
-        => AddSingle(EntityChangeKind.Modified, factory);
-
-    public IEntityOutboxChangeBuilder<TEntity> ModifiedMany(Func<EntityChange<TEntity>, IEnumerable<object?>> factory)
-        => AddMany(EntityChangeKind.Modified, factory);
-
-    public IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object?> factory)
-        => AddSingle(EntityChangeKind.Deleted, factory);
-
-    public IEntityOutboxChangeBuilder<TEntity> DeletedMany(Func<EntityChange<TEntity>, IEnumerable<object?>> factory)
-        => AddMany(EntityChangeKind.Deleted, factory);
+    public IEntityOutboxChangeBuilder<TEntity> Deleted(Func<EntityChange<TEntity>, object[]> factory)
+        => Add(EntityChangeKind.Deleted, factory);
 
     public IReadOnlyList<object> CreateEvents(EntityEntry entry, EntityChangeKind changeKind)
     {
@@ -107,30 +113,24 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
 
         var typedEntry = entry.Context.Entry((TEntity)entry.Entity);
         var change = new EntityChange<TEntity>(typedEntry);
-        return factories
-            .SelectMany(factory => factory(change))
-            .Where(@event => @event is not null)
-            .Cast<object>()
+        var events = factories
+            .SelectMany(factory => factory(change)
+                ?? throw new InvalidOperationException("An entity outbox event factory returned null. Return an empty array instead."))
             .ToArray();
+
+        if (events.Any(@event => @event is null))
+        {
+            throw new InvalidOperationException("An entity outbox event factory returned an array containing null.");
+        }
+
+        return events;
     }
 
     public Guid GetTenantId(object entity) => _tenantSelector((TEntity)entity);
 
-    private IEntityOutboxChangeBuilder<TEntity> AddSingle(
+    private IEntityOutboxChangeBuilder<TEntity> Add(
         EntityChangeKind changeKind,
-        Func<EntityChange<TEntity>, object?> factory)
-    {
-        ArgumentNullException.ThrowIfNull(factory);
-        return AddMany(changeKind, change =>
-        {
-            var @event = factory(change);
-            return @event is null ? [] : [@event];
-        });
-    }
-
-    private IEntityOutboxChangeBuilder<TEntity> AddMany(
-        EntityChangeKind changeKind,
-        Func<EntityChange<TEntity>, IEnumerable<object?>> factory)
+        Func<EntityChange<TEntity>, object[]> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
@@ -140,8 +140,7 @@ internal sealed class EntityOutboxEntityBuilder<TEntity> :
             _factories.Add(changeKind, factories);
         }
 
-        factories.Add(change => factory(change)
-            ?? throw new InvalidOperationException("An entity outbox event factory returned a null collection."));
+        factories.Add(factory);
         return this;
     }
 }

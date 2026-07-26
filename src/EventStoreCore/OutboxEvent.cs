@@ -12,8 +12,8 @@ internal class OutboxEvent : IOutboxEvent
         EventType = eventType;
         Timestamp = message.Timestamp;
         TenantId = message.TenantId;
-        EntityType = message.EntityType;
-        EntityKey = message.EntityKey;
+        SourceEntityType = message.SourceEntityType;
+        SourceEntityKey = message.SourceEntityKey;
         ChangeKind = message.ChangeKind;
     }
 
@@ -29,9 +29,9 @@ internal class OutboxEvent : IOutboxEvent
 
     public Guid TenantId { get; }
 
-    public string EntityType { get; }
+    public string SourceEntityType { get; }
 
-    public string EntityKey { get; }
+    public string SourceEntityKey { get; }
 
     public EntityChangeKind ChangeKind { get; }
 }

@@ -25,7 +25,7 @@ public sealed class EntityOutboxOptions
     /// <summary>
     /// The maximum time spent waiting to acquire a subscription's distributed lock.
     /// </summary>
-    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(2);
+    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// The number of failed attempts before a checkpoint is dead-lettered.

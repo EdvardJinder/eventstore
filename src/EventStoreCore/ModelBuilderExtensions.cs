@@ -270,9 +270,9 @@ internal static class ModelBuilderExtensions
                 .IsRequired();
             entity.Property(message => message.Timestamp)
                 .IsRequired();
-            entity.Property(message => message.EntityType)
+            entity.Property(message => message.SourceEntityType)
                 .IsRequired();
-            entity.Property(message => message.EntityKey)
+            entity.Property(message => message.SourceEntityKey)
                 .IsRequired();
             entity.Property(message => message.ChangeKind)
                 .IsRequired();

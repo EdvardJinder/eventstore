@@ -26,15 +26,11 @@ public static class EntityOutboxServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var builder = new EntityOutboxBuilder<TDbContext>();
+        var builder = new EntityOutboxBuilder<TDbContext>(services);
         configure(builder);
         var registry = builder.Build();
 
         services.AddSingleton(registry);
-        foreach (var eventType in builder.EventTypes)
-        {
-            services.AddSingleton(eventType);
-        }
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(sp => new EventTypeRegistry(
             sp.GetServices<EventTypeRegistration>(),

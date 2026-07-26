@@ -49,7 +49,7 @@ public static class ModelBuilderExtensions
         {
             entity.Property(message => message.Data)
                 .HasColumnType("jsonb");
-            entity.Property(message => message.EntityKey)
+            entity.Property(message => message.SourceEntityKey)
                 .HasColumnType("jsonb");
         });
     }

@@ -49,7 +49,7 @@ public static class ModelBuilderExtensions
         {
             entity.Property(message => message.Data)
                 .HasColumnType("nvarchar(max)");
-            entity.Property(message => message.EntityKey)
+            entity.Property(message => message.SourceEntityKey)
                 .HasColumnType("nvarchar(max)");
         });
     }

@@ -96,7 +96,7 @@ public class ProviderModelConfigurationTests
         var outbox = context.Model.FindEntityType(typeof(DbOutboxMessage));
 
         Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
-        Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.EntityKey))?.GetColumnType());
+        Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
     }
 
@@ -111,7 +111,7 @@ public class ProviderModelConfigurationTests
         var outbox = context.Model.FindEntityType(typeof(DbOutboxMessage));
 
         Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
-        Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.EntityKey))?.GetColumnType());
+        Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
     }
 }
