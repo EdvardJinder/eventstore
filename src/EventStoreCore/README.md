@@ -25,6 +25,7 @@ infrastructure remains application-owned.
 
 - Inline and eventual projections
 - Subscription daemons with checkpointing
+- Stable global event-log paging across streams
 - Atomic domain-event capture from ordinary EF entities
 - Standalone outbox reader and independently checkpointed outbox subscriptions
 - Stable outbox subscription identities and recovery/replay management
@@ -56,6 +57,38 @@ Paged reads always read persisted events and do not use aggregate snapshots.
 `FetchForReadingAsync<TState>` remains the state-rehydration API and may use a
 compatible snapshot. Historical typed reads only use a snapshot whose stream
 version is not newer than the requested historical version.
+
+## Global event-log reads
+
+Inject the scoped `IEventLogReader` registered by
+`ExistingDbContext<TDbContext>()`, or use `dbContext.EventLog`, to read across
+all streams in ascending global sequence order.
+
+```csharp
+var page = await eventLogReader.ReadPageAsync(new EventLogReadOptions
+{
+    AfterSequence = checkpoint,
+    TenantId = tenantId,
+    StreamTypes = ["orders"],
+    EventTypes = ["order_created"],
+    MaxCount = 500
+}, ct);
+```
+
+Pages expose the highest currently visible unfiltered `HeadSequence`, bounded
+by an explicit `ThroughSequence`, and an exclusive `NextSequence` cursor. Async
+enumeration freezes that sequence bound automatically. Filters run in the
+database before paging. Event aliases, serializers, and schema upcasters are
+applied during materialization.
+
+Database sequences are allocated before transaction commit. Under concurrent
+appends, a lower sequence can therefore become visible after a higher sequence.
+Live consumers should overlap reads and deduplicate by event ID instead of
+treating `HeadSequence` as a strict commit fence.
+
+Add an application migration for the unique `Events.Sequence` index and the
+tenant, stream-type, and event-type sequence indexes when upgrading an existing
+database.
 
 ## Event metadata
 

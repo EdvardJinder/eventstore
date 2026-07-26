@@ -80,6 +80,36 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task EventStore_ReadsTheGlobalLogAcrossStreams(ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        context.Streams.StartStream(
+            "orders",
+            Guid.NewGuid(),
+            events: new SampleEvent { Name = "first" });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.Streams.StartStream(
+            "customers",
+            Guid.NewGuid(),
+            events: new SampleEvent { Name = "second" });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var page = await context.EventLog.ReadPageAsync(
+            new EventLogReadOptions { MaxCount = 10 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, page.Events.Count);
+        Assert.True(page.Events[0].Sequence < page.Events[1].Sequence);
+        Assert.Equal(["orders", "customers"], page.Events.Select(@event => @event.StreamType));
+        Assert.Equal(page.Events[1].Sequence, page.HeadSequence);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
     private DbContext CreateContext(ProviderKind provider)
     {
         return provider switch
@@ -94,7 +124,7 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         };
     }
 
-   
+
     private sealed class PostgresContext : DbContext
     {
         public PostgresContext(DbContextOptions<PostgresContext> options) : base(options)
@@ -119,7 +149,7 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         }
     }
 
-    
+
     private sealed class SampleEvent
     {
         public string Name { get; set; } = string.Empty;

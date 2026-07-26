@@ -507,6 +507,50 @@ EventStore now persists a logical event type name in `DbEvent.TypeName`. By defa
 2. Populate `TypeName` for existing rows using your preferred backfill process.
 3. Optionally tighten constraints (remove the default or enforce non-empty values) once values are populated.
 
+## Global event-log reads
+
+Use `IEventLogReader` to consume persisted events across every stream in
+ascending global sequence order. `ExistingDbContext<TDbContext>()` registers a
+scoped reader for dependency injection, and the same reader is available from
+`dbContext.EventLog`.
+
+```csharp
+var options = new EventLogReadOptions
+{
+    AfterSequence = checkpoint,
+    TenantId = tenantId,
+    StreamTypes = ["orders"],
+    EventTypes = ["order_created", "order_cancelled"],
+    MaxCount = 500
+};
+
+await foreach (var @event in eventLogReader.ReadAsync(options, ct))
+{
+    await export.WriteAsync(@event, ct);
+    checkpoint = @event.Sequence;
+}
+```
+
+`AfterSequence` is exclusive. Each read captures the highest currently visible
+unfiltered sequence, bounded by an explicit `ThroughSequence`. Explicit pages
+return the effective bound as `HeadSequence`; pass the page's `NextSequence` as
+the next `AfterSequence` and preserve `HeadSequence` as `ThroughSequence`.
+Async enumeration performs that continuation automatically and excludes events
+allocated a sequence above its initial bound.
+
+The reader materializes aliases and schema upcasters exactly like stream reads.
+It does not persist consumer checkpoints or make side effects atomic with
+checkpoint storage; custom consumers should remain idempotent. Database
+sequences are allocated before their transactions commit, so concurrently
+in-flight appends can become visible out of allocation order. Live consumers
+that require lossless catch-up should reread an overlap and deduplicate by
+`IEvent.Id`; do not treat an empty filtered page's `HeadSequence` as a strict
+commit fence while append transactions are in flight.
+
+Existing databases require an application-owned migration for the new unique
+`Events.Sequence` index and the `(TenantId, Sequence)`,
+`(StreamType, Sequence)`, and `(TypeName, Sequence)` read indexes.
+
 ## Stream types
 
 EventStore supports multiple streams with the same ID but different types, enabling scenarios like:
@@ -561,6 +605,8 @@ EventStoreCore model; they do not create or migrate a separate database.
   event versions within that identity.
 - `EventId` values are generated GUIDs with a uniqueness constraint. Treat them
   as stable deduplication keys, not chronological or sequential values.
+- Global event-log reads use the generated `Events.Sequence` value as their
+  stable cross-stream cursor.
 - Inline projections share the caller's EF Core transaction. Subscriptions and
   eventual projections are at-least-once.
 - Daemon locks and provider-specific database migrations remain

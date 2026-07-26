@@ -15,6 +15,11 @@ public static class DbContextExtensions
         /// </summary>
         public IEventStore Streams => dbContext.Streams();
 
+        /// <summary>
+        /// Gets an <see cref="IEventLogReader" /> for reading events across all streams.
+        /// </summary>
+        public IEventLogReader EventLog => dbContext.EventLog();
+
         internal DbSet<DbEvent> Events => dbContext.Events();
 
     }
@@ -22,6 +27,12 @@ public static class DbContextExtensions
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         return new DbContextEventStore(dbContext);
+    }
+
+    private static IEventLogReader EventLog(this DbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        return new DbContextEventLogReader(dbContext);
     }
 
     private static DbSet<DbEvent> Events(this DbContext dbContext)

@@ -18,6 +18,7 @@ EventStoreCore.Abstractions|F:EventStoreCore.Abstractions.SubscriptionState.Dead
 EventStoreCore.Abstractions|F:EventStoreCore.Abstractions.SubscriptionState.Faulted
 EventStoreCore.Abstractions|F:EventStoreCore.Abstractions.SubscriptionState.Paused
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventAppendExtensions.WithMetadata(System.Object,EventStoreCore.Abstractions.EventMetadata)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventLogPage.#ctor(System.Collections.Generic.IReadOnlyList{EventStoreCore.Abstractions.IEvent},System.Int64,System.Nullable{System.Int64})
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventMetadata.#ctor(System.Nullable{System.Guid},System.Nullable{System.Guid},System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String})
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventStoreReadExtensions.ReadAsync(EventStoreCore.Abstractions.IEventStore,System.Guid,EventStoreCore.Abstractions.StreamReadOptions,System.Threading.CancellationToken)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventStoreReadExtensions.ReadAsync(EventStoreCore.Abstractions.IEventStore,System.Guid,System.Guid,EventStoreCore.Abstractions.StreamReadOptions,System.Threading.CancellationToken)
@@ -31,6 +32,8 @@ EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.EventToAppend.#ctor(Sy
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.ExpectedVersion.Exact(System.Int64)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.ExpectedVersion.ToString
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.FailedEventDto.#ctor(System.Guid,System.Guid,System.Int64,System.Int64,System.String,System.String,System.DateTimeOffset,System.String)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IEventLogReader.ReadAsync(EventStoreCore.Abstractions.EventLogReadOptions,System.Threading.CancellationToken)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IEventLogReader.ReadPageAsync(EventStoreCore.Abstractions.EventLogReadOptions,System.Threading.CancellationToken)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IEventStore.AppendAsync(System.Guid,EventStoreCore.Abstractions.ExpectedVersion,System.Collections.Generic.IEnumerable{System.Object},System.Threading.CancellationToken)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IEventStore.AppendAsync(System.Guid,System.Guid,EventStoreCore.Abstractions.ExpectedVersion,System.Collections.Generic.IEnumerable{System.Object},System.Threading.CancellationToken)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IEventStore.AppendAsync(System.String,System.Guid,EventStoreCore.Abstractions.ExpectedVersion,System.Collections.Generic.IEnumerable{System.Object},System.Threading.CancellationToken)
@@ -144,6 +147,16 @@ EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.StreamPage.#ctor(Syste
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.StreamPage`1.#ctor(System.Collections.Generic.IReadOnlyList{EventStoreCore.Abstractions.IEvent{`0}},System.Int64,System.Nullable{System.Int64})
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.SubscriptionFailedEventDto.#ctor(System.Guid,System.Guid,System.Int64,System.Int64,System.String,System.String,System.DateTimeOffset,System.String)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.SubscriptionStatusDto.#ctor(System.String,System.Int64,EventStoreCore.Abstractions.SubscriptionState,System.Nullable{System.Int64},System.Nullable{System.Double},System.Nullable{System.DateTimeOffset},System.String,System.Int32,System.Nullable{System.DateTimeOffset},System.Nullable{System.DateTimeOffset},System.Nullable{System.Int64})
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogPage.Events
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogPage.HasMore
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogPage.HeadSequence
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogPage.NextSequence
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.AfterSequence
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.EventTypes
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.MaxCount
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.StreamTypes
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.TenantId
+EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventLogReadOptions.ThroughSequence
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventMetadata.Actor
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventMetadata.CausationId
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.EventMetadata.CorrelationId
@@ -278,6 +291,8 @@ EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.SubscriptionStatusDto.
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.CheckpointScope
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EntityChangeKind
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventAppendExtensions
+EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventLogPage
+EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventLogReadOptions
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventMetadata
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventStoreReadExtensions
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.EventToAppend
@@ -286,6 +301,7 @@ EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.ExpectedVersionMode
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.FailedEventDto
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IEvent
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IEvent`1
+EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IEventLogReader
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IEventStore
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IEventStoreSerializer
 EventStoreCore.Abstractions|T:EventStoreCore.Abstractions.IHandler`1
@@ -549,6 +565,7 @@ EventStoreCore|M:EventStoreCore.DbContextEventStore.StartStream``1(System.Guid,S
 EventStoreCore|M:EventStoreCore.DbContextEventStore.StartStream``1(System.Guid,System.Guid,System.Collections.Generic.IEnumerable{System.Object})
 EventStoreCore|M:EventStoreCore.DbContextEventStore.StartStream``1(System.String,System.Guid,System.Collections.Generic.IEnumerable{System.Object})
 EventStoreCore|M:EventStoreCore.DbContextEventStore.StartStream``1(System.String,System.Guid,System.Guid,System.Collections.Generic.IEnumerable{System.Object})
+EventStoreCore|M:EventStoreCore.DbContextExtensions.get_EventLog(Microsoft.EntityFrameworkCore.DbContext)
 EventStoreCore|M:EventStoreCore.DbContextExtensions.get_Streams(Microsoft.EntityFrameworkCore.DbContext)
 EventStoreCore|M:EventStoreCore.DbContextStream.#ctor(EventStoreCore.DbStream)
 EventStoreCore|M:EventStoreCore.DbContextStream.#ctor(EventStoreCore.DbStream,Microsoft.EntityFrameworkCore.DbContext)
@@ -727,6 +744,7 @@ EventStoreCore|P:EventStoreCore.DaemonHealthEntry.LastError
 EventStoreCore|P:EventStoreCore.DaemonHealthEntry.LastHeartbeat
 EventStoreCore|P:EventStoreCore.DaemonHealthReport.Entries
 EventStoreCore|P:EventStoreCore.DaemonHealthReport.Status
+EventStoreCore|P:EventStoreCore.DbContextExtensions.<G>$31ACC19CE081C796BC7AE2F44B832DEE.EventLog
 EventStoreCore|P:EventStoreCore.DbContextExtensions.<G>$31ACC19CE081C796BC7AE2F44B832DEE.Streams
 EventStoreCore|P:EventStoreCore.DbContextStream.Events
 EventStoreCore|P:EventStoreCore.DbContextStream.Id
