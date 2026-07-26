@@ -49,6 +49,76 @@ services.AddEventStore(builder =>
 
 Projection and subscription daemons require an `IDistributedLockProvider`. Register any implementation (Redis, SQL Server, Postgres, etc.) in DI.
 
+## EF entity outbox
+
+Entity outbox capture lets ordinary EF entities emit domain or integration events without making those entities event-sourced. The entity change and its outbox rows are persisted by the same `SaveChanges` transaction.
+
+Configure only the outbox model when the context does not host EventStoreCore streams:
+
+```csharp
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.UseEntityOutbox();
+    }
+}
+```
+
+When the same context also hosts EventStoreCore streams, call both `UseEventStore()` and `UseEntityOutbox()`. Outbox tables remain opt-in so existing event-store applications do not acquire a schema migration merely by upgrading.
+
+Register capture rules independently of `AddEventStore`:
+
+```csharp
+services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+services.AddEntityOutbox<AppDbContext>(outbox =>
+{
+    outbox.AddEvent<OrderCreated>("order_created");
+
+    outbox.For<Order>()
+        .TenantId(order => order.TenantId)
+        .On(change => change
+            .Added(entry => new OrderCreated(entry.Entity.Id))
+            .Modified(entry => entry.IsModified(order => order.Status)
+                ? new OrderStatusChanged(
+                    entry.Entity.Id,
+                    entry.Original(order => order.Status),
+                    entry.Current(order => order.Status))
+                : null)
+            .Deleted(entry =>
+            [
+                new OrderDeleted(entry.Entity.Id),
+                new OrderAuditRecorded(entry.Entity.Id, "deleted")
+            ]));
+});
+```
+
+`Added`, `Modified`, and `Deleted` each have single-event and collection overloads. Return `null` from the single-event overload or `[]` from the collection overload when the change should not emit an event. Factories run synchronously before EF sends database commands, and exceptions abort `SaveChanges`.
+
+Outbox payloads must use values that are stable before `SaveChanges`. Client-generated identifiers work naturally. Database-generated keys and other store-generated values are not available to the atomic capture callback.
+
+Read explicitly through `IOutboxReader`, or register independently checkpointed at-least-once subscriptions and the optional daemon:
+
+```csharp
+services.AddOutboxSubscription<PublishOrderEvents>();
+services.AddEntityOutboxDaemon<AppDbContext>();
+
+public sealed class PublishOrderEvents : IOutboxSubscription
+{
+    public Task Handle(IOutboxEvent @event, CancellationToken ct)
+    {
+        // Publish idempotently; use event.Id as the deduplication key.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Each outbox subscription has its own checkpoint, retry state, and distributed lock. One failed destination does not block another. Successfully consumed rows are retained for audit and replay; `IOutboxReader.CleanupAsync` deletes only through the slowest persisted subscription checkpoint. Stream subscriptions and entity-outbox subscriptions are separate logs and have no combined ordering.
+
+Add migrations for the `OutboxMessages` and `OutboxSubscriptions` tables after enabling the feature.
+
 ## Inline projection contract
 
 Inline projections run inside the same `DbContext` scope and `SaveChanges` transaction that appends events. If an inline projection throws, the append is rolled back with it.

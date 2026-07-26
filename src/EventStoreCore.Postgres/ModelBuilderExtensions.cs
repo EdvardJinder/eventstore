@@ -30,6 +30,28 @@ public static class ModelBuilderExtensions
             entity.Property(e => e.Data)
                 .HasColumnType("jsonb");
         });
+
+    }
+
+    /// <summary>
+    /// Configures only the standalone EF entity-outbox schema using Postgres column types.
+    /// </summary>
+    /// <param name="modelBuilder">The model builder.</param>
+    public static void UseEntityOutbox(this ModelBuilder modelBuilder)
+    {
+        global::EventStoreCore.ModelBuilderExtensions.ConfigureEntityOutboxModel(modelBuilder);
+        ConfigureOutboxProviderTypes(modelBuilder);
+    }
+
+    private static void ConfigureOutboxProviderTypes(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DbOutboxMessage>(entity =>
+        {
+            entity.Property(message => message.Data)
+                .HasColumnType("jsonb");
+            entity.Property(message => message.SourceEntityKey)
+                .HasColumnType("jsonb");
+        });
     }
 }
 
