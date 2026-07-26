@@ -82,7 +82,7 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
         var registry = _serviceProvider.GetService<EventTypeRegistry>();
         var serializer = _serviceProvider.GetService<IEventStoreSerializer>()
             ?? new SystemTextJsonEventStoreSerializer();
-        var handledEvents = new List<DbEvent>();
+        var checkpointedEvents = new List<DbEvent>();
 
         foreach (var stream in streams)
         {
@@ -98,6 +98,12 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
 
             foreach (var entry in dbEventEntries)
             {
+                if (!_options.MatchesPersisted(entry.Entity))
+                {
+                    checkpointedEvents.Add(entry.Entity);
+                    continue;
+                }
+
                 IEvent resolved;
                 try
                 {
@@ -105,11 +111,13 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
                 }
                 catch (EventMaterializationException) when (_options.ShouldIgnoreUnknown)
                 {
+                    checkpointedEvents.Add(entry.Entity);
                     continue;
                 }
 
                 if (!_options.IsHandled(resolved.EventType))
                 {
+                    checkpointedEvents.Add(entry.Entity);
                     continue;
                 }
 
@@ -145,14 +153,14 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
                     await TProjection.Evolve(snaphost, item.Event, projectionContext, cancellationToken);
                 }
 
-                handledEvents.Add(item.Entry.Entity);
+                checkpointedEvents.Add(item.Entry.Entity);
             }
         }
 
-        if (handledEvents.Count > 0)
+        if (checkpointedEvents.Count > 0)
         {
             var pending = PendingEvents.GetOrCreateValue(db);
-            pending.AddRange(handledEvents);
+            pending.AddRange(checkpointedEvents);
         }
 
         return result;
@@ -320,4 +328,3 @@ internal sealed class ProjectionContext(DbContext dbContext, IServiceProvider se
     /// </summary>
     public object? ProviderState => DbContext;
 }
-

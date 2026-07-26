@@ -373,26 +373,34 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
         var startedAt = _timeProvider.GetTimestamp();
         using var activity = EventStoreDaemonDiagnostics.StartBatch(projection.Name, "projection");
-        var events = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
-            .Where(e => e.Sequence > status.Position)
-            .OrderBy(e => e.Sequence)
-            .Take(_options.BatchSize)
-            .ToListAsync(ct);
+        var unprocessedEvents = ApplyCheckpointScope(dbContext.Events, checkpointScope)
+            .Where(e => e.Sequence > status.Position);
+        var headSequence = await unprocessedEvents
+            .MaxAsync(e => (long?)e.Sequence, ct);
 
-
-        if (events.Count == 0)
+        if (!headSequence.HasValue)
         {
             _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
             return false;
         }
 
+        var events = await projection.Options
+            .ApplyPersistedFilters(unprocessedEvents)
+            .Where(e => e.Sequence <= headSequence.Value)
+            .OrderBy(e => e.Sequence)
+            .Take(_options.BatchSize)
+            .ToListAsync(ct);
+
         var registry = _serviceProvider.GetService<EventTypeRegistry>();
         var serializer = _serviceProvider.GetService<IEventStoreSerializer>()
             ?? new SystemTextJsonEventStoreSerializer();
 
-        _logger.LogDebug(
-            "Processing batch of {Count} events for projection {Projection} starting from sequence {Sequence}",
-            events.Count, projection.Name, events[0].Sequence);
+        if (events.Count > 0)
+        {
+            _logger.LogDebug(
+                "Processing batch of {Count} events for projection {Projection} starting from sequence {Sequence}",
+                events.Count, projection.Name, events[0].Sequence);
+        }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
 
@@ -443,6 +451,12 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 status.LastProcessedAt = _timeProvider.GetUtcNow();
             }
 
+            if (events.Count < _options.BatchSize)
+            {
+                status.Position = headSequence.Value;
+            }
+
+            status.LastProcessedAt = _timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 

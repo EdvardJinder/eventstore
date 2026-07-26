@@ -118,6 +118,10 @@ EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.Han
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.HandlesAll
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.Ignores``1
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.IgnoreUnknown
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.IncludeLogicalEventType(System.String)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.IncludeStream(System.Guid)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.IncludeStreamType(System.String)
+EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.IncludeTenant(System.Guid)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IProjectionOptions.Name(System.String)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IState.Apply(EventStoreCore.Abstractions.IEvent)
 EventStoreCore.Abstractions|M:EventStoreCore.Abstractions.IStream.Append(System.Collections.Generic.IEnumerable{System.Object})
@@ -692,6 +696,10 @@ EventStoreCore|M:EventStoreCore.ProjectionOptions.Handles``1(System.Func{EventSt
 EventStoreCore|M:EventStoreCore.ProjectionOptions.HandlesAll
 EventStoreCore|M:EventStoreCore.ProjectionOptions.Ignores``1
 EventStoreCore|M:EventStoreCore.ProjectionOptions.IgnoreUnknown
+EventStoreCore|M:EventStoreCore.ProjectionOptions.IncludeLogicalEventType(System.String)
+EventStoreCore|M:EventStoreCore.ProjectionOptions.IncludeStream(System.Guid)
+EventStoreCore|M:EventStoreCore.ProjectionOptions.IncludeStreamType(System.String)
+EventStoreCore|M:EventStoreCore.ProjectionOptions.IncludeTenant(System.Guid)
 EventStoreCore|M:EventStoreCore.ProjectionOptions.Name(System.String)
 EventStoreCore|M:EventStoreCore.SnapshotBuilderExtensions.UseSnapshots(EventStoreCore.IEventStoreBuilder,System.Action{EventStoreCore.ISnapshotBuilder})
 EventStoreCore|M:EventStoreCore.SubscriptionDaemon`1.#ctor(Microsoft.Extensions.Logging.ILogger{EventStoreCore.SubscriptionDaemon{`0}},System.IServiceProvider,Medallion.Threading.IDistributedLockProvider,Microsoft.Extensions.Options.IOptions{EventStoreCore.SubscriptionOptions},System.TimeProvider)

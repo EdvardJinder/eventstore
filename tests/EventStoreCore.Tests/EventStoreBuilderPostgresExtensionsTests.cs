@@ -15,6 +15,10 @@ public class EventStoreBuilderPostgresExtensionsTests
     {
         public bool HandlesAllCalled { get; private set; }
         public void Name(string name) { }
+        public void IncludeLogicalEventType(string logicalEventType) { }
+        public void IncludeStreamType(string streamType) { }
+        public void IncludeStream(Guid streamId) { }
+        public void IncludeTenant(Guid tenantId) { }
         public void Handles<T>() where T : class => HandlesAllCalled = true;
         public void HandlesAll() => HandlesAllCalled = true;
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;
