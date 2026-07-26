@@ -12,7 +12,7 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-	  <Description>CloudEvents subscription mapping for EventStoreCore.</Description>
+	  <Description>CloudEvents mapping for EventStoreCore stream and entity-outbox subscriptions.</Description>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>

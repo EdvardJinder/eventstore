@@ -115,6 +115,28 @@ public sealed class PublishOrderEvents : IOutboxSubscription
 }
 ```
 
+Transport packages provide adapters over the same outbox subscription pipeline. For example:
+
+```csharp
+services.AddMassTransitOutboxSubscription(options =>
+{
+    options.AddEvent<OrderCreated, OrderCreatedMessage>(e =>
+        new OrderCreatedMessage(e.Data.OrderId, e.Id));
+});
+
+services.AddEventGridOutboxSubscription(options =>
+{
+    options.MapEvent<OrderCreated>(
+        "com.example.order.created",
+        "urn:example:orders",
+        e => e.SourceEntityKey);
+});
+```
+
+The CloudEvents package also exposes `AddCloudEventOutboxSubscription<TPublisher>` for custom
+`ICloudEventSubscription` publishers. Adapter mappings receive `IOutboxEvent<T>`, including the
+stable outbox ID, tenant, sequence, source-entity metadata, and change kind.
+
 Each outbox subscription has its own checkpoint, retry state, and distributed lock. One failed destination does not block another. Successfully consumed rows are retained for audit and replay; `IOutboxReader.CleanupAsync` deletes only through the slowest persisted subscription checkpoint. Stream subscriptions and entity-outbox subscriptions are separate logs and have no combined ordering.
 
 Add migrations for the `OutboxMessages` and `OutboxSubscriptions` tables after enabling the feature.

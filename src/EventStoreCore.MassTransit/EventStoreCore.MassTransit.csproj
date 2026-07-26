@@ -12,7 +12,7 @@
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-		<Description>MassTransit publisher integration for EventStoreCore subscriptions.</Description>
+		<Description>MassTransit publisher integration for EventStoreCore stream and entity-outbox subscriptions.</Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 
 	</PropertyGroup>
