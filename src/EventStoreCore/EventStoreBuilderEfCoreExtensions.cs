@@ -3,6 +3,7 @@ using EventStoreCore.Scheduling;
 using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EventStoreCore;
 
@@ -51,6 +52,8 @@ public static class EventStoreBuilderEfCoreExtensions
         var efBuilder = new EfCoreEventEventStoreBuilder<TDbContext>(builder.Services);
 
         builder.Services.AddSingleton<ISchedulerEventApplicationStore, EfCoreSchedulerEventApplicationStore<TDbContext>>();
+        builder.Services.TryAddScoped<IEventLogReader>(serviceProvider =>
+            new DbContextEventLogReader(serviceProvider.GetRequiredService<TDbContext>()));
 
         efBuilder.Services.AddDbContext<TDbContext>((sp, options) =>
         {

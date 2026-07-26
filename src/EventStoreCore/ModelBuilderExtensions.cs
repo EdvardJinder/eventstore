@@ -98,6 +98,15 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => e.TenantId);
 
+            entity.HasIndex(e => e.Sequence)
+                .IsUnique();
+
+            entity.HasIndex(e => new { e.TenantId, e.Sequence });
+
+            entity.HasIndex(e => new { e.StreamType, e.Sequence });
+
+            entity.HasIndex(e => new { e.TypeName, e.Sequence });
+
             entity.HasIndex(e => new { e.TenantId, e.StreamId, e.StreamType });
 
             entity.HasIndex(e => new { e.TenantId, e.StreamType, e.Type });

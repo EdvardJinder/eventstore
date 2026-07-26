@@ -27,6 +27,7 @@ public sealed class PublicApiVisibilityContractTests
     [InlineData(typeof(DbProjectionStatus))]
     [InlineData(typeof(DbSubscription))]
     [InlineData(typeof(DbContextEventStore))]
+    [InlineData(typeof(DbContextEventLogReader))]
     [InlineData(typeof(DbContextStream))]
     public void Persistence_and_ef_implementation_types_are_not_public(Type type)
     {
