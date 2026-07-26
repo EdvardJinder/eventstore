@@ -3,31 +3,20 @@ using EventStoreCore.Abstractions;
 namespace EventStoreCore;
 
 
-/// <summary>
-/// Configuration for projection event handling.
-/// </summary>
-public sealed class ProjectionOptions : IProjectionOptions
+internal sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
     private readonly HashSet<Type> _ignoredEventTypes = new();
     private bool HandlesAllEvents = true;
     private bool _ignoreUnknown;
-    private int _version = 1;
 
-    /// <summary>
-    /// Gets the configured version for this projection.
-    /// </summary>
-    internal int ProjectionVersion => _version;
+    internal string? LogicalName { get; private set; }
 
-    /// <summary>
-    /// Sets the version of the projection. When the version changes,
-    /// the projection daemon can automatically trigger a rebuild.
-    /// </summary>
-    /// <param name="version">The version number. Increment to trigger rebuild.</param>
-    public void Version(int version)
+    /// <inheritdoc />
+    public void Name(string name)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(version);
-        _version = version;
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        LogicalName = name;
     }
 
     /// <summary>
@@ -72,12 +61,7 @@ public sealed class ProjectionOptions : IProjectionOptions
     /// </summary>
     internal bool ShouldIgnoreUnknown => _ignoreUnknown || !HandlesAllEvents;
 
-    /// <summary>
-    /// Checks whether the projection handles the specified event type.
-    /// </summary>
-    /// <param name="eventType">The CLR event type.</param>
-    /// <returns>True when the event type is handled.</returns>
-    public bool IsHandeled(Type eventType)
+    internal bool IsHandled(Type eventType)
     {
         if (_ignoredEventTypes.Contains(eventType))
         {

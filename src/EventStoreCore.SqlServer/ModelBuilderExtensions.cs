@@ -20,6 +20,9 @@ public static class ModelBuilderExtensions
         {
             entity.Property(e => e.Data)
                 .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.Headers)
+                .HasColumnType("nvarchar(max)");
         });
 
         modelBuilder.Entity<DbSnapshot>(entity =>

@@ -374,13 +374,39 @@ var stream = await eventStore.FetchForReadingAsync(docId);
 
 ### Migration steps for existing databases
 
-1. Add a `StreamType` column (NOT NULL, default empty string) to both the `Streams` and `Events` tables.
-2. Update the primary key on `Streams` from `Id` to `(Id, StreamType)`.
-3. Update the primary key on `Events` from `(StreamId, Version)` to `(StreamId, StreamType, Version)`.
-4. Update the foreign key relationship between `Events` and `Streams` to include `StreamType`.
-5. Update indexes to include `StreamType` where appropriate.
+The complete persisted stream identity is `(Id, StreamType, TenantId)`. Do not
+apply the stream-type migration using only the stream ID and type in a
+multi-tenant store.
+
+1. Add `StreamType` (NOT NULL, default empty string) and, if it is not already present, `TenantId` (NOT NULL, default `Guid.Empty`) to both the `Streams` and `Events` tables.
+2. Backfill both columns before changing constraints.
+3. Update the primary key on `Streams` to `(Id, StreamType, TenantId)`.
+4. Update the primary key on `Events` to `(StreamId, StreamType, TenantId, Version)`.
+5. Update the foreign key relationship between `Events` and `Streams` to include both `StreamType` and `TenantId`.
+6. Update lookup and ordering indexes to include the complete identity where appropriate.
 
 **Note**: Changing primary keys in existing databases requires careful migration planning. Consider the impact on your application and data before applying these changes.
+
+## Provider setup and ownership
+
+PostgreSQL and SQL Server applications own their `DbContext`, connection,
+transactions, and EF Core migrations. Configure the model with the selected
+provider package's `UseEventStore()` extension, then register the same context
+with `ExistingDbContext<TDbContext>()`. The provider packages only configure the
+EventStoreCore model; they do not create or migrate a separate database.
+
+- PostgreSQL stores event and snapshot JSON in `jsonb`.
+- SQL Server stores event and snapshot JSON in `nvarchar(max)`.
+- Both providers use `(Id, StreamType, TenantId)` as stream identity and enforce
+  event versions within that identity.
+- `EventId` values are generated GUIDs with a uniqueness constraint. Treat them
+  as stable deduplication keys, not chronological or sequential values.
+- Inline projections share the caller's EF Core transaction. Subscriptions and
+  eventual projections are at-least-once.
+- Daemon locks and provider-specific database migrations remain
+  application-owned.
+
+See the package READMEs for provider-specific setup and limitations.
 
 ## Optimistic concurrency
 

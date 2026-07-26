@@ -11,6 +11,12 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+	  <Description>PostgreSQL EF Core persistence configuration for EventStoreCore.</Description>
+	  <PackageTags>eventstore event-sourcing efcore postgresql npgsql</PackageTags>
+	  <PackageProjectUrl>https://github.com/EdvardJinder/eventstore</PackageProjectUrl>
+	  <RepositoryUrl>https://github.com/EdvardJinder/eventstore</RepositoryUrl>
+	  <RepositoryType>git</RepositoryType>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
 
@@ -25,6 +31,8 @@
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
   </ItemGroup>
 
-
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

@@ -37,4 +37,16 @@ public interface IEventTypeBuilder<TEvent>
     IEventTypeBuilder<TEvent> AddUpcaster(
         string fromEventTypeName,
         Func<JsonObject, TEvent> upcaster);
+
+    /// <summary>
+    /// Adds one deterministic step in the schema-version chain for this logical event type.
+    /// </summary>
+    /// <param name="fromSchemaVersion">The inclusive source schema version.</param>
+    /// <param name="toSchemaVersion">The target schema version produced by the upcaster.</param>
+    /// <param name="upcaster">Transforms the stored representation without transport-specific concepts.</param>
+    /// <returns>The builder for chaining.</returns>
+    IEventTypeBuilder<TEvent> AddUpcaster(
+        int fromSchemaVersion,
+        int toSchemaVersion,
+        Func<string, string> upcaster);
 }

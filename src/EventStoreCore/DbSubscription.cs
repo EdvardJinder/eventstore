@@ -2,10 +2,7 @@ namespace EventStoreCore;
 
 using EventStoreCore.Abstractions;
 
-/// <summary>
-/// Represents persisted subscription progress and operational state.
-/// </summary>
-public sealed class DbSubscription
+internal sealed class DbSubscription
 {
     /// <summary>
     /// The subscription's assembly-qualified type name.

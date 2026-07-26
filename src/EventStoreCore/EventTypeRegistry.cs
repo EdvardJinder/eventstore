@@ -3,14 +3,17 @@ namespace EventStoreCore;
 internal sealed class EventTypeRegistry
 {
     private readonly Dictionary<Type, string> _nameByType = new();
+    private readonly Dictionary<Type, int> _schemaVersionByType = new();
     private readonly Dictionary<string, Type> _typeByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _canonicalNameByAlias = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, EventUpcasterRegistration> _upcasterByName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<(Type EventType, int FromVersion), EventSchemaUpcasterRegistration>
+        _schemaUpcasterByVersion = new();
     private readonly Dictionary<string, string> _nameByAqn = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _nameByFullName = new(StringComparer.Ordinal);
 
     internal EventTypeRegistry(IEnumerable<EventTypeRegistration> registrations)
-        : this(registrations, [], [])
+        : this(registrations, [], [], [])
     {
     }
 
@@ -18,10 +21,19 @@ internal sealed class EventTypeRegistry
         IEnumerable<EventTypeRegistration> registrations,
         IEnumerable<EventTypeAliasRegistration> aliases,
         IEnumerable<EventUpcasterRegistration> upcasters)
+        : this(registrations, aliases, upcasters, [])
+    {
+    }
+
+    internal EventTypeRegistry(
+        IEnumerable<EventTypeRegistration> registrations,
+        IEnumerable<EventTypeAliasRegistration> aliases,
+        IEnumerable<EventUpcasterRegistration> upcasters,
+        IEnumerable<EventSchemaUpcasterRegistration> schemaUpcasters)
     {
         foreach (var registration in registrations)
         {
-            Register(registration.EventType, registration.EventTypeName);
+            Register(registration.EventType, registration.EventTypeName, registration.SchemaVersion);
         }
 
         foreach (var alias in aliases)
@@ -32,6 +44,11 @@ internal sealed class EventTypeRegistry
         foreach (var upcaster in upcasters)
         {
             RegisterUpcaster(upcaster);
+        }
+
+        foreach (var upcaster in schemaUpcasters)
+        {
+            RegisterSchemaUpcaster(upcaster);
         }
     }
 
@@ -48,7 +65,11 @@ internal sealed class EventTypeRegistry
         return _typeByName.TryGetValue(typeName, out eventType!);
     }
 
-    internal bool TryResolveMaterializedEvent(DbEvent dbEvent, out Type eventType, out object? data)
+    internal bool TryResolveMaterializedEvent(
+        DbEvent dbEvent,
+        EventStoreCore.Abstractions.IEventStoreSerializer serializer,
+        out Type eventType,
+        out object? data)
     {
         eventType = null!;
         data = null;
@@ -63,7 +84,7 @@ internal sealed class EventTypeRegistry
         if (_upcasterByName.TryGetValue(eventTypeName, out var upcaster))
         {
             eventType = upcaster.EventType;
-            data = upcaster.Upcast(dbEvent, eventType);
+            data = upcaster.Upcast(dbEvent, eventType, serializer);
             if (data is null)
             {
                 throw new EventMaterializationException(
@@ -77,11 +98,13 @@ internal sealed class EventTypeRegistry
         if (_canonicalNameByAlias.TryGetValue(eventTypeName, out var canonicalName))
         {
             eventType = _typeByName[canonicalName];
+            data = UpcastSchema(dbEvent, eventType, serializer);
             return true;
         }
 
         if (_typeByName.TryGetValue(eventTypeName, out eventType!))
         {
+            data = UpcastSchema(dbEvent, eventType, serializer);
             return true;
         }
 
@@ -162,7 +185,12 @@ internal sealed class EventTypeRegistry
         return EventTypeNameHelper.ToSnakeCase(eventType);
     }
 
-    private void Register(Type eventType, string eventTypeName)
+    internal int ResolveSchemaVersion(Type eventType)
+        => _schemaVersionByType.TryGetValue(eventType, out var schemaVersion)
+            ? schemaVersion
+            : 1;
+
+    private void Register(Type eventType, string eventTypeName, int schemaVersion)
     {
         if (eventType is null)
         {
@@ -175,6 +203,10 @@ internal sealed class EventTypeRegistry
         }
 
         eventTypeName = eventTypeName.Trim();
+        if (schemaVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(schemaVersion), "Schema version must be greater than zero.");
+        }
 
         if (_nameByType.TryGetValue(eventType, out var existingName))
         {
@@ -194,6 +226,7 @@ internal sealed class EventTypeRegistry
         }
 
         _nameByType[eventType] = eventTypeName;
+        _schemaVersionByType[eventType] = schemaVersion;
         _typeByName[eventTypeName] = eventType;
 
         if (!string.IsNullOrWhiteSpace(eventType.AssemblyQualifiedName))
@@ -270,6 +303,75 @@ internal sealed class EventTypeRegistry
         _upcasterByName[fromEventTypeName] = upcaster;
     }
 
+    private void RegisterSchemaUpcaster(EventSchemaUpcasterRegistration upcaster)
+    {
+        if (!_schemaVersionByType.TryGetValue(upcaster.EventType, out var currentVersion))
+        {
+            throw new InvalidOperationException(
+                $"Event type '{upcaster.EventType.FullName ?? upcaster.EventType.Name}' must be registered before schema upcasters are added.");
+        }
+
+        if (upcaster.ToVersion > currentVersion)
+        {
+            throw new InvalidOperationException(
+                $"Schema upcaster target version {upcaster.ToVersion} exceeds current schema version {currentVersion}.");
+        }
+
+        if (!_schemaUpcasterByVersion.TryAdd((upcaster.EventType, upcaster.FromVersion), upcaster))
+        {
+            throw new InvalidOperationException(
+                $"A schema upcaster from version {upcaster.FromVersion} is already registered for '{upcaster.EventType.FullName ?? upcaster.EventType.Name}'.");
+        }
+    }
+
+    private object? UpcastSchema(
+        DbEvent dbEvent,
+        Type eventType,
+        EventStoreCore.Abstractions.IEventStoreSerializer serializer)
+    {
+        var storedVersion = dbEvent.SchemaVersion <= 0 ? 1 : dbEvent.SchemaVersion;
+        var currentVersion = ResolveSchemaVersion(eventType);
+        if (storedVersion == currentVersion)
+        {
+            return Event.Deserialize(dbEvent, eventType, serializer);
+        }
+
+        if (storedVersion > currentVersion)
+        {
+            throw new EventMaterializationException(
+                $"Stored schema version {storedVersion} is newer than configured version {currentVersion} for '{dbEvent.TypeName}'.",
+                dbEvent);
+        }
+
+        var data = dbEvent.Data;
+        var version = storedVersion;
+        while (version < currentVersion)
+        {
+            if (!_schemaUpcasterByVersion.TryGetValue((eventType, version), out var upcaster))
+            {
+                throw new EventMaterializationException(
+                    $"No schema upcaster is registered from version {version} to {currentVersion} for '{dbEvent.TypeName}'.",
+                    dbEvent);
+            }
+
+            try
+            {
+                data = upcaster.Upcast(data)
+                    ?? throw new InvalidOperationException("Schema upcaster returned null.");
+                version = upcaster.ToVersion;
+            }
+            catch (Exception ex) when (ex is not EventMaterializationException)
+            {
+                throw new EventMaterializationException(
+                    $"Could not upcast '{dbEvent.TypeName}' from schema version {upcaster.FromVersion} to {upcaster.ToVersion}.",
+                    dbEvent,
+                    ex);
+            }
+        }
+
+        return Event.Deserialize(dbEvent, eventType, serializer, data);
+    }
+
     private static string NormalizeEventTypeName(string eventTypeName)
     {
         if (string.IsNullOrWhiteSpace(eventTypeName))
@@ -281,11 +383,20 @@ internal sealed class EventTypeRegistry
     }
 }
 
-internal sealed record EventTypeRegistration(Type EventType, string EventTypeName);
+internal sealed record EventTypeRegistration(
+    Type EventType,
+    string EventTypeName,
+    int SchemaVersion = 1);
 
 internal sealed record EventTypeAliasRegistration(Type EventType, string EventTypeName);
 
 internal sealed record EventUpcasterRegistration(
     Type EventType,
     string FromEventTypeName,
-    Func<DbEvent, Type, object> Upcast);
+    Func<DbEvent, Type, EventStoreCore.Abstractions.IEventStoreSerializer, object> Upcast);
+
+internal sealed record EventSchemaUpcasterRegistration(
+    Type EventType,
+    int FromVersion,
+    int ToVersion,
+    Func<string, string> Upcast);

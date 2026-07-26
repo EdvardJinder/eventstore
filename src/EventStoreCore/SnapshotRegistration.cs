@@ -1,18 +1,24 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 
 namespace EventStoreCore;
 
 internal abstract class SnapshotRegistration
 {
-    protected SnapshotRegistration(string streamType, Type stateType, int interval)
+    protected SnapshotRegistration(
+        string streamType,
+        Type stateType,
+        int interval,
+        int schemaVersion,
+        SnapshotSchemaMismatchBehavior mismatchBehavior)
     {
         StreamType = streamType;
         StateType = stateType;
         StateTypeName = stateType.FullName
             ?? throw new InvalidOperationException($"State type '{stateType.Name}' does not have a full name.");
         Interval = interval;
+        SchemaVersion = schemaVersion;
+        MismatchBehavior = mismatchBehavior;
     }
 
     public string StreamType { get; }
@@ -23,21 +29,35 @@ internal abstract class SnapshotRegistration
 
     public int Interval { get; }
 
+    public int SchemaVersion { get; }
+
+    public SnapshotSchemaMismatchBehavior MismatchBehavior { get; }
+
     public bool ShouldSnapshot(long previousVersion, long currentVersion)
         => previousVersion / Interval < currentVersion / Interval;
 
-    public abstract void SaveSnapshot(DbContext db, DbStream stream);
+    public abstract void SaveSnapshot(
+        DbContext db,
+        DbStream stream,
+        IEventStoreSerializer serializer);
 }
 
 internal sealed class SnapshotRegistration<TState> : SnapshotRegistration
     where TState : IState, new()
 {
-    public SnapshotRegistration(string streamType, int interval)
-        : base(streamType, typeof(TState), interval)
+    public SnapshotRegistration(
+        string streamType,
+        int interval,
+        int schemaVersion,
+        SnapshotSchemaMismatchBehavior mismatchBehavior)
+        : base(streamType, typeof(TState), interval, schemaVersion, mismatchBehavior)
     {
     }
 
-    public override void SaveSnapshot(DbContext db, DbStream stream)
+    public override void SaveSnapshot(
+        DbContext db,
+        DbStream stream,
+        IEventStoreSerializer serializer)
     {
         var snapshot = db.Set<DbSnapshot>().Find(
             stream.Id,
@@ -45,8 +65,17 @@ internal sealed class SnapshotRegistration<TState> : SnapshotRegistration
             stream.TenantId,
             StateTypeName);
 
-        var snapshotVersion = snapshot?.Version ?? 0;
-        var snapshotState = snapshot is null ? default : Deserialize(snapshot);
+        var schemaMatches = snapshot is null || snapshot.SchemaVersion == SchemaVersion;
+        if (!schemaMatches && MismatchBehavior == SnapshotSchemaMismatchBehavior.Throw)
+        {
+            throw new InvalidOperationException(
+                $"Snapshot schema version {snapshot!.SchemaVersion} for '{StateTypeName}' does not match configured version {SchemaVersion}.");
+        }
+
+        var snapshotVersion = schemaMatches ? snapshot?.Version ?? 0 : 0;
+        var snapshotState = snapshot is not null && schemaMatches
+            ? Deserialize(snapshot, serializer)
+            : default;
         var tailStream = new DbStream
         {
             Id = stream.Id,
@@ -75,10 +104,13 @@ internal sealed class SnapshotRegistration<TState> : SnapshotRegistration
         }
 
         snapshot.Version = stream.CurrentVersion;
-        snapshot.Data = JsonSerializer.Serialize(state, typeof(TState));
+        snapshot.Data = serializer.Serialize(state, typeof(TState));
+        snapshot.SchemaVersion = SchemaVersion;
         snapshot.Timestamp = DateTimeOffset.UtcNow;
     }
 
-    internal static TState? Deserialize(DbSnapshot snapshot)
-        => JsonSerializer.Deserialize<TState>(snapshot.Data);
+    internal static TState? Deserialize(
+        DbSnapshot snapshot,
+        IEventStoreSerializer serializer)
+        => (TState?)serializer.Deserialize(snapshot.Data, typeof(TState));
 }

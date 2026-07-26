@@ -24,20 +24,11 @@ public sealed class EventMaterializationException : Exception
     {
     }
 
-    /// <summary>
-    /// Creates a new instance with persisted event context.
-    /// </summary>
-    /// <param name="message">The exception message.</param>
-    /// <param name="dbEvent">The persisted event record.</param>
-    /// <param name="innerException">The inner exception.</param>
-    public EventMaterializationException(string message, DbEvent? dbEvent, Exception? innerException = null)
+    internal EventMaterializationException(string message, DbEvent? dbEvent, Exception? innerException = null)
         : base(message, innerException)
     {
         DbEvent = dbEvent;
     }
 
-    /// <summary>
-    /// The persisted event record associated with the error.
-    /// </summary>
-    public DbEvent? DbEvent { get; }
+    internal DbEvent? DbEvent { get; }
 }

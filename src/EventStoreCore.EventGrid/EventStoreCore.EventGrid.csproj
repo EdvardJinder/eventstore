@@ -12,6 +12,8 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+	  <Description>Azure Event Grid publisher integration for EventStoreCore.</Description>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
 
@@ -29,5 +31,9 @@
 		<InternalsVisibleTo Include="EventStoreCore.Testing" />
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />
 	</ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

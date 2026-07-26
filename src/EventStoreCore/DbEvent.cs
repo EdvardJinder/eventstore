@@ -1,9 +1,6 @@
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents a persisted event record.
-/// </summary>
-public sealed class DbEvent
+internal sealed class DbEvent
 {
     /// <summary>
     /// The tenant identifier for multi-tenant scenarios.
@@ -54,5 +51,30 @@ public sealed class DbEvent
     /// The event identifier.
     /// </summary>
     public Guid EventId { get; set; }
+
+    /// <summary>
+    /// The correlation identifier supplied by the application.
+    /// </summary>
+    public Guid? CorrelationId { get; set; }
+
+    /// <summary>
+    /// The causation identifier supplied by the application.
+    /// </summary>
+    public Guid? CausationId { get; set; }
+
+    /// <summary>
+    /// The application-defined actor identity.
+    /// </summary>
+    public string? Actor { get; set; }
+
+    /// <summary>
+    /// Serialized application-defined headers.
+    /// </summary>
+    public string Headers { get; set; } = "{}";
+
+    /// <summary>
+    /// The serialized payload schema version.
+    /// </summary>
+    public int SchemaVersion { get; set; } = 1;
 }
 

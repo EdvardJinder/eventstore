@@ -33,6 +33,20 @@ jobs:
       - name: Test
         run: dotnet test EventStoreCore.slnx --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
 
+      - name: Pack
+        run: dotnet pack EventStoreCore.slnx --configuration Release --no-build /p:PackageVersion=1.0.0-ci.${{ github.run_number }} /p:ContinuousIntegrationBuild=true /p:GeneratePackageOnBuild=false -o artifacts/packages
+
+      - name: Validate package contents
+        shell: pwsh
+        run: ./eng/Validate-Packages.ps1 artifacts/packages
+
+      - name: Build packed-package consumer
+        run: >
+          dotnet build tests/EventStoreCore.PackageSmoke/EventStoreCore.PackageSmoke.csproj
+          --configuration Release
+          /p:PackageVersion=1.0.0-ci.${{ github.run_number }}
+          /p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

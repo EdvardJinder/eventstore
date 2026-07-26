@@ -21,7 +21,7 @@ public static class EventStoreBuilderEventTypeExtensions
 
         var eventType = typeof(TEvent);
         var typeName = EventTypeNameHelper.ToSnakeCase(eventType);
-        RegisterEvent(builder, eventType, typeName);
+        RegisterEvent(builder, eventType, typeName, 1);
         return builder;
     }
 
@@ -61,17 +61,54 @@ public static class EventStoreBuilderEventTypeExtensions
             throw new ArgumentException("Event type name cannot be empty.", nameof(eventTypeName));
         }
 
-        RegisterEvent(builder, typeof(TEvent), eventTypeName.Trim());
+        RegisterEvent(builder, typeof(TEvent), eventTypeName.Trim(), 1);
         configure?.Invoke(new EventTypeBuilder<TEvent>(builder.Services));
         return builder;
     }
 
-    private static void RegisterEvent(IEventStoreBuilder builder, Type eventType, string eventTypeName)
+    /// <summary>
+    /// Registers the current schema version for a logical event type and configures its compatibility chain.
+    /// </summary>
+    /// <typeparam name="TEvent">The current event payload type.</typeparam>
+    /// <param name="builder">The event-store builder.</param>
+    /// <param name="eventTypeName">The stable logical event type name.</param>
+    /// <param name="schemaVersion">The schema version written for new events.</param>
+    /// <param name="configure">Configures aliases and deterministic upcaster steps.</param>
+    /// <returns>The builder for chaining.</returns>
+    public static IEventStoreBuilder AddEvent<TEvent>(
+        this IEventStoreBuilder builder,
+        string eventTypeName,
+        int schemaVersion,
+        Action<IEventTypeBuilder<TEvent>>? configure = null)
+        where TEvent : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        if (string.IsNullOrWhiteSpace(eventTypeName))
+        {
+            throw new ArgumentException("Event type name cannot be empty.", nameof(eventTypeName));
+        }
+
+        if (schemaVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(schemaVersion));
+        }
+
+        RegisterEvent(builder, typeof(TEvent), eventTypeName.Trim(), schemaVersion);
+        configure?.Invoke(new EventTypeBuilder<TEvent>(builder.Services));
+        return builder;
+    }
+
+    private static void RegisterEvent(
+        IEventStoreBuilder builder,
+        Type eventType,
+        string eventTypeName,
+        int schemaVersion)
     {
         builder.Services.TryAddSingleton(sp => new EventTypeRegistry(
             sp.GetServices<EventTypeRegistration>(),
             sp.GetServices<EventTypeAliasRegistration>(),
-            sp.GetServices<EventUpcasterRegistration>()));
-        builder.Services.AddSingleton(new EventTypeRegistration(eventType, eventTypeName));
+            sp.GetServices<EventUpcasterRegistration>(),
+            sp.GetServices<EventSchemaUpcasterRegistration>()));
+        builder.Services.AddSingleton(new EventTypeRegistration(eventType, eventTypeName, schemaVersion));
     }
 }

@@ -15,10 +15,7 @@ public static class DbContextExtensions
         /// </summary>
         public IEventStore Streams => dbContext.Streams();
 
-        /// <summary>
-        /// Gets the <see cref="DbEvent" /> DbSet for the current context.
-        /// </summary>
-        public DbSet<DbEvent> Events => dbContext.Events();
+        internal DbSet<DbEvent> Events => dbContext.Events();
 
     }
     private static IEventStore Streams(this DbContext dbContext)

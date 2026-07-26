@@ -16,11 +16,13 @@ namespace EventStoreCore;
 /// <param name="serviceProvider">Service provider for resolving scoped services.</param>
 /// <param name="distributedLockProvider">Distributed lock provider.</param>
 /// <param name="options">Subscription options.</param>
+/// <param name="timeProvider">Optional clock used for delays and operational timestamps.</param>
 public sealed class SubscriptionDaemon<TDbContext>(
     ILogger<SubscriptionDaemon<TDbContext>> logger,
     IServiceProvider serviceProvider,
     IDistributedLockProvider distributedLockProvider,
-    IOptions<SubscriptionOptions> options
+    IOptions<SubscriptionOptions> options,
+    TimeProvider? timeProvider = null
     )
     : BackgroundService
     where TDbContext : DbContext
@@ -29,18 +31,20 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly IDistributedLockProvider _distributedLockProvider = distributedLockProvider;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var subscriptions = _serviceProvider.GetServices<ISubscription>();
+        var registrations = GetRegistrations();
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var subscription in subscriptions)
+            foreach (var registration in registrations)
             {
+                var subscription = registration.Subscription;
                 var subscriptionType = subscription.GetType();
-                var name = subscriptionType.AssemblyQualifiedName!;
+                var name = registration.Name;
 
                 try
                 {
@@ -48,14 +52,14 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
                     if (checkpointScopes.Count == 0)
                     {
-                        await Task.Delay(_options.PollingInterval, stoppingToken);
+                        await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
                         continue;
                     }
 
                     var processedAny = false;
                     foreach (var checkpointScope in checkpointScopes)
                     {
-                        var acquired = await AcquireSubscriptionLockAsync(subscriptionType, checkpointScope, stoppingToken);
+                        var acquired = await AcquireSubscriptionLockAsync(name, checkpointScope, stoppingToken);
 
                         if (acquired == null)
                         {
@@ -65,7 +69,11 @@ public sealed class SubscriptionDaemon<TDbContext>(
                         await using (acquired)
                         {
                             using var scope = _serviceProvider.CreateScope();
-                            var processedCount = await ProcessNextBatchAsync(scope, subscription, stoppingToken, checkpointScope);
+                            var processedCount = await ProcessNextBatchAsync(
+                                scope,
+                                registration,
+                                stoppingToken,
+                                checkpointScope);
                             processedAny = processedAny || processedCount > 0;
                         }
 
@@ -80,7 +88,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                         logger.LogInformation(
                             "No new events to process for subscription {Subscription}",
                             name);
-                        await Task.Delay(_options.PollingInterval, stoppingToken);
+                        await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -96,7 +104,8 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
                     try
                     {
-                        await Task.Delay(_options.RetryDelay, stoppingToken);
+                        EventStoreDaemonDiagnostics.Retry(name, "subscription");
+                        await Task.Delay(_options.RetryDelay, _timeProvider, stoppingToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -117,7 +126,13 @@ public sealed class SubscriptionDaemon<TDbContext>(
     /// <returns>True when an event was processed.</returns>
     internal async Task<bool> ProcessNextEventAsync(IServiceScope scope, ISubscription subscriptionImpl, CancellationToken stoppingToken)
     {
-        return await ProcessNextBatchAsync(scope, subscriptionImpl, stoppingToken, CheckpointScopeKey.Global, 1, 1) > 0;
+        return await ProcessNextBatchAsync(
+            scope,
+            CreateDefaultRegistration(subscriptionImpl),
+            stoppingToken,
+            CheckpointScopeKey.Global,
+            1,
+            1) > 0;
     }
 
     /// <summary>
@@ -131,7 +146,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
     {
         return ProcessNextBatchAsync(
             scope,
-            subscriptionImpl,
+            CreateDefaultRegistration(subscriptionImpl),
             stoppingToken,
             CheckpointScopeKey.Global,
             Math.Max(1, _options.BatchSize),
@@ -146,7 +161,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
     {
         return ProcessNextBatchAsync(
             scope,
-            subscriptionImpl,
+            CreateDefaultRegistration(subscriptionImpl),
             stoppingToken,
             CheckpointScopeKey.Tenant(tenantId),
             Math.Max(1, _options.BatchSize),
@@ -155,13 +170,13 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
     private Task<int> ProcessNextBatchAsync(
         IServiceScope scope,
-        ISubscription subscriptionImpl,
+        SubscriptionRegistration registration,
         CancellationToken stoppingToken,
         CheckpointScopeKey checkpointScope)
     {
         return ProcessNextBatchAsync(
             scope,
-            subscriptionImpl,
+            registration,
             stoppingToken,
             checkpointScope,
             Math.Max(1, _options.BatchSize),
@@ -170,14 +185,17 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
     private async Task<int> ProcessNextBatchAsync(
         IServiceScope scope,
-        ISubscription subscriptionImpl,
+        SubscriptionRegistration registration,
         CancellationToken stoppingToken,
         CheckpointScopeKey checkpointScope,
         int batchSize,
         int checkpointFrequency)
     {
-        var name = subscriptionImpl.GetType().AssemblyQualifiedName!;
+        var subscriptionImpl = registration.Subscription;
+        var name = registration.Name;
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
+        var startedAt = _timeProvider.GetTimestamp();
+        using var activity = EventStoreDaemonDiagnostics.StartBatch(name, "subscription");
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
 
@@ -232,10 +250,13 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     await transaction.CommitAsync(stoppingToken);
                 }
 
+                _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(name, "subscription");
                 return 0;
             }
 
             var registry = scope.ServiceProvider.GetService<EventTypeRegistry>();
+            var serializer = scope.ServiceProvider.GetService<IEventStoreSerializer>()
+                ?? new SystemTextJsonEventStoreSerializer();
             var processedCount = 0;
             long? lastProcessedSequence = null;
 
@@ -249,8 +270,44 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
                 try
                 {
-                    subscription.LastAttemptAt = DateTimeOffset.UtcNow;
-                    var @event = nextEvent.ToEvent(registry);
+                    subscription.LastAttemptAt = _timeProvider.GetUtcNow();
+
+                    if (!registration.Options.MatchesPersisted(nextEvent))
+                    {
+                        processedCount++;
+                        lastProcessedSequence = nextEvent.Sequence;
+                        subscription.Sequence = nextEvent.Sequence;
+                        MarkProcessed(subscription);
+                        continue;
+                    }
+
+                    IEvent @event;
+                    try
+                    {
+                        @event = nextEvent.ToEvent(registry, serializer);
+                    }
+                    catch (EventMaterializationException ex)
+                    {
+                        if (await HandleUnknownEventAsync(registration, subscription, nextEvent, ex, stoppingToken))
+                        {
+                            processedCount++;
+                            lastProcessedSequence = nextEvent.Sequence;
+                            subscription.Sequence = nextEvent.Sequence;
+                            MarkProcessed(subscription);
+                            continue;
+                        }
+
+                        throw;
+                    }
+
+                    if (!registration.Options.MatchesMaterialized(@event.EventType))
+                    {
+                        processedCount++;
+                        lastProcessedSequence = nextEvent.Sequence;
+                        subscription.Sequence = nextEvent.Sequence;
+                        MarkProcessed(subscription);
+                        continue;
+                    }
 
                     var isScopedSubscription = subscriptionImpl is IScopedSubscription;
                     if (subscriptionImpl is IScopedSubscription scoped)
@@ -269,11 +326,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     processedCount++;
                     lastProcessedSequence = nextEvent.Sequence;
 
-                    subscription.State = SubscriptionState.Active;
-                    subscription.LastError = null;
-                    subscription.AttemptCount = 0;
-                    subscription.NextAttemptAt = null;
-                    subscription.FailedEventSequence = null;
+                    MarkProcessed(subscription);
 
                     var shouldCheckpoint = processedCount % checkpointFrequency == 0;
                     if (shouldCheckpoint)
@@ -333,6 +386,21 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     }
 
                     PersistFailure(subscription, nextEvent.Sequence, ex);
+                    if (registration.Options.UnknownEventPolicy == UnknownEventPolicy.Quarantine &&
+                        ex is EventMaterializationException)
+                    {
+                        subscription.State = SubscriptionState.DeadLettered;
+                        subscription.NextAttemptAt = null;
+                    }
+                    await PublishFaultAsync(
+                        name,
+                        "subscription",
+                        subscription.State.ToString(),
+                        checkpointScope,
+                        nextEvent.Sequence,
+                        ex,
+                        stoppingToken);
+                    EventStoreDaemonDiagnostics.Failed(name, "subscription");
                     await dbContext.SaveChangesAsync(stoppingToken);
                     await transaction.CommitAsync(stoppingToken);
                     return processedCount;
@@ -352,6 +420,15 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 processedCount,
                 lastProcessedSequence,
                 name);
+            var checkpointLag = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+                .LongCountAsync(e => e.Sequence > subscription.Sequence, stoppingToken);
+            EventStoreDaemonDiagnostics.BatchCompleted(
+                name,
+                "subscription",
+                processedCount,
+                _timeProvider.GetElapsedTime(startedAt),
+                checkpointLag);
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(name, "subscription");
 
             return processedCount;
         }
@@ -373,7 +450,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
     internal async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync<TSub>(CancellationToken cancellationToken)
         where TSub : ISubscription
     {
-        return await AcquireSubscriptionLockAsync(typeof(TSub), CheckpointScopeKey.Global, cancellationToken);
+        return await AcquireSubscriptionLockAsync(
+            typeof(TSub).AssemblyQualifiedName!,
+            CheckpointScopeKey.Global,
+            cancellationToken);
     }
 
     /// <summary>
@@ -384,15 +464,17 @@ public sealed class SubscriptionDaemon<TDbContext>(
     /// <returns>The lock handle or null when lock acquisition fails.</returns>
     private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(Type subType, CancellationToken cancellationToken)
     {
-        return await AcquireSubscriptionLockAsync(subType, CheckpointScopeKey.Global, cancellationToken);
+        return await AcquireSubscriptionLockAsync(
+            subType.AssemblyQualifiedName!,
+            CheckpointScopeKey.Global,
+            cancellationToken);
     }
 
     private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(
-        Type subType,
+        string subscriptionName,
         CheckpointScopeKey checkpointScope,
         CancellationToken cancellationToken)
     {
-        var subscriptionName = subType.AssemblyQualifiedName!;
         var lockName = $"{subscriptionName}{checkpointScope.LockSuffix}";
 
 
@@ -407,6 +489,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
             if (acquired == null)
             {
+                EventStoreDaemonDiagnostics.LockContended(subscriptionName, "subscription");
                 logger.LogInformation(
                     "Could not acquire lock for subscription {Subscription} in checkpoint scope {Scope}, another instance may be running.",
                     subscriptionName,
@@ -422,6 +505,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
         }
         catch (TimeoutException)
         {
+            EventStoreDaemonDiagnostics.LockContended(subscriptionName, "subscription");
             logger.LogInformation(
                     "Could not acquire lock for subscription {Subscription} in checkpoint scope {Scope}, another instance may be running.",
                     subscriptionName,
@@ -487,7 +571,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
 
     private bool CanProcess(DbSubscription subscription, string name)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
 
         switch (subscription.State)
         {
@@ -523,12 +607,134 @@ public sealed class SubscriptionDaemon<TDbContext>(
         Exception exception)
     {
         subscription.AttemptCount += 1;
-        subscription.LastAttemptAt ??= DateTimeOffset.UtcNow;
+        subscription.LastAttemptAt ??= _timeProvider.GetUtcNow();
         subscription.NextAttemptAt = subscription.LastAttemptAt.Value.Add(_options.RetryDelay);
         subscription.LastError = exception.ToString();
         subscription.FailedEventSequence = failedSequence;
         subscription.State = subscription.AttemptCount >= _options.MaxRetryAttempts
             ? SubscriptionState.DeadLettered
             : SubscriptionState.Faulted;
+    }
+
+    private static void MarkProcessed(DbSubscription subscription)
+    {
+        subscription.State = SubscriptionState.Active;
+        subscription.LastError = null;
+        subscription.AttemptCount = 0;
+        subscription.NextAttemptAt = null;
+        subscription.FailedEventSequence = null;
+    }
+
+    private IReadOnlyList<SubscriptionRegistration> GetRegistrations()
+    {
+        var registrations = _serviceProvider.GetServices<SubscriptionRegistration>().ToList();
+        var registeredTypes = registrations
+            .Select(registration => registration.Subscription.GetType())
+            .ToHashSet();
+
+        registrations.AddRange(
+            _serviceProvider.GetServices<ISubscription>()
+                .Where(subscription => !registeredTypes.Contains(subscription.GetType()))
+                .Select(CreateDefaultRegistration));
+
+        var duplicate = registrations
+            .GroupBy(registration => registration.Name, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                $"Multiple subscriptions use the logical name '{duplicate.Key}'. Logical names must be unique.");
+        }
+
+        return registrations;
+    }
+
+    private static SubscriptionRegistration CreateDefaultRegistration(ISubscription subscription) =>
+        new()
+        {
+            Name = subscription.GetType().AssemblyQualifiedName!,
+            Subscription = subscription,
+            Options = new SubscriptionRegistrationOptions()
+        };
+
+    private async ValueTask<bool> HandleUnknownEventAsync(
+        SubscriptionRegistration registration,
+        DbSubscription subscription,
+        DbEvent dbEvent,
+        EventMaterializationException exception,
+        CancellationToken ct)
+    {
+        switch (registration.Options.UnknownEventPolicy)
+        {
+            case UnknownEventPolicy.Skip:
+                logger.LogWarning(
+                    exception,
+                    "Skipping unknown event at sequence {Sequence} for subscription {Subscription}",
+                    dbEvent.Sequence,
+                    registration.Name);
+                return true;
+
+            case UnknownEventPolicy.Custom:
+                var handler = registration.Options.UnknownEventHandler
+                    ?? throw new InvalidOperationException(
+                        "UnknownEventPolicy.Custom requires a handler configured with HandleUnknown.");
+                await handler(
+                    new UnknownEventContext(
+                        dbEvent.EventId,
+                        dbEvent.StreamId,
+                        dbEvent.StreamType,
+                        dbEvent.TenantId,
+                        dbEvent.Sequence,
+                        dbEvent.Version,
+                        dbEvent.TypeName,
+                        dbEvent.Type,
+                        dbEvent.Data,
+                        dbEvent.Timestamp,
+                        exception),
+                    ct);
+                return true;
+
+            case UnknownEventPolicy.Fail:
+            case UnknownEventPolicy.Quarantine:
+            default:
+                return false;
+        }
+    }
+
+    private async ValueTask PublishFaultAsync(
+        string identity,
+        string kind,
+        string state,
+        CheckpointScopeKey checkpointScope,
+        long? failedSequence,
+        Exception exception,
+        CancellationToken ct)
+    {
+        var notification = new DaemonFaultNotification(
+            identity,
+            kind,
+            state,
+            checkpointScope.Scope,
+            checkpointScope.IsTenant ? checkpointScope.TenantId : null,
+            failedSequence,
+            exception,
+            _timeProvider.GetUtcNow());
+
+        foreach (var observer in _serviceProvider.GetServices<IDaemonFaultObserver>())
+        {
+            try
+            {
+                await observer.OnFaultAsync(notification, ct);
+            }
+            catch (Exception observerException)
+            {
+                logger.LogWarning(
+                    observerException,
+                    "Daemon fault observer {ObserverType} failed for subscription {Subscription}",
+                    observer.GetType(),
+                    identity);
+            }
+        }
+        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(identity, kind, exception);
     }
 }

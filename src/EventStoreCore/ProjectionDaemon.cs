@@ -21,6 +21,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     private readonly IDistributedLockProvider _distributedLockProvider;
     private readonly ProjectionDaemonOptions _options;
     private readonly IReadOnlyList<ProjectionRegistration> _projections;
+    private readonly TimeProvider _timeProvider;
 
     internal IReadOnlyList<ProjectionRegistration> Projections => _projections;
 
@@ -31,20 +32,31 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// <param name="serviceProvider">Service provider for resolving scoped services.</param>
     /// <param name="distributedLockProvider">Distributed lock provider.</param>
     /// <param name="options">Daemon options.</param>
+    /// <param name="timeProvider">Optional clock used for delays and operational timestamps.</param>
     public ProjectionDaemon(
         ILogger<ProjectionDaemon<TDbContext>> logger,
         IServiceProvider serviceProvider,
         IDistributedLockProvider distributedLockProvider,
-        IOptions<ProjectionDaemonOptions> options)
+        IOptions<ProjectionDaemonOptions> options,
+        TimeProvider? timeProvider = null)
 
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _distributedLockProvider = distributedLockProvider;
         _options = options.Value;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _projections = serviceProvider.GetServices<ProjectionRegistration>()
             .Where(projection => projection.Mode == ProjectionMode.Eventual)
             .ToList();
+        var duplicate = _projections
+            .GroupBy(projection => projection.Name, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                $"Multiple projections use the logical name '{duplicate.Key}'. Logical names must be unique.");
+        }
     }
 
     /// <inheritdoc />
@@ -71,13 +83,14 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing projection {Projection}", projection.Name);
-                    await Task.Delay(_options.RetryDelay, stoppingToken);
+                    EventStoreDaemonDiagnostics.Retry(projection.Name, "projection");
+                    await Task.Delay(_options.RetryDelay, _timeProvider, stoppingToken);
                 }
             }
 
             if (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(_options.PollingInterval, stoppingToken);
+                await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
             }
         }
     }
@@ -130,6 +143,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
             if (lockHandle == null)
             {
+                EventStoreDaemonDiagnostics.LockContended(projection.Name, "projection");
                 _logger.LogDebug("Could not acquire lock for projection {Projection}, another instance may be processing", projection.Name);
                 return;
             }
@@ -204,6 +218,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
     /// <param name="projection">The projection registration.</param>
+    /// <param name="checkpointScope">The global or tenant checkpoint scope.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The projection status record.</returns>
     private async Task<DbProjectionStatus> GetOrCreateStatusAsync(
@@ -261,7 +276,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         status.State = ProjectionState.Rebuilding;
         status.Position = 0;
         status.Version = projection.Version;
-        status.RebuildStartedAt = DateTimeOffset.UtcNow;
+        status.RebuildStartedAt = _timeProvider.GetUtcNow();
         status.RebuildCompletedAt = null;
         status.LastError = null;
         status.FailedEventSequence = null;
@@ -304,7 +319,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         {
             // Rebuild complete
             status.State = ProjectionState.Active;
-            status.RebuildCompletedAt = DateTimeOffset.UtcNow;
+            status.RebuildCompletedAt = _timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(ct);
 
             _logger.LogInformation(
@@ -343,6 +358,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// Processes a batch of events for a projection.
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="services">The application service provider for the active daemon scope.</param>
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -355,6 +371,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         CancellationToken ct)
     {
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+        var startedAt = _timeProvider.GetTimestamp();
+        using var activity = EventStoreDaemonDiagnostics.StartBatch(projection.Name, "projection");
         var events = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
             .Where(e => e.Sequence > status.Position)
             .OrderBy(e => e.Sequence)
@@ -364,10 +382,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
         if (events.Count == 0)
         {
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
             return false;
         }
 
         var registry = _serviceProvider.GetService<EventTypeRegistry>();
+        var serializer = _serviceProvider.GetService<IEventStoreSerializer>()
+            ?? new SystemTextJsonEventStoreSerializer();
 
         _logger.LogDebug(
             "Processing batch of {Count} events for projection {Projection} starting from sequence {Sequence}",
@@ -382,7 +403,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 IEvent @event;
                 try
                 {
-                    @event = dbEvent.ToEvent(registry);
+                    @event = dbEvent.ToEvent(registry, serializer);
                 }
                 catch (EventMaterializationException ex) when (projection.Options.ShouldIgnoreUnknown)
                 {
@@ -395,7 +416,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 }
 
                 // Check if this event type is handled by the projection
-                if (!projection.Options.IsHandeled(@event.EventType))
+                if (!projection.Options.IsHandled(@event.EventType))
                 {
                     status.Position = dbEvent.Sequence;
                     continue;
@@ -419,7 +440,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 }
 
                 status.Position = dbEvent.Sequence;
-                status.LastProcessedAt = DateTimeOffset.UtcNow;
+                status.LastProcessedAt = _timeProvider.GetUtcNow();
             }
 
             await dbContext.SaveChangesAsync(ct);
@@ -432,9 +453,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             // Optional batch delay for throttling
             if (_options.BatchDelay > TimeSpan.Zero)
             {
-                await Task.Delay(_options.BatchDelay, ct);
+                await Task.Delay(_options.BatchDelay, _timeProvider, ct);
             }
 
+            var checkpointLag = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
+                .LongCountAsync(e => e.Sequence > status.Position, ct);
+            EventStoreDaemonDiagnostics.BatchCompleted(
+                projection.Name,
+                "projection",
+                events.Count,
+                _timeProvider.GetElapsedTime(startedAt),
+                checkpointLag);
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
             return true;
         }
         catch (Exception ex)
@@ -462,6 +492,12 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             errorStatus.LastError = ex.ToString();
             errorStatus.FailedEventSequence = status.FailedEventSequence;
             await errorContext.SaveChangesAsync(ct);
+            EventStoreDaemonDiagnostics.Failed(projection.Name, "projection");
+            await PublishFaultAsync(
+                projection.Name,
+                errorStatus,
+                ex,
+                ct);
 
             throw;
         }
@@ -509,5 +545,39 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         return checkpointScope.IsTenant
             ? query.Where(e => e.TenantId == checkpointScope.TenantId)
             : query;
+    }
+
+    private async ValueTask PublishFaultAsync(
+        string identity,
+        DbProjectionStatus status,
+        Exception exception,
+        CancellationToken ct)
+    {
+        var notification = new DaemonFaultNotification(
+            identity,
+            "projection",
+            status.State.ToString(),
+            status.CheckpointScope,
+            status.CheckpointScope == CheckpointScope.Tenant ? status.TenantId : null,
+            status.FailedEventSequence,
+            exception,
+            _timeProvider.GetUtcNow());
+
+        foreach (var observer in _serviceProvider.GetServices<IDaemonFaultObserver>())
+        {
+            try
+            {
+                await observer.OnFaultAsync(notification, ct);
+            }
+            catch (Exception observerException)
+            {
+                _logger.LogWarning(
+                    observerException,
+                    "Daemon fault observer {ObserverType} failed for projection {Projection}",
+                    observer.GetType(),
+                    identity);
+            }
+        }
+        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(identity, "projection", exception);
     }
 }

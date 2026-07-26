@@ -3,26 +3,20 @@ using EventStoreCore.Abstractions;
 namespace EventStoreCore;
 
 /// <summary>
-/// Default event implementation backed by a <see cref="DbEvent" /> record.
+/// Default event implementation materialized by EventStoreCore.
 /// </summary>
 public class Event : IEvent
 {
-    /// <summary>
-    /// Creates an event wrapper for a persisted event.
-    /// </summary>
-    /// <param name="dbEvent">The database event record.</param>
-    public Event(DbEvent dbEvent)
+    internal Event(DbEvent dbEvent)
         : this(dbEvent, EventTypeResolver.ResolveEventType(dbEvent, null))
     {
     }
 
-    /// <summary>
-    /// Creates an event wrapper for a persisted event using a resolved CLR type.
-    /// </summary>
-    /// <param name="dbEvent">The database event record.</param>
-    /// <param name="eventType">The resolved CLR type.</param>
-    public Event(DbEvent dbEvent, Type eventType)
-        : this(dbEvent, eventType, Deserialize(dbEvent, eventType))
+    internal Event(DbEvent dbEvent, Type eventType)
+        : this(dbEvent, eventType, Deserialize(
+            dbEvent,
+            eventType,
+            new SystemTextJsonEventStoreSerializer()))
     {
     }
 
@@ -38,6 +32,21 @@ public class Event : IEvent
         TenantId = dbEvent.TenantId;
         EventType = eventType;
         Data = data;
+        TypeName = dbEvent.TypeName;
+        StreamType = dbEvent.StreamType;
+        Sequence = dbEvent.Sequence;
+        Metadata = new EventMetadata(
+            dbEvent.CorrelationId,
+            dbEvent.CausationId,
+            dbEvent.Actor,
+            EventHeaders.Deserialize(dbEvent.Headers),
+            dbEvent.SchemaVersion <= 0 ? 1 : dbEvent.SchemaVersion,
+            dbEvent.TypeName,
+            dbEvent.StreamType,
+            dbEvent.TenantId,
+            dbEvent.StreamId,
+            dbEvent.Version,
+            dbEvent.Sequence);
     }
 
     /// <summary>
@@ -75,11 +84,27 @@ public class Event : IEvent
     /// </summary>
     public Type EventType { get; }
 
-    private static object Deserialize(DbEvent dbEvent, Type eventType)
+    /// <inheritdoc />
+    public string TypeName { get; }
+
+    /// <inheritdoc />
+    public string StreamType { get; }
+
+    /// <inheritdoc />
+    public long Sequence { get; }
+
+    /// <inheritdoc />
+    public EventMetadata Metadata { get; }
+
+    internal static object Deserialize(
+        DbEvent dbEvent,
+        Type eventType,
+        IEventStoreSerializer serializer,
+        string? serializedData = null)
     {
         try
         {
-            var data = System.Text.Json.JsonSerializer.Deserialize(dbEvent.Data, eventType);
+            var data = serializer.Deserialize(serializedData ?? dbEvent.Data, eventType);
             if (data is null)
             {
                 throw new EventMaterializationException(
@@ -104,26 +129,17 @@ public class Event : IEvent
 }
 
 /// <summary>
-/// Strongly-typed event implementation backed by a <see cref="DbEvent" /> record.
+/// Strongly-typed event implementation materialized by EventStoreCore.
 /// </summary>
 /// <typeparam name="T">The event payload type.</typeparam>
 public class Event<T> : Event, IEvent<T> where T : class
 {
-    /// <summary>
-    /// Creates a typed event wrapper for a persisted event.
-    /// </summary>
-    /// <param name="dbEvent">The database event record.</param>
-    public Event(DbEvent dbEvent) : base(dbEvent)
+    internal Event(DbEvent dbEvent) : base(dbEvent)
     {
         Data = CastData(dbEvent, base.Data);
     }
 
-    /// <summary>
-    /// Creates a typed event wrapper using a resolved CLR type.
-    /// </summary>
-    /// <param name="dbEvent">The database event record.</param>
-    /// <param name="eventType">The resolved CLR type.</param>
-    public Event(DbEvent dbEvent, Type eventType) : base(dbEvent, eventType)
+    internal Event(DbEvent dbEvent, Type eventType) : base(dbEvent, eventType)
     {
         Data = CastData(dbEvent, base.Data);
     }

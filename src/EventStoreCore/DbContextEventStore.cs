@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 
 namespace EventStoreCore;
 
@@ -10,9 +11,150 @@ namespace EventStoreCore;
 /// EF Core-backed implementation of <see cref="IEventStore" />.
 /// </summary>
 /// <param name="db">The DbContext used for persistence.</param>
-public sealed class DbContextEventStore(DbContext db) : IEventStore
+internal sealed class DbContextEventStore(DbContext db) : IEventStore
 {
     private readonly SnapshotRegistry? _snapshots = ResolveSnapshotRegistry(db);
+    private readonly EventTypeRegistry? _eventTypes = ResolveService<EventTypeRegistry>(db);
+    private readonly IEventStoreSerializer _serializer =
+        ResolveService<IEventStoreSerializer>(db) ?? new SystemTextJsonEventStoreSerializer();
+
+    /// <inheritdoc />
+    public async Task<StreamPage?> ReadPageAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        StreamReadOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamType);
+        ArgumentNullException.ThrowIfNull(options);
+        ValidateReadOptions(options);
+
+        var capturedVersion = await db.Set<DbStream>()
+            .AsNoTracking()
+            .Where(x => x.Id == streamId && x.StreamType == streamType && x.TenantId == tenantId)
+            .Select(x => (long?)x.CurrentVersion)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!capturedVersion.HasValue)
+        {
+            return null;
+        }
+
+        var fromVersion = options.FromVersion
+            ?? (options.Direction == StreamReadDirection.Forward ? 1 : capturedVersion.Value);
+        var toVersion = options.ToVersion
+            ?? (options.Direction == StreamReadDirection.Forward ? capturedVersion.Value : 1);
+        var empty = fromVersion < 1
+            || toVersion < 1
+            || (options.Direction == StreamReadDirection.Forward
+                ? fromVersion > toVersion
+                : fromVersion < toVersion);
+        if (empty)
+        {
+            return new StreamPage([], capturedVersion.Value, null);
+        }
+
+        IQueryable<DbEvent> query = db.Set<DbEvent>()
+            .AsNoTracking()
+            .Where(x => x.StreamId == streamId
+                && x.StreamType == streamType
+                && x.TenantId == tenantId
+                && x.Version <= capturedVersion.Value);
+        query = options.Direction == StreamReadDirection.Forward
+            ? query
+                .Where(x => x.Version >= fromVersion && x.Version <= toVersion)
+                .OrderBy(x => x.Version)
+            : query
+                .Where(x => x.Version <= fromVersion && x.Version >= toVersion)
+                .OrderByDescending(x => x.Version);
+
+        var records = await query.Take(options.MaxCount + 1).ToListAsync(cancellationToken);
+        var hasMore = records.Count > options.MaxCount;
+        if (hasMore)
+        {
+            records.RemoveAt(records.Count - 1);
+        }
+
+        var events = records.Select(x => x.ToEvent(_eventTypes, _serializer)).ToArray();
+        var nextVersion = hasMore && records.Count > 0
+            ? records[^1].Version + (options.Direction == StreamReadDirection.Forward ? 1 : -1)
+            : (long?)null;
+        return new StreamPage(events, capturedVersion.Value, nextVersion);
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<IEvent> ReadAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        StreamReadOptions options,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ValidateReadOptions(options);
+        var pageOptions = new StreamReadOptions
+        {
+            Direction = options.Direction,
+            FromVersion = options.FromVersion,
+            ToVersion = options.ToVersion,
+            MaxCount = options.MaxCount
+        };
+        long? capturedVersion = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await ReadPageAsync(
+                streamType,
+                streamId,
+                tenantId,
+                pageOptions,
+                cancellationToken);
+            if (page is null)
+            {
+                yield break;
+            }
+
+            capturedVersion ??= page.StreamVersion;
+            foreach (var @event in page.Events)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return @event;
+            }
+
+            if (!page.NextVersion.HasValue)
+            {
+                yield break;
+            }
+
+            pageOptions.FromVersion = page.NextVersion;
+            if (options.Direction == StreamReadDirection.Forward)
+            {
+                pageOptions.ToVersion = Math.Min(
+                    options.ToVersion ?? capturedVersion.Value,
+                    capturedVersion.Value);
+            }
+        }
+    }
+
+    private static void ValidateReadOptions(StreamReadOptions options)
+    {
+        if (options.MaxCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.MaxCount,
+                "Page size must be greater than zero.");
+        }
+
+        if (!Enum.IsDefined(options.Direction))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.Direction,
+                "Read direction is not supported.");
+        }
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyStream> AppendAsync(
@@ -483,9 +625,30 @@ public sealed class DbContextEventStore(DbContext db) : IEventStore
         }
     }
 
-    private static T? DeserializeSnapshot<T>(DbSnapshot? snapshot)
+    private static TService? ResolveService<TService>(DbContext db)
+        where TService : class
+    {
+        try
+        {
+            var options = db.GetService<IDbContextOptions>();
+            var appProvider = options.Extensions
+                .OfType<CoreOptionsExtension>()
+                .FirstOrDefault()
+                ?.ApplicationServiceProvider;
+
+            return appProvider?.GetService<TService>();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private T? DeserializeSnapshot<T>(DbSnapshot? snapshot)
         where T : IState, new()
-        => snapshot is null ? default : JsonSerializer.Deserialize<T>(snapshot.Data);
+        => snapshot is null
+            ? default
+            : (T?)_serializer.Deserialize(snapshot.Data, typeof(T));
 
 }
 

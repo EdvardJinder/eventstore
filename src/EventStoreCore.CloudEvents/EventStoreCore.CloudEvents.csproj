@@ -12,6 +12,8 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+	  <Description>CloudEvents subscription mapping for EventStoreCore.</Description>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
 
@@ -24,5 +26,9 @@
 		<InternalsVisibleTo Include="EventStoreCore.Testing" />
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />
 	</ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

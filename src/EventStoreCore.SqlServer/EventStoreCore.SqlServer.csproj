@@ -11,6 +11,12 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>SQL Server EF Core persistence configuration for EventStoreCore.</Description>
+    <PackageTags>eventstore event-sourcing efcore sqlserver</PackageTags>
+    <PackageProjectUrl>https://github.com/EdvardJinder/eventstore</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/EdvardJinder/eventstore</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +25,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
