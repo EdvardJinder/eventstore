@@ -45,6 +45,30 @@ internal sealed class ProjectionRegistration
     public required Func<DbContext, IServiceProvider, CancellationToken, Task> ClearAction { get; init; }
 
     /// <summary>
+    /// Action to prepare projection-owned shadow storage.
+    /// </summary>
+    public Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> PrepareRebuildAction { get; init; } =
+        static (_, _, _, _) => throw new NotSupportedException("Shadow rebuild preparation is not configured.");
+
+    /// <summary>
+    /// Action to apply an event to projection-owned shadow storage.
+    /// </summary>
+    public Func<DbContext, IServiceProvider, IEvent, ProjectionRebuild, CancellationToken, Task> EvolveRebuildAction { get; init; } =
+        static (_, _, _, _, _) => throw new NotSupportedException("Shadow rebuild replay is not configured.");
+
+    /// <summary>
+    /// Action to atomically activate projection-owned shadow storage.
+    /// </summary>
+    public Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> ActivateRebuildAction { get; init; } =
+        static (_, _, _, _) => throw new NotSupportedException("Shadow rebuild activation is not configured.");
+
+    /// <summary>
+    /// Action to discard projection-owned shadow storage.
+    /// </summary>
+    public Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> DiscardRebuildAction { get; init; } =
+        static (_, _, _, _) => throw new NotSupportedException("Shadow rebuild cleanup is not configured.");
+
+    /// <summary>
     /// Action to evolve a snapshot with an event via IProjection.Evolve.
     /// </summary>
     public required Func<DbContext, IServiceProvider, object, IEvent, CancellationToken, Task> EvolveAction { get; init; }

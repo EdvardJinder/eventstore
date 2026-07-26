@@ -156,13 +156,16 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             var status = await GetOrCreateStatusAsync(dbContext, projection, checkpointScope, ct);
 
             // Check for version mismatch and trigger rebuild if configured
-            if (_options.AutoRebuildOnVersionChange && status.Version != projection.Version)
+            if (_options.AutoRebuildOnVersionChange &&
+                status.State != ProjectionState.Rebuilding &&
+                status.State != ProjectionState.Activating &&
+                status.Version != projection.Version)
             {
-                if (checkpointScope.IsTenant)
+                if (checkpointScope.IsTenant && !projection.Options.UsesShadowRebuilds)
                 {
                     throw new InvalidOperationException(
-                        "Tenant-scoped projection checkpoints do not support automatic rebuild because projection ClearAsync is not tenant-aware. " +
-                        "Disable AutoRebuildOnVersionChange or run a global projection rebuild.");
+                        $"Projection '{projection.Name}' must configure UseShadowRebuilds() before tenant-scoped automatic rebuilds can run. " +
+                        "ClearAsync is global and cannot safely rebuild one tenant.");
                 }
 
                 _logger.LogInformation(
@@ -189,6 +192,15 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
                 case ProjectionState.Faulted:
                     _logger.LogDebug("Projection {Projection} is faulted, requires manual intervention", projection.Name);
+                    break;
+
+                case ProjectionState.Activating:
+                    await CompleteShadowActivationAsync(
+                        dbContext,
+                        scope.ServiceProvider,
+                        projection,
+                        status,
+                        ct);
                     break;
             }
         }
@@ -255,7 +267,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     }
 
     /// <summary>
-    /// Initiates a projection rebuild by clearing data and resetting status.
+    /// Initiates a projection rebuild by preparing shadow storage or clearing legacy live data,
+    /// then resetting status.
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
     /// <param name="services">The application service provider for the active daemon scope.</param>
@@ -271,30 +284,69 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     {
         _logger.LogInformation("Initiating rebuild for projection {Projection}", projection.Name);
 
+        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
+        ProjectionRebuild? rebuild = null;
+        if (projection.Options.UsesShadowRebuilds)
+        {
+            rebuild = new ProjectionRebuild(
+                Guid.NewGuid(),
+                projection.Version,
+                checkpointScope.Scope,
+                checkpointScope.IsTenant ? checkpointScope.TenantId : null);
+            try
+            {
+                await projection.PrepareRebuildAction(dbContext, services, rebuild, ct);
+                await dbContext.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                try
+                {
+                    await projection.DiscardRebuildAction(
+                        dbContext,
+                        services,
+                        rebuild,
+                        CancellationToken.None);
+                }
+                catch (Exception discardException)
+                {
+                    _logger.LogWarning(
+                        discardException,
+                        "Failed to discard shadow target {RebuildId} after rebuild preparation failed",
+                        rebuild.Id);
+                }
+                throw;
+            }
+        }
 
         // Update status to rebuilding
         status.State = ProjectionState.Rebuilding;
+        status.RebuildPreviousPosition = rebuild is null ? null : status.Position;
         status.Position = 0;
-        status.Version = projection.Version;
         status.RebuildStartedAt = _timeProvider.GetUtcNow();
         status.RebuildCompletedAt = null;
+        status.RebuildId = rebuild?.Id;
         status.LastError = null;
         status.FailedEventSequence = null;
 
         // Get total events for progress tracking
-        var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
         status.TotalEvents = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
             .LongCountAsync(ct);
 
         await dbContext.SaveChangesAsync(ct);
 
-        // Clear projection data
-        _logger.LogInformation("Clearing data for projection {Projection}", projection.Name);
-        await projection.ClearAction(dbContext, services, ct);
-        await dbContext.SaveChangesAsync(ct);
+        if (rebuild is null)
+        {
+            _logger.LogInformation("Clearing live data for legacy projection {Projection}", projection.Name);
+            await projection.ClearAction(dbContext, services, ct);
+            await dbContext.SaveChangesAsync(ct);
+        }
 
-        _logger.LogInformation("Rebuild initiated for projection {Projection}, replaying {Total} events", 
-            projection.Name, status.TotalEvents);
+        _logger.LogInformation(
+            "Rebuild {RebuildId} initiated for projection {Projection}, replaying {Total} events",
+            rebuild?.Id,
+            projection.Name,
+            status.TotalEvents);
     }
 
     /// <summary>
@@ -317,16 +369,50 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
         if (!processed)
         {
-            // Rebuild complete
-            status.State = ProjectionState.Active;
-            status.RebuildCompletedAt = _timeProvider.GetUtcNow();
-            await dbContext.SaveChangesAsync(ct);
+            if (projection.Options.UsesShadowRebuilds)
+            {
+                // Persist this boundary before calling application-owned activation. If activation
+                // succeeds but the final status write fails, it is retried idempotently and cannot
+                // be mistaken for a cancellable target.
+                status.State = ProjectionState.Activating;
+                await dbContext.SaveChangesAsync(ct);
+                await CompleteShadowActivationAsync(dbContext, services, projection, status, ct);
+                return;
+            }
 
-            _logger.LogInformation(
-                "Rebuild completed for projection {Projection} in {Duration}",
-                projection.Name,
-                status.RebuildCompletedAt - status.RebuildStartedAt);
+            await CompleteRebuildAsync(dbContext, projection, status, ct);
         }
+    }
+
+    private async Task CompleteShadowActivationAsync(
+        TDbContext dbContext,
+        IServiceProvider services,
+        ProjectionRegistration projection,
+        DbProjectionStatus status,
+        CancellationToken ct)
+    {
+        var rebuild = CreateRebuild(status, projection);
+        await projection.ActivateRebuildAction(dbContext, services, rebuild, ct);
+        await CompleteRebuildAsync(dbContext, projection, status, ct);
+    }
+
+    private async Task CompleteRebuildAsync(
+        TDbContext dbContext,
+        ProjectionRegistration projection,
+        DbProjectionStatus status,
+        CancellationToken ct)
+    {
+        status.State = ProjectionState.Active;
+        status.Version = projection.Version;
+        status.RebuildCompletedAt = _timeProvider.GetUtcNow();
+        status.RebuildId = null;
+        status.RebuildPreviousPosition = null;
+        await dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Rebuild completed for projection {Projection} in {Duration}",
+            projection.Name,
+            status.RebuildCompletedAt - status.RebuildStartedAt);
     }
 
     /// <summary>
@@ -422,21 +508,34 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                     continue;
                 }
 
-                // Get the key for this event
-                var keySelector = projection.Options.GetKeySelector(@event.EventType);
-                var key = keySelector((IEvent<object>)@event);
-
-                // Get or create the snapshot
-                var snapshot = await projection.GetOrCreateSnapshotAction(dbContext, key, ct);
-                var isNew = dbContext.Entry(snapshot).State == EntityState.Detached;
-
-                // Apply the event
-                await projection.EvolveAction(dbContext, services, snapshot, @event, ct);
-
-                // Add snapshot if it was new
-                if (isNew)
+                if (status.State == ProjectionState.Rebuilding &&
+                    projection.Options.UsesShadowRebuilds)
                 {
-                    projection.AddSnapshotAction(dbContext, snapshot);
+                    await projection.EvolveRebuildAction(
+                        dbContext,
+                        services,
+                        @event,
+                        CreateRebuild(status, projection),
+                        ct);
+                }
+                else
+                {
+                    // Get the key for this event
+                    var keySelector = projection.Options.GetKeySelector(@event.EventType);
+                    var key = keySelector((IEvent<object>)@event);
+
+                    // Get or create the snapshot
+                    var snapshot = await projection.GetOrCreateSnapshotAction(dbContext, key, ct);
+                    var isNew = dbContext.Entry(snapshot).State == EntityState.Detached;
+
+                    // Apply the event
+                    await projection.EvolveAction(dbContext, services, snapshot, @event, ct);
+
+                    // Add snapshot if it was new
+                    if (isNew)
+                    {
+                        projection.AddSnapshotAction(dbContext, snapshot);
+                    }
                 }
 
                 status.Position = dbEvent.Sequence;
@@ -466,6 +565,10 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 checkpointLag);
             _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
             return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -501,6 +604,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
             throw;
         }
+    }
+
+    private static ProjectionRebuild CreateRebuild(
+        DbProjectionStatus status,
+        ProjectionRegistration projection)
+    {
+        return new ProjectionRebuild(
+            status.RebuildId
+                ?? throw new InvalidOperationException("The shadow rebuild identifier is missing. Check the projection status migration."),
+            projection.Version,
+            status.CheckpointScope,
+            status.CheckpointScope == CheckpointScope.Tenant ? status.TenantId : null);
     }
 
     private async Task<IReadOnlyList<CheckpointScopeKey>> GetCheckpointScopesAsync(

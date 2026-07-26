@@ -54,6 +54,32 @@ public interface IEventStoreEndpointsClient
     Task RebuildAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Triggers a tenant-scoped shadow rebuild of the specified projection.
+    /// </summary>
+    /// <param name="name">The projection name.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/projections/{name}/rebuild")]
+    Task RebuildForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancels an active global shadow rebuild.
+    /// </summary>
+    /// <param name="name">The projection name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/projections/{name}/rebuild/cancel")]
+    Task CancelRebuildAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancels an active tenant-scoped shadow rebuild.
+    /// </summary>
+    /// <param name="name">The projection name.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    [Post("/projections/{name}/rebuild/cancel")]
+    Task CancelRebuildForTenantAsync(string name, [Query] Guid tenantId, CancellationToken ct = default);
+
+    /// <summary>
     /// Pauses processing of the specified projection.
     /// </summary>
     /// <param name="name">The projection name.</param>
@@ -395,5 +421,4 @@ public interface IEventStoreEndpointsClient
         [Query] DateTimeOffset? fromTimestamp = null,
         CancellationToken ct = default);
 }
-
 

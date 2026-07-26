@@ -50,11 +50,18 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status404NotFound);
 
         // POST /projections/{name}/rebuild - Trigger rebuild
-        group.MapPost("/projections/{name}/rebuild", async ([FromRoute] string name, [FromServices] IProjectionManager manager, CancellationToken ct) =>
+        group.MapPost("/projections/{name}/rebuild", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
         {
             try
             {
-                await manager.RebuildAsync(name, ct);
+                if (tenantId.HasValue)
+                {
+                    await manager.RebuildAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.RebuildAsync(name, ct);
+                }
                 return Results.Accepted();
             }
             catch (InvalidOperationException ex)
@@ -63,8 +70,33 @@ public static class RouteBuilderExtensions
             }
         })
         .WithName("RebuildProjection")
-        .WithDescription("Triggers a rebuild of the specified projection")
+        .WithDescription("Triggers a global or tenant-scoped rebuild of the specified projection")
         .Produces(StatusCodes.Status202Accepted)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        // POST /projections/{name}/rebuild/cancel - Cancel shadow rebuild
+        group.MapPost("/projections/{name}/rebuild/cancel", async ([FromRoute] string name, [FromServices] IProjectionManager manager, [FromQuery] Guid? tenantId, CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.CancelRebuildAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.CancelRebuildAsync(name, ct);
+                }
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("CancelProjectionRebuild")
+        .WithDescription("Cancels an active shadow rebuild without changing the live read model")
+        .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest);
 
         // POST /projections/{name}/pause - Pause projection

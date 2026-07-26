@@ -222,6 +222,10 @@ internal static class ModelBuilderExtensions
 
             entity.Property(e => e.RebuildCompletedAt);
 
+            entity.Property(e => e.RebuildId);
+
+            entity.Property(e => e.RebuildPreviousPosition);
+
             entity.HasIndex(e => e.State);
 
             entity.HasIndex(e => new { e.CheckpointScope, e.TenantId, e.State });

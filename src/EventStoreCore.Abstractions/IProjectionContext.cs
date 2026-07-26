@@ -16,4 +16,10 @@ public interface IProjectionContext
     /// When projections run inline, this state participates in the same persistence scope as the event append.
     /// </summary>
     object? ProviderState { get; }
+
+    /// <summary>
+    /// Describes the active shadow rebuild when projection code is replaying, preparing,
+    /// activating, or discarding a rebuild target; otherwise <see langword="null"/>.
+    /// </summary>
+    ProjectionRebuild? Rebuild => null;
 }

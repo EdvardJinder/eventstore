@@ -12,6 +12,8 @@ internal sealed class ProjectionOptions : IProjectionOptions
 
     internal string? LogicalName { get; private set; }
 
+    internal bool UsesShadowRebuilds { get; private set; }
+
     /// <inheritdoc />
     public void Name(string name)
     {
@@ -53,6 +55,12 @@ internal sealed class ProjectionOptions : IProjectionOptions
     public void IgnoreUnknown()
     {
         _ignoreUnknown = true;
+    }
+
+    /// <inheritdoc />
+    public void UseShadowRebuilds()
+    {
+        UsesShadowRebuilds = true;
     }
 
     /// <summary>
@@ -100,4 +108,3 @@ internal sealed class ProjectionOptions : IProjectionOptions
         }
     }
 }
-

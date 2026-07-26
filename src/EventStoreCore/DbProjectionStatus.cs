@@ -65,6 +65,16 @@ internal sealed class DbProjectionStatus
     public DateTimeOffset? RebuildCompletedAt { get; set; }
 
     /// <summary>
+    /// Identifier of the active projection-owned shadow target.
+    /// </summary>
+    public Guid? RebuildId { get; set; }
+
+    /// <summary>
+    /// Checkpoint position to restore if an active shadow rebuild is cancelled.
+    /// </summary>
+    public long? RebuildPreviousPosition { get; set; }
+
+    /// <summary>
     /// Converts this entity to a DTO for external consumption.
     /// </summary>
     /// <param name="totalEvents">The current number of events in this checkpoint scope.</param>
@@ -91,7 +101,8 @@ internal sealed class DbProjectionStatus
         )
         {
             CheckpointScope = CheckpointScope,
-            TenantId = CheckpointScope == Abstractions.CheckpointScope.Tenant ? TenantId : null
+            TenantId = CheckpointScope == Abstractions.CheckpointScope.Tenant ? TenantId : null,
+            RebuildId = RebuildId
         };
     }
 }

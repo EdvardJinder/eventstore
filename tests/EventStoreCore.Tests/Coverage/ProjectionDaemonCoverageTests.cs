@@ -36,7 +36,13 @@ public class ProjectionDaemonCoverageTests
         }
     }
 
-    private static ProjectionRegistration BuildProjectionRegistration(int version, ProjectionOptions options)
+    private static ProjectionRegistration BuildProjectionRegistration(
+        int version,
+        ProjectionOptions options,
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task>? prepareRebuild = null,
+        Func<DbContext, IServiceProvider, IEvent, ProjectionRebuild, CancellationToken, Task>? evolveRebuild = null,
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task>? activateRebuild = null,
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task>? discardRebuild = null)
     {
         return new ProjectionRegistration
         {
@@ -55,6 +61,14 @@ public class ProjectionDaemonCoverageTests
                 }
                 await db.SaveChangesAsync(ct);
             },
+            PrepareRebuildAction = prepareRebuild ??
+                ((_, _, _, _) => throw new NotSupportedException()),
+            EvolveRebuildAction = evolveRebuild ??
+                ((_, _, _, _, _) => throw new NotSupportedException()),
+            ActivateRebuildAction = activateRebuild ??
+                ((_, _, _, _) => throw new NotSupportedException()),
+            DiscardRebuildAction = discardRebuild ??
+                ((_, _, _, _) => throw new NotSupportedException()),
             EvolveAction = async (db, sp, snapshot, @event, ct) =>
             {
                 var entity = (ProjectionSnapshot)snapshot;
@@ -171,8 +185,174 @@ public class ProjectionDaemonCoverageTests
 
         Assert.Equal(ProjectionState.Rebuilding, updated.State);
         Assert.Equal(0, updated.Position);
-        Assert.Equal(2, updated.Version);
+        Assert.Equal(1, updated.Version);
         Assert.Equal(0, snapshotCount);
+    }
+
+    [Fact]
+    public async Task ShadowRebuild_ReplaysAndActivatesWithoutClearingLiveSnapshots()
+    {
+        var db = BuildDbContext();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var options = new ProjectionOptions();
+        options.Handles<ProjectionEvent>();
+        options.UseShadowRebuilds();
+        var prepared = new List<ProjectionRebuild>();
+        var replayed = new List<(ProjectionRebuild Rebuild, Guid StreamId)>();
+        var activated = new List<ProjectionRebuild>();
+        var registration = BuildProjectionRegistration(
+            2,
+            options,
+            prepareRebuild: (_, _, rebuild, _) =>
+            {
+                prepared.Add(rebuild);
+                return Task.CompletedTask;
+            },
+            evolveRebuild: (_, _, @event, rebuild, _) =>
+            {
+                replayed.Add((rebuild, @event.StreamId));
+                return Task.CompletedTask;
+            },
+            activateRebuild: (_, _, rebuild, _) =>
+            {
+                activated.Add(rebuild);
+                return Task.CompletedTask;
+            });
+
+        var tenantId = Guid.NewGuid();
+        var streamId = Guid.NewGuid();
+        var liveSnapshot = new ProjectionSnapshot { Id = streamId, Name = "Live" };
+        var status = new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            CheckpointScope = CheckpointScope.Tenant,
+            TenantId = tenantId,
+            Version = 1,
+            State = ProjectionState.Active,
+            Position = 9
+        };
+        db.Add(liveSnapshot);
+        db.Add(status);
+        db.Add(new DbEvent
+        {
+            EventId = Guid.NewGuid(),
+            StreamId = streamId,
+            TenantId = tenantId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Version = 1,
+            Sequence = 10,
+            Type = typeof(ProjectionEvent).AssemblyQualifiedName!,
+            Data = "{\"Name\":\"Shadow\"}"
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var services = new ServiceCollection()
+            .AddSingleton(registration)
+            .AddSingleton(db)
+            .BuildServiceProvider();
+        var daemon = new ProjectionDaemon<ProjectionDbContext>(
+            NullLogger<ProjectionDaemon<ProjectionDbContext>>.Instance,
+            services,
+            new FakeLockProvider(),
+            Options.Create(new ProjectionDaemonOptions
+            {
+                CheckpointScope = CheckpointScope.Tenant
+            }));
+
+        await daemon.InitiateRebuildAsync(
+            db,
+            services,
+            registration,
+            status,
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(prepared);
+        Assert.Equal(tenantId, prepared[0].TenantId);
+        Assert.Equal("Live", liveSnapshot.Name);
+        Assert.Equal(9, status.RebuildPreviousPosition);
+        Assert.Equal(prepared[0].Id, status.RebuildId);
+
+        var processMethod = typeof(ProjectionDaemon<ProjectionDbContext>).GetMethod(
+            "ProcessProjectionAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(processMethod);
+
+        await (Task)processMethod!.Invoke(
+            daemon,
+            new object[] { registration, TestContext.Current.CancellationToken })!;
+        await (Task)processMethod.Invoke(
+            daemon,
+            new object[] { registration, TestContext.Current.CancellationToken })!;
+
+        Assert.Single(replayed);
+        Assert.Equal(streamId, replayed[0].StreamId);
+        Assert.Equal(prepared[0].Id, replayed[0].Rebuild.Id);
+        Assert.Single(activated);
+        Assert.Equal(prepared[0].Id, activated[0].Id);
+        Assert.Equal("Live", liveSnapshot.Name);
+        Assert.Equal(ProjectionState.Active, status.State);
+        Assert.Equal(2, status.Version);
+        Assert.Null(status.RebuildId);
+    }
+
+    [Fact]
+    public async Task CancelShadowRebuild_DiscardsTargetAndRestoresPreviousCheckpoint()
+    {
+        var db = BuildDbContext();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var options = new ProjectionOptions();
+        options.UseShadowRebuilds();
+        var discarded = new List<ProjectionRebuild>();
+        var registration = BuildProjectionRegistration(
+            2,
+            options,
+            discardRebuild: (_, _, rebuild, _) =>
+            {
+                discarded.Add(rebuild);
+                return Task.CompletedTask;
+            });
+        var rebuildId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        db.Add(new DbProjectionStatus
+        {
+            ProjectionName = registration.Name,
+            CheckpointScope = CheckpointScope.Tenant,
+            TenantId = tenantId,
+            Version = 1,
+            State = ProjectionState.Rebuilding,
+            Position = 4,
+            RebuildId = rebuildId,
+            RebuildPreviousPosition = 42
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var services = new ServiceCollection().BuildServiceProvider();
+        var manager = new ProjectionManager<ProjectionDbContext>(
+            db,
+            new FakeLockProvider(),
+            [registration],
+            NullLogger<ProjectionManager<ProjectionDbContext>>.Instance,
+            services,
+            Options.Create(new ProjectionDaemonOptions
+            {
+                CheckpointScope = CheckpointScope.Tenant
+            }));
+
+        await manager.CancelRebuildAsync(
+            registration.Name,
+            tenantId,
+            TestContext.Current.CancellationToken);
+
+        var status = await db.Set<DbProjectionStatus>().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Single(discarded);
+        Assert.Equal(rebuildId, discarded[0].Id);
+        Assert.Equal(tenantId, discarded[0].TenantId);
+        Assert.Equal(ProjectionState.Active, status.State);
+        Assert.Equal(42, status.Position);
+        Assert.Null(status.RebuildId);
+        Assert.Null(status.RebuildPreviousPosition);
     }
 
     [Fact]

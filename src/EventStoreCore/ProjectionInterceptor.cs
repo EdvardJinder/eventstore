@@ -303,7 +303,11 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
 /// </summary>
 /// <param name="dbContext">The EF Core DbContext.</param>
 /// <param name="services">Service provider for resolving dependencies.</param>
-internal sealed class ProjectionContext(DbContext dbContext, IServiceProvider services) : IProjectionContext
+/// <param name="rebuild">Optional active shadow rebuild.</param>
+internal sealed class ProjectionContext(
+    DbContext dbContext,
+    IServiceProvider services,
+    ProjectionRebuild? rebuild = null) : IProjectionContext
 {
     /// <summary>
     /// The EF Core DbContext associated with the projection.
@@ -319,5 +323,7 @@ internal sealed class ProjectionContext(DbContext dbContext, IServiceProvider se
     /// Provider-specific state for the projection.
     /// </summary>
     public object? ProviderState => DbContext;
-}
 
+    /// <inheritdoc />
+    public ProjectionRebuild? Rebuild { get; } = rebuild;
+}

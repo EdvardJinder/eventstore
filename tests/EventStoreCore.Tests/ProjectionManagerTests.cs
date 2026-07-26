@@ -243,7 +243,7 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
     }
 
     [Fact]
-    public async Task RebuildAsync_ResetsTenantScopedCheckpointsAfterClearingProjectionData()
+    public async Task RebuildAsync_RejectsTenantScopedLegacyProjectionWithoutClearingLiveData()
     {
         var provider = BuildServiceProvider(CheckpointScope.Tenant);
         using var scope = provider.CreateScope();
@@ -280,7 +280,8 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
 
         var manager = scope.ServiceProvider.GetRequiredService<IProjectionManager>();
 
-        await manager.RebuildAsync(projectionName, TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => manager.RebuildAsync(projectionName, TestContext.Current.CancellationToken));
 
         var snapshots = await db.Set<TestSnapshot>()
             .AsNoTracking()
@@ -290,22 +291,20 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
             .Where(s => s.ProjectionName == projectionName)
             .ToListAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(snapshots);
-        Assert.DoesNotContain(statuses, status =>
-            status.CheckpointScope == CheckpointScope.Global &&
-            status.State == ProjectionState.Rebuilding);
+        Assert.Contains("UseShadowRebuilds", exception.Message);
+        Assert.Single(snapshots);
         Assert.Contains(statuses, status =>
             status.CheckpointScope == CheckpointScope.Tenant &&
             status.TenantId == tenantA &&
-            status.State == ProjectionState.Rebuilding &&
-            status.Position == 0);
+            status.State == ProjectionState.Active &&
+            status.Position == 10);
         Assert.Contains(statuses, status =>
             status.CheckpointScope == CheckpointScope.Tenant &&
             status.TenantId == tenantB &&
-            status.State == ProjectionState.Rebuilding &&
-            status.Position == 0 &&
-            status.LastError == null &&
-            status.FailedEventSequence == null);
+            status.State == ProjectionState.Faulted &&
+            status.Position == 20 &&
+            status.LastError == "boom" &&
+            status.FailedEventSequence == 21);
     }
 
     [Fact]

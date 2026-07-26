@@ -45,11 +45,46 @@ public interface IProjectionManager
 
     /// <summary>
     /// Triggers a rebuild of the specified projection.
-    /// This will clear all projection data and replay all events from the beginning.
+    /// Shadow-enabled projections keep the live model available until atomic activation.
+    /// Legacy projections clear live data and are supported only with global checkpoints.
     /// </summary>
     /// <param name="projectionName">The name of the projection to rebuild.</param>
     /// <param name="ct">Cancellation token.</param>
     Task RebuildAsync(string projectionName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Triggers a tenant-scoped shadow rebuild of the specified projection.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection to rebuild.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task RebuildAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection rebuild is not supported by this manager.");
+    }
+
+    /// <summary>
+    /// Cancels an in-progress shadow rebuild and asks the projection to discard its isolated target.
+    /// The active read model remains unchanged.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task CancelRebuildAsync(string projectionName, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Projection rebuild cancellation is not supported by this manager.");
+    }
+
+    /// <summary>
+    /// Cancels an in-progress tenant-scoped shadow rebuild and asks the projection to discard its isolated target.
+    /// The active read model remains unchanged.
+    /// </summary>
+    /// <param name="projectionName">The name of the projection.</param>
+    /// <param name="tenantId">The tenant identifier for the checkpoint scope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task CancelRebuildAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        throw new NotSupportedException("Tenant-scoped projection rebuild cancellation is not supported by this manager.");
+    }
 
     /// <summary>
     /// Pauses processing of the specified projection.
@@ -181,6 +216,11 @@ public sealed record ProjectionStatusDto(
     /// The tenant id for tenant-scoped status rows, or null for global status rows.
     /// </summary>
     public Guid? TenantId { get; init; }
+
+    /// <summary>
+    /// Identifier of the active shadow rebuild target, or <see langword="null"/> when no shadow rebuild is active.
+    /// </summary>
+    public Guid? RebuildId { get; init; }
 }
 
 /// <summary>
@@ -194,7 +234,8 @@ public enum ProjectionState
     Active = 0,
 
     /// <summary>
-    /// The projection is being rebuilt from the beginning.
+    /// The projection is being rebuilt from the beginning. A shadow-enabled projection keeps
+    /// its previously activated read model available until the rebuilt target is activated.
     /// </summary>
     Rebuilding = 1,
 
@@ -206,7 +247,13 @@ public enum ProjectionState
     /// <summary>
     /// The projection encountered an error and requires intervention.
     /// </summary>
-    Faulted = 3
+    Faulted = 3,
+
+    /// <summary>
+    /// A completed shadow target is being atomically activated. Cancellation is no longer
+    /// allowed in this state; an idempotent activation is retried until its status commits.
+    /// </summary>
+    Activating = 4
 }
 
 /// <summary>

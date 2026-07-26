@@ -13,6 +13,7 @@ public class DbProjectionStatusTests
     {
         // Arrange
         var now = DateTimeOffset.UtcNow;
+        var rebuildId = Guid.NewGuid();
         var status = new DbProjectionStatus
         {
             ProjectionName = "TestProjection",
@@ -24,7 +25,8 @@ public class DbProjectionStatusTests
             LastError = null,
             FailedEventSequence = null,
             RebuildStartedAt = now.AddHours(-1),
-            RebuildCompletedAt = now.AddMinutes(-30)
+            RebuildCompletedAt = now.AddMinutes(-30),
+            RebuildId = rebuildId
         };
 
         // Act
@@ -42,6 +44,7 @@ public class DbProjectionStatusTests
         Assert.Null(dto.FailedEventSequence);
         Assert.Equal(now.AddHours(-1), dto.RebuildStartedAt);
         Assert.Equal(now.AddMinutes(-30), dto.RebuildCompletedAt);
+        Assert.Equal(rebuildId, dto.RebuildId);
     }
 
     [Fact]
@@ -228,6 +231,7 @@ public class DbProjectionStatusTests
     [InlineData(ProjectionState.Rebuilding)]
     [InlineData(ProjectionState.Paused)]
     [InlineData(ProjectionState.Faulted)]
+    [InlineData(ProjectionState.Activating)]
     public void ToDto_PreservesAllProjectionStates(ProjectionState state)
     {
         // Arrange

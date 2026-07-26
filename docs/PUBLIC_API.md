@@ -32,5 +32,10 @@ The following changes are intentional for the next beta:
 - All stream interfaces expose the complete persistence identity: `Id`, `StreamType`, and `TenantId`.
 - Generic stream interfaces inherit common members instead of declaring duplicates.
 - Projection versions are configured exclusively with `ProjectionVersionAttribute`; the default is version 1. The concrete projection-options implementation and its former `Version(int)` method are no longer public.
+- Projection rebuild storage is application-owned. `UseShadowRebuilds()` opts into the
+  `PrepareRebuildAsync`, `EvolveRebuildAsync`, `ActivateRebuildAsync`, and
+  `DiscardRebuildAsync` lifecycle on `IProjection<TSnapshot>`. EventStoreCore persists
+  replay progress and a rebuild identifier but never claims to atomically swap an arbitrary
+  read model. The legacy `ClearAsync` path remains global and destructive.
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.
 - EF persistence rows and EF-backed store/stream implementations are internal. Public event and stream interfaces remain the supported consumption boundary.

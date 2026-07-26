@@ -126,6 +126,34 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             await TProjection.ClearAsync(context, ct);
         };
 
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> prepareRebuildAction =
+            async (db, serviceProvider, rebuild, ct) =>
+            {
+                var context = new ProjectionContext(db, serviceProvider, rebuild);
+                await TProjection.PrepareRebuildAsync(context, rebuild, ct);
+            };
+
+        Func<DbContext, IServiceProvider, IEvent, ProjectionRebuild, CancellationToken, Task> evolveRebuildAction =
+            async (db, serviceProvider, @event, rebuild, ct) =>
+            {
+                var context = new ProjectionContext(db, serviceProvider, rebuild);
+                await TProjection.EvolveRebuildAsync(@event, context, rebuild, ct);
+            };
+
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> activateRebuildAction =
+            async (db, serviceProvider, rebuild, ct) =>
+            {
+                var context = new ProjectionContext(db, serviceProvider, rebuild);
+                await TProjection.ActivateRebuildAsync(context, rebuild, ct);
+            };
+
+        Func<DbContext, IServiceProvider, ProjectionRebuild, CancellationToken, Task> discardRebuildAction =
+            async (db, serviceProvider, rebuild, ct) =>
+            {
+                var context = new ProjectionContext(db, serviceProvider, rebuild);
+                await TProjection.DiscardRebuildAsync(context, rebuild, ct);
+            };
+
         Func<DbContext, IServiceProvider, object, IEvent, CancellationToken, Task> evolveAction =
             async (db, serviceProvider, snapshot, @event, ct) =>
             {
@@ -155,6 +183,10 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             SnapshotType = typeof(TSnapshot),
             Options = options,
             ClearAction = clearAction,
+            PrepareRebuildAction = prepareRebuildAction,
+            EvolveRebuildAction = evolveRebuildAction,
+            ActivateRebuildAction = activateRebuildAction,
+            DiscardRebuildAction = discardRebuildAction,
             EvolveAction = evolveAction,
             GetOrCreateSnapshotAction = getOrCreateSnapshotAction,
             AddSnapshotAction = addSnapshotAction

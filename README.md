@@ -476,7 +476,14 @@ services.AddEventStore(builder =>
         options =>
         {
             options.CheckpointScope = CheckpointScope.Tenant;
-            options.AutoRebuildOnVersionChange = false;
+        });
+
+    builder.AddProjection<MyEventStoreDbContext, OrdersProjection, OrderView>(
+        ProjectionMode.Eventual,
+        options =>
+        {
+            options.Handles<OrderPlaced>();
+            options.UseShadowRebuilds();
         });
 });
 ```
@@ -485,13 +492,32 @@ Global checkpoint rows use `CheckpointScope.Global`. Tenant checkpoint rows use 
 
 Tenant-scoped checkpoints isolate daemon progress and failure state; they do not automatically make projection snapshots tenant-isolated. If multiple tenants can use the same stream id, include tenant id in the projection key or snapshot key.
 
-Projection rebuild remains global because `IProjection<TSnapshot>.ClearAsync` has no tenant parameter. Tenant-scoped projection checkpoints therefore do not support automatic version-change rebuilds; disable `AutoRebuildOnVersionChange` when using tenant-scoped projection checkpoints and run global rebuilds intentionally.
+`ClearAsync` remains the backwards-compatible, destructive rebuild path. It is supported only for global checkpoints because it cannot express tenant ownership and empties the live read model before replay.
+If tenant checkpoints are used without shadow lifecycle support, set
+`AutoRebuildOnVersionChange = false`; manual and automatic tenant rebuilds are
+rejected rather than risking a global clear.
+
+Tenant-scoped and production-safe rebuilds require `UseShadowRebuilds()`. A shadow-enabled projection implements these static lifecycle methods:
+
+- `PrepareRebuildAsync` creates or resets isolated storage identified by `ProjectionRebuild.Id`.
+- `EvolveRebuildAsync` performs projection-owned lookup and writes only to that isolated target. EventStoreCore deliberately does not supply or mutate the live snapshot.
+- `ActivateRebuildAsync` atomically switches application reads to the completed target. EventStoreCore cannot implement this swap generically because the application owns its read-model storage.
+- `DiscardRebuildAsync` idempotently removes an abandoned target without changing the active model.
+
+Each method receives a `ProjectionRebuild` containing the target version, checkpoint scope, and tenant id. The same value is also available as `IProjectionContext.Rebuild`. Lifecycle methods must be idempotent: a process can stop after the storage operation succeeds but before its checkpoint update commits.
+The previously activated model remains readable but is not advanced while its
+scope is rebuilding; the shadow target catches up through newly appended events
+before activation.
+
+The daemon persists `RebuildId`, position, total event count, and timestamps, so status responses continue to report progress after restarts. Cancelling a request or daemon batch leaves that durable rebuild resumable. To abandon it, use `POST /projections/{name}/rebuild/cancel[?tenantId=...]`; this invokes `DiscardRebuildAsync` and restores the pre-rebuild checkpoint. Cancellation is rejected once status reaches `Activating`, because the application-owned atomic switch may already have happened; idempotent activation is retried instead. Start a tenant rebuild with `POST /projections/{name}/rebuild?tenantId=...`. Omitting `tenantId` starts every known tenant scope when tenant checkpoints are configured.
 
 ### Migration steps
 
 1. Add `CheckpointScope` and `TenantId` columns to `Subscriptions` and `ProjectionStatuses`.
 2. Backfill existing rows with `CheckpointScope.Global` and `TenantId = Guid.Empty`.
 3. Update the primary keys to `(SubscriptionAssemblyQualifiedName, CheckpointScope, TenantId)` and `(ProjectionName, CheckpointScope, TenantId)`.
+4. Add nullable `RebuildId` (`uuid`/`uniqueidentifier`) and `RebuildPreviousPosition` (`bigint`) columns to `ProjectionStatuses`. Existing rows remain null.
+5. Finish any legacy destructive rebuild before enabling `UseShadowRebuilds()` for that projection.
 
 ## Event type names
 

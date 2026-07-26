@@ -133,7 +133,18 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
     }
 
     /// <inheritdoc />
-    public async Task RebuildAsync(string projectionName, CancellationToken ct = default)
+    public Task RebuildAsync(string projectionName, CancellationToken ct = default)
+    {
+        return RebuildAsync(projectionName, tenantId: null, ct);
+    }
+
+    /// <inheritdoc />
+    public Task RebuildAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        return RebuildAsync(projectionName, (Guid?)tenantId, ct);
+    }
+
+    private async Task RebuildAsync(string projectionName, Guid? tenantId, CancellationToken ct)
     {
         var registration = _projections.FirstOrDefault(p => p.Name == projectionName)
             ?? throw new InvalidOperationException($"Projection '{projectionName}' is not registered.");
@@ -143,13 +154,25 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
                 $"Projection '{projectionName}' runs inline and cannot be rebuilt by the eventual projection daemon.");
         }
 
-        var lockName = _options.CheckpointScope == CheckpointScope.Global
+        if (tenantId.HasValue && _options.CheckpointScope != CheckpointScope.Tenant)
+        {
+            throw new InvalidOperationException(
+                "A tenant id can only be supplied when projection checkpoints are tenant-scoped.");
+        }
+
+        if (_options.CheckpointScope == CheckpointScope.Tenant && !registration.Options.UsesShadowRebuilds)
+        {
+            throw new InvalidOperationException(
+                $"Projection '{projectionName}' must configure UseShadowRebuilds() before tenant-scoped rebuilds can run. " +
+                "ClearAsync is global and cannot safely rebuild one tenant.");
+        }
+
+        var coordinatorLockName = _options.CheckpointScope == CheckpointScope.Global
             ? $"projection:{projectionName}"
             : $"projection-rebuild:{projectionName}";
-
-        await using var lockHandle = await _lockProvider.AcquireLockAsync(lockName, cancellationToken: ct);
-
-        _logger.LogInformation("Initiating manual rebuild for projection {Projection}", projectionName);
+        await using var coordinatorLock = await _lockProvider.AcquireLockAsync(
+            coordinatorLockName,
+            cancellationToken: ct);
 
         var existingTenantScopeIds = _options.CheckpointScope == CheckpointScope.Tenant
             ? await _dbContext.Set<DbProjectionStatus>()
@@ -176,76 +199,139 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
             .OrderBy(tenantId => tenantId)
             .ToArray();
 
-        var tenantLockHandles = new List<IAsyncDisposable>();
-        try
+        var checkpointScopes = _options.CheckpointScope == CheckpointScope.Global
+            ? [CheckpointScopeKey.Global]
+            : tenantId.HasValue
+                ? [CheckpointScopeKey.Tenant(tenantId.Value)]
+                : tenantScopeIds.Select(CheckpointScopeKey.Tenant).ToArray();
+
+        foreach (var checkpointScope in checkpointScopes)
         {
-            foreach (var tenantId in tenantScopeIds)
+            var scopeLockName = $"projection:{projectionName}{checkpointScope.LockSuffix}";
+            await using var scopeLock = checkpointScope.IsTenant
+                ? await _lockProvider.AcquireLockAsync(scopeLockName, cancellationToken: ct)
+                : null;
+
+            var status = await GetOrCreateStatusAsync(
+                projectionName,
+                registration.Version,
+                checkpointScope,
+                ct);
+            await InitiateRebuildAsync(registration, status, checkpointScope, ct);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task CancelRebuildAsync(string projectionName, CancellationToken ct = default)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Tenant)
+        {
+            throw new InvalidOperationException(
+                "A tenant id is required to cancel a rebuild when projection checkpoints are tenant-scoped.");
+        }
+
+        return CancelRebuildAsync(projectionName, CheckpointScopeKey.Global, ct);
+    }
+
+    /// <inheritdoc />
+    public Task CancelRebuildAsync(string projectionName, Guid tenantId, CancellationToken ct = default)
+    {
+        if (_options.CheckpointScope != CheckpointScope.Tenant)
+        {
+            throw new InvalidOperationException(
+                "A tenant id can only be supplied when projection checkpoints are tenant-scoped.");
+        }
+
+        return CancelRebuildAsync(projectionName, CheckpointScopeKey.Tenant(tenantId), ct);
+    }
+
+    private async Task CancelRebuildAsync(
+        string projectionName,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        var registration = _projections.FirstOrDefault(p => p.Name == projectionName)
+            ?? throw new InvalidOperationException($"Projection '{projectionName}' is not registered.");
+        var lockName = $"projection:{projectionName}{checkpointScope.LockSuffix}";
+        await using var lockHandle = await _lockProvider.AcquireLockAsync(lockName, cancellationToken: ct);
+        var status = await GetExistingStatusAsync(projectionName, checkpointScope, ct);
+
+        if (status.State != ProjectionState.Rebuilding || !status.RebuildId.HasValue)
+        {
+            throw new InvalidOperationException("Only an active shadow rebuild can be cancelled.");
+        }
+
+        var rebuild = CreateRebuild(status, registration);
+        await registration.DiscardRebuildAction(_dbContext, _services, rebuild, ct);
+
+        status.State = ProjectionState.Active;
+        status.Position = status.RebuildPreviousPosition ?? status.Position;
+        status.RebuildId = null;
+        status.RebuildPreviousPosition = null;
+        status.TotalEvents = null;
+        await _dbContext.SaveChangesAsync(ct);
+    }
+
+    private async Task InitiateRebuildAsync(
+        ProjectionRegistration registration,
+        DbProjectionStatus status,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        if (status.State == ProjectionState.Rebuilding)
+        {
+            throw new InvalidOperationException(
+                $"Projection '{registration.Name}' is already rebuilding in checkpoint scope {checkpointScope}.");
+        }
+
+        ProjectionRebuild? rebuild = null;
+        if (registration.Options.UsesShadowRebuilds)
+        {
+            rebuild = new ProjectionRebuild(
+                Guid.NewGuid(),
+                registration.Version,
+                checkpointScope.Scope,
+                checkpointScope.IsTenant ? checkpointScope.TenantId : null);
+            try
             {
-                var tenantLockName = $"projection:{projectionName}{CheckpointScopeKey.Tenant(tenantId).LockSuffix}";
-                tenantLockHandles.Add(await _lockProvider.AcquireLockAsync(tenantLockName, cancellationToken: ct));
+                await registration.PrepareRebuildAction(_dbContext, _services, rebuild, ct);
+                await _dbContext.SaveChangesAsync(ct);
             }
-
-            var statuses = await _dbContext.Set<DbProjectionStatus>()
-                .Where(s =>
-                    s.ProjectionName == projectionName &&
-                    s.CheckpointScope == _options.CheckpointScope)
-                .ToListAsync(ct);
-
-            if (_options.CheckpointScope == CheckpointScope.Global &&
-                statuses.All(s => s.TenantId != Guid.Empty))
+            catch
             {
-                var globalStatus = new DbProjectionStatus
+                try
                 {
-                    ProjectionName = projectionName,
-                    CheckpointScope = CheckpointScope.Global,
-                    TenantId = Guid.Empty
-                };
-                _dbContext.Set<DbProjectionStatus>().Add(globalStatus);
-                statuses.Add(globalStatus);
-            }
-            else if (_options.CheckpointScope == CheckpointScope.Tenant)
-            {
-                foreach (var tenantId in tenantScopeIds)
-                {
-                    if (statuses.Any(s => s.TenantId == tenantId))
-                    {
-                        continue;
-                    }
-
-                    var tenantStatus = new DbProjectionStatus
-                    {
-                        ProjectionName = projectionName,
-                        CheckpointScope = CheckpointScope.Tenant,
-                        TenantId = tenantId
-                    };
-                    _dbContext.Set<DbProjectionStatus>().Add(tenantStatus);
-                    statuses.Add(tenantStatus);
+                    await registration.DiscardRebuildAction(
+                        _dbContext,
+                        _services,
+                        rebuild,
+                        CancellationToken.None);
                 }
+                catch (Exception discardException)
+                {
+                    _logger.LogWarning(
+                        discardException,
+                        "Failed to discard shadow target {RebuildId} after rebuild preparation failed",
+                        rebuild.Id);
+                }
+                throw;
             }
+        }
 
-            var rebuildStartedAt = DateTimeOffset.UtcNow;
-            foreach (var status in statuses)
-            {
-                await ResetStatusForRebuildAsync(status, registration.Version, rebuildStartedAt, ct);
-            }
+        await ResetStatusForRebuildAsync(status, DateTimeOffset.UtcNow, rebuild?.Id, ct);
+        await _dbContext.SaveChangesAsync(ct);
 
-            await _dbContext.SaveChangesAsync(ct);
-
+        if (rebuild is null)
+        {
             await registration.ClearAction(_dbContext, _services, ct);
             await _dbContext.SaveChangesAsync(ct);
+        }
 
-            _logger.LogInformation(
-                "Rebuild initiated for projection {Projection}, clearing data and resetting {CheckpointCount} checkpoint scopes",
-                projectionName,
-                statuses.Count);
-        }
-        finally
-        {
-            foreach (var tenantLockHandle in tenantLockHandles)
-            {
-                await tenantLockHandle.DisposeAsync();
-            }
-        }
+        _logger.LogInformation(
+            "Rebuild {RebuildId} initiated for projection {Projection} in checkpoint scope {Scope}",
+            rebuild?.Id,
+            registration.Name,
+            checkpointScope);
     }
 
     /// <inheritdoc />
@@ -463,21 +549,34 @@ public sealed class ProjectionManager<TDbContext> : IProjectionManager
 
     private async Task ResetStatusForRebuildAsync(
         DbProjectionStatus status,
-        int version,
         DateTimeOffset rebuildStartedAt,
+        Guid? rebuildId,
         CancellationToken ct)
     {
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
 
         status.State = ProjectionState.Rebuilding;
+        status.RebuildPreviousPosition = rebuildId.HasValue ? status.Position : null;
         status.Position = 0;
-        status.Version = version;
         status.RebuildStartedAt = rebuildStartedAt;
         status.RebuildCompletedAt = null;
+        status.RebuildId = rebuildId;
         status.LastError = null;
         status.FailedEventSequence = null;
         status.TotalEvents = await ApplyCheckpointScope(_dbContext.Events, checkpointScope)
             .LongCountAsync(ct);
+    }
+
+    private static ProjectionRebuild CreateRebuild(
+        DbProjectionStatus status,
+        ProjectionRegistration registration)
+    {
+        return new ProjectionRebuild(
+            status.RebuildId
+                ?? throw new InvalidOperationException("The shadow rebuild identifier is missing. Check the projection status migration."),
+            registration.Version,
+            status.CheckpointScope,
+            status.CheckpointScope == CheckpointScope.Tenant ? status.TenantId : null);
     }
 
     private async Task<DbProjectionStatus> GetExistingStatusAsync(

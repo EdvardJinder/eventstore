@@ -40,5 +40,15 @@ public interface IProjectionOptions
     /// instead of throwing an <see cref="System.Exception"/>.
     /// </summary>
     void IgnoreUnknown();
-}
 
+    /// <summary>
+    /// Uses projection-owned shadow storage for rebuilds. The projection must implement the
+    /// shadow lifecycle methods on <see cref="IProjection{TSnapshot}"/>. Shadow rebuilds are
+    /// required for tenant-scoped checkpoints and keep the active read model available until
+    /// the projection atomically activates the completed target.
+    /// </summary>
+    void UseShadowRebuilds()
+    {
+        throw new NotSupportedException("Shadow rebuild configuration is not supported by this projection provider.");
+    }
+}

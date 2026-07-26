@@ -441,6 +441,40 @@ public class AdminEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task RebuildProjection_ForTenant_PassesTenantScope()
+    {
+        var tenantId = Guid.NewGuid();
+        _mockManager.RebuildAsync("TestProjection", tenantId, Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            $"/api/eventstore/admin/projections/TestProjection/rebuild?tenantId={tenantId}",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        await _mockManager.Received(1)
+            .RebuildAsync("TestProjection", tenantId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CancelProjectionRebuild_ForTenant_PassesTenantScope()
+    {
+        var tenantId = Guid.NewGuid();
+        _mockManager.CancelRebuildAsync("TestProjection", tenantId, Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            $"/api/eventstore/admin/projections/TestProjection/rebuild/cancel?tenantId={tenantId}",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockManager.Received(1)
+            .CancelRebuildAsync("TestProjection", tenantId, Arg.Any<CancellationToken>());
+    }
+
     #endregion
 
     #region POST /projections/{name}/pause Tests
@@ -761,4 +795,3 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
-
