@@ -76,6 +76,23 @@ internal sealed class SnapshotRegistration<TState> : SnapshotRegistration
         var snapshotState = snapshot is not null && schemaMatches
             ? Deserialize(snapshot, serializer)
             : default;
+        var persistedTail = db.Set<DbEvent>()
+            .AsNoTracking()
+            .Where(e => e.StreamId == stream.Id
+                && e.StreamType == stream.StreamType
+                && e.TenantId == stream.TenantId
+                && e.Version > snapshotVersion
+                && e.Version <= stream.CurrentVersion)
+            .ToList();
+        var pendingTail = db.ChangeTracker
+            .Entries<DbEvent>()
+            .Where(e => e.State == EntityState.Added
+                && e.Entity.StreamId == stream.Id
+                && e.Entity.StreamType == stream.StreamType
+                && e.Entity.TenantId == stream.TenantId
+                && e.Entity.Version > snapshotVersion
+                && e.Entity.Version <= stream.CurrentVersion)
+            .Select(e => e.Entity);
         var tailStream = new DbStream
         {
             Id = stream.Id,
@@ -84,8 +101,8 @@ internal sealed class SnapshotRegistration<TState> : SnapshotRegistration
             CurrentVersion = stream.CurrentVersion,
             CreatedTimestamp = stream.CreatedTimestamp,
             UpdatedTimestamp = stream.UpdatedTimestamp,
-            Events = stream.Events
-                .Where(e => e.Version > snapshotVersion)
+            Events = persistedTail
+                .Concat(pendingTail)
                 .OrderBy(e => e.Version)
                 .ToList()
         };

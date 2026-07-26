@@ -641,6 +641,14 @@ When an expected-version check fails, or when two writers race and the database 
 
 The final optimistic concurrency guard is enforced by the event table key over stream identity plus event version. This means concurrent writers to the same stream cannot both commit the same next version.
 
+`AppendAsync` loads only stream identity and current version. The returned stream's
+`Events` collection contains the appended batch, not the complete history. Likewise,
+untyped `FetchForWritingAsync` does not load existing events. Typed
+`FetchForWritingAsync<TState>` uses a compatible configured aggregate snapshot and
+loads only events after that snapshot; without a compatible snapshot it falls back
+to replaying the complete stream. Snapshot updates and inline projections remain
+part of the same `SaveChanges` transaction as the appended events.
+
 ## Project guidelines
 
 - Keep public APIs small, composable, and backwards compatible.

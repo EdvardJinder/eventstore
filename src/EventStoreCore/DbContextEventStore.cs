@@ -198,7 +198,6 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
         var unrelatedChanges = CaptureUnrelatedChanges();
         var stream = await db.Set<DbStream>()
             .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
-            .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
 
         stream = expectedVersion.Mode switch
@@ -388,7 +387,6 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     {
         var stream = await db.Set<DbStream>()
             .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
-            .Include(x => x.Events)
             .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
         return new DbContextStream(stream, db);
@@ -409,12 +407,15 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     /// <inheritdoc />
     public async Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default) where T : IState, new()
     {
+        var snapshot = _snapshots?.LoadSnapshot<T>(db, streamType, streamId, tenantId);
+        var snapshotVersion = snapshot?.Version ?? 0;
+
         var stream = await db.Set<DbStream>()
-          .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
-          .Include(x => x.Events)
-          .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
+            .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
+            .Include(x => x.Events.Where(e => e.Version > snapshotVersion))
+            .FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
         if (stream is null) return null;
-        return new DbContextStream<T>(stream, db);
+        return new DbContextStream<T>(stream, db, DeserializeSnapshot<T>(snapshot));
     }
 
     /// <inheritdoc />

@@ -44,7 +44,10 @@ public interface IEventStore
     /// <param name="expectedVersion">The expected-version mode to enforce.</param>
     /// <param name="events">The events to append.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated read-only stream.</returns>
+    /// <returns>
+    /// The updated read-only stream. Its loaded <see cref="IReadOnlyStream.Events"/> contain
+    /// the appended batch rather than the stream's complete history.
+    /// </returns>
     Task<IReadOnlyStream> AppendAsync(
         Guid streamId,
         ExpectedVersion expectedVersion,
@@ -59,7 +62,10 @@ public interface IEventStore
     /// <param name="expectedVersion">The expected-version mode to enforce.</param>
     /// <param name="events">The events to append.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated read-only stream.</returns>
+    /// <returns>
+    /// The updated read-only stream. Its loaded <see cref="IReadOnlyStream.Events"/> contain
+    /// the appended batch rather than the stream's complete history.
+    /// </returns>
     Task<IReadOnlyStream> AppendAsync(
         Guid streamId,
         Guid tenantId,
@@ -75,7 +81,10 @@ public interface IEventStore
     /// <param name="expectedVersion">The expected-version mode to enforce.</param>
     /// <param name="events">The events to append.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated read-only stream.</returns>
+    /// <returns>
+    /// The updated read-only stream. Its loaded <see cref="IReadOnlyStream.Events"/> contain
+    /// the appended batch rather than the stream's complete history.
+    /// </returns>
     Task<IReadOnlyStream> AppendAsync(
         string streamType,
         Guid streamId,
@@ -92,7 +101,10 @@ public interface IEventStore
     /// <param name="expectedVersion">The expected-version mode to enforce.</param>
     /// <param name="events">The events to append.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated read-only stream.</returns>
+    /// <returns>
+    /// The updated read-only stream. Its loaded <see cref="IReadOnlyStream.Events"/> contain
+    /// the appended batch rather than the stream's complete history.
+    /// </returns>
     Task<IReadOnlyStream> AppendAsync(
         string streamType,
         Guid streamId,
@@ -106,7 +118,10 @@ public interface IEventStore
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. Existing events are not loaded;
+    /// <see cref="IReadOnlyStream.Events"/> contains only events appended through the returned stream.
+    /// </returns>
     Task<IStream?> FetchForWritingAsync(Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -115,7 +130,10 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. Existing events are not loaded;
+    /// <see cref="IReadOnlyStream.Events"/> contains only events appended through the returned stream.
+    /// </returns>
     Task<IStream?> FetchForWritingAsync(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -124,7 +142,10 @@ public interface IEventStore
     /// <param name="streamType">The stream type for distinguishing multiple streams with the same ID.</param>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. Existing events are not loaded;
+    /// <see cref="IReadOnlyStream.Events"/> contains only events appended through the returned stream.
+    /// </returns>
     Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -134,7 +155,10 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. Existing events are not loaded;
+    /// <see cref="IReadOnlyStream.Events"/> contains only events appended through the returned stream.
+    /// </returns>
     Task<IStream?> FetchForWritingAsync(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -143,7 +167,10 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. When a compatible configured snapshot
+    /// exists, state is rebuilt from that snapshot and only its event tail is loaded.
+    /// </returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -154,7 +181,10 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. When a compatible configured snapshot
+    /// exists, state is rebuilt from that snapshot and only its event tail is loaded.
+    /// </returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -165,7 +195,10 @@ public interface IEventStore
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. When a compatible configured snapshot
+    /// exists, state is rebuilt from that snapshot and only its event tail is loaded.
+    /// </returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -177,7 +210,10 @@ public interface IEventStore
     /// <param name="tenantId">The tenant identifier for multi-tenant scenarios.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-    /// <returns>The writable stream, or null when it does not exist.</returns>
+    /// <returns>
+    /// The writable stream, or null when it does not exist. When a compatible configured snapshot
+    /// exists, state is rebuilt from that snapshot and only its event tail is loaded.
+    /// </returns>
     Task<IStream<T>?> FetchForWritingAsync<T>(string streamType, Guid streamId, Guid tenantId, CancellationToken cancellationToken = default)
         where T : IState, new();
 
@@ -429,5 +465,4 @@ public interface IEventStore
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 }
-
 

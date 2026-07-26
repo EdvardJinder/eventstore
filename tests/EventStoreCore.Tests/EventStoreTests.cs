@@ -363,6 +363,136 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
     }
 
     [Fact]
+    public async Task AppendAsyncLoadsOnlyStreamMetadataAndReturnsAppendedBatch()
+    {
+        var streamId = Guid.NewGuid();
+
+        using (var createContext = eventStoreFixture.CreateNewContext())
+        {
+            createContext.Streams.StartStream(
+                streamId,
+                events: Enumerable.Range(1, 20)
+                    .Select(number => new TestEvent { Name = $"event-{number}" }));
+            await createContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var appendContext = eventStoreFixture.CreateNewContext();
+        var result = await appendContext.Streams.AppendAsync(
+            streamId,
+            ExpectedVersion.Exact(20),
+            [new TestEvent { Name = "event-21" }, new TestEvent { Name = "event-22" }],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(22, result.Version);
+        Assert.Equal(2, result.Events.Count);
+        Assert.Equal(
+            [21L, 22L],
+            appendContext.ChangeTracker.Entries<DbEvent>()
+                .Select(entry => entry.Entity.Version)
+                .Order()
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task UntypedWriteFetchDoesNotLoadExistingEvents()
+    {
+        var streamId = Guid.NewGuid();
+
+        using (var createContext = eventStoreFixture.CreateNewContext())
+        {
+            createContext.Streams.StartStream(
+                streamId,
+                events: Enumerable.Range(1, 20)
+                    .Select(number => new TestEvent { Name = $"event-{number}" }));
+            await createContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var writeContext = eventStoreFixture.CreateNewContext();
+        var stream = await writeContext.Streams.FetchForWritingAsync(
+            streamId,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(stream);
+        Assert.Equal(20, stream!.Version);
+        Assert.Empty(stream.Events);
+        Assert.Empty(writeContext.ChangeTracker.Entries<DbEvent>());
+
+        stream.Append(new TestEvent { Name = "event-21" });
+
+        Assert.Single(stream.Events);
+        Assert.Single(writeContext.ChangeTracker.Entries<DbEvent>());
+    }
+
+    [Fact]
+    public async Task TypedWriteUsesSnapshotTailAndPersistsCorrectNextSnapshot()
+    {
+        using var provider = CreateSnapshotProvider();
+        var streamId = Guid.NewGuid();
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            await RecreateAsync(dbContext);
+
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.NoStream,
+                [new TestEvent { Name = "one" }, new TestEvent { Name = "two" }],
+                TestContext.Current.CancellationToken);
+            await dbContext.Streams.AppendAsync(
+                "orders",
+                streamId,
+                ExpectedVersion.Exact(2),
+                [new TestEvent { Name = "three" }],
+                TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var stream = await dbContext.Streams.FetchForWritingAsync<SnapshotState>(
+                "orders",
+                streamId,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(stream);
+            Assert.Single(stream!.Events);
+            Assert.Single(dbContext.ChangeTracker.Entries<DbEvent>());
+            Assert.Equal("three", stream.State.Name);
+            Assert.Equal(3, stream.State.ApplyCount);
+
+            stream.Append(new TestEvent { Name = "four" });
+
+            Assert.Equal("four", stream.State.Name);
+            Assert.Equal(4, stream.State.ApplyCount);
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<EventStoreFixture.EventStoreDbContext>();
+            var snapshot = await dbContext.Set<DbSnapshot>()
+                .AsNoTracking()
+                .SingleAsync(
+                    x => x.StreamId == streamId
+                        && x.StreamType == "orders"
+                        && x.StateType == typeof(SnapshotState).FullName,
+                    TestContext.Current.CancellationToken);
+            var stream = await dbContext.Streams.FetchForReadingAsync<SnapshotState>(
+                "orders",
+                streamId,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(4, snapshot.Version);
+            Assert.NotNull(stream);
+            Assert.Empty(stream!.Events);
+            Assert.Equal("four", stream.State.Name);
+            Assert.Equal(4, stream.State.ApplyCount);
+        }
+    }
+
+    [Fact]
     public async Task SnapshotBackedVersionedReadExposesOnlyReplayTail()
     {
         using var provider = CreateSnapshotProvider();

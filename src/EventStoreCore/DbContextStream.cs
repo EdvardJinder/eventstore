@@ -131,7 +131,6 @@ internal class DbContextStream : IStream
 internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState, new()
 {
     private readonly T? _snapshotState;
-    private readonly IReadOnlyList<IEvent>? _stateEvents;
 
     /// <summary>
     /// Creates a typed stream wrapper for the provided stream record.
@@ -153,7 +152,6 @@ internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState
     internal DbContextStream(DbStream dbStream, DbContext db, T? snapshotState) : base(dbStream, db)
     {
         _snapshotState = snapshotState;
-        _stateEvents = MaterializeEvents(dbStream.Events);
     }
 
     /// <inheritdoc />
@@ -166,7 +164,7 @@ internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState
                 : (T?)Serializer.Deserialize(
                     Serializer.Serialize(_snapshotState, typeof(T)),
                     typeof(T)) ?? new T();
-            foreach (var @event in _stateEvents ?? Events)
+            foreach (var @event in Events)
             {
                 state.Apply(@event);
             }

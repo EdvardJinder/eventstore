@@ -58,6 +58,16 @@ Paged reads always read persisted events and do not use aggregate snapshots.
 compatible snapshot. Historical typed reads only use a snapshot whose stream
 version is not newer than the requested historical version.
 
+## Bounded stream writes
+
+`AppendAsync` and untyped `FetchForWritingAsync` load only stream identity and
+current version, not existing events. Their returned `Events` collections
+therefore contain only events appended through that write operation. Typed
+`FetchForWritingAsync<TState>` rebuilds state from a compatible configured
+aggregate snapshot plus later events, falling back to a complete replay when no
+compatible snapshot exists. Snapshot updates and inline projections remain in
+the append transaction.
+
 ## Global event-log reads
 
 Inject the scoped `IEventLogReader` registered by
