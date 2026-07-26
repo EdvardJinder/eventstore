@@ -30,10 +30,30 @@ public static class EventGridSubscriptionExtensions
         this IServiceCollection services,
         Action<OutboxCloudEventTransformerOptions> configureTransform)
     {
+        return services.AddEventGridOutboxSubscription(
+            configureTransform,
+            _ => { });
+    }
+
+    /// <summary>
+    /// Adds a configured Event Grid-backed entity-outbox subscription.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureTransform">Mapping configuration for entity-outbox events.</param>
+    /// <param name="configureSubscription">Identity, filtering, and failure-policy configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddEventGridOutboxSubscription(
+        this IServiceCollection services,
+        Action<OutboxCloudEventTransformerOptions> configureTransform,
+        Action<OutboxSubscriptionRegistrationOptions> configureSubscription)
+    {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureTransform);
+        ArgumentNullException.ThrowIfNull(configureSubscription);
 
-        services.AddCloudEventOutboxSubscription<EventGridSubscription>(configureTransform);
+        services.AddCloudEventOutboxSubscription<EventGridSubscription>(
+            configureTransform,
+            configureSubscription);
         return services;
     }
 }

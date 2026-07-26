@@ -23,11 +23,13 @@ public class AdminEndpointTests : IAsyncLifetime
     private HttpClient _client = null!;
     private IProjectionManager _mockManager = null!;
     private ISubscriptionManager _mockSubscriptionManager = null!;
+    private IOutboxSubscriptionManager _mockOutboxSubscriptionManager = null!;
 
     public async ValueTask InitializeAsync()
     {
         _mockManager = Substitute.For<IProjectionManager>();
         _mockSubscriptionManager = Substitute.For<ISubscriptionManager>();
+        _mockOutboxSubscriptionManager = Substitute.For<IOutboxSubscriptionManager>();
 
         _host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -39,6 +41,7 @@ public class AdminEndpointTests : IAsyncLifetime
                         services.AddRouting();
                         services.AddSingleton(_mockManager);
                         services.AddSingleton(_mockSubscriptionManager);
+                        services.AddSingleton(_mockOutboxSubscriptionManager);
                     })
                     .Configure(app =>
                     {
@@ -118,6 +121,76 @@ public class AdminEndpointTests : IAsyncLifetime
         Assert.Equal("TestProjection", projections[0].ProjectionName);
         Assert.Equal(ProjectionState.Active, projections[0].State);
         Assert.Equal(100, projections[0].Position);
+    }
+
+    #endregion
+
+    #region Entity outbox subscription tests
+
+    [Fact]
+    public async Task GetOutboxSubscription_ReturnsConfiguredStatus()
+    {
+        var expected = new OutboxSubscriptionStatusDto(
+            "publish-orders",
+            10,
+            SubscriptionState.DeadLettered,
+            20,
+            50,
+            DateTimeOffset.UtcNow,
+            "boom",
+            3,
+            DateTimeOffset.UtcNow,
+            null,
+            11);
+        _mockOutboxSubscriptionManager
+            .GetStatusAsync("publish-orders", Arg.Any<CancellationToken>())
+            .Returns(expected);
+
+        var response = await _client.GetAsync(
+            "/api/eventstore/admin/outbox-subscriptions/publish-orders",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var status = await response.Content.ReadFromJsonAsync<OutboxSubscriptionStatusDto>(
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(status);
+        Assert.Equal(SubscriptionState.DeadLettered, status.State);
+    }
+
+    [Fact]
+    public async Task RetryOutboxSubscription_InvokesManager()
+    {
+        _mockOutboxSubscriptionManager
+            .RetryFailedEventAsync("publish-orders", Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var response = await _client.PostAsync(
+            "/api/eventstore/admin/outbox-subscriptions/publish-orders/retry",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await _mockOutboxSubscriptionManager.Received(1)
+            .RetryFailedEventAsync("publish-orders", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReplayTenantOutboxSubscription_ForwardsReplayBounds()
+    {
+        var tenantId = Guid.NewGuid();
+
+        var response = await _client.PostAsync(
+            $"/api/eventstore/admin/outbox-subscriptions/publish-orders/replay?tenantId={tenantId:D}&startSequence=42",
+            null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        await _mockOutboxSubscriptionManager.Received(1).ReplayAsync(
+            "publish-orders",
+            tenantId,
+            42,
+            null,
+            Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -617,6 +690,7 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
     private HttpClient _client = null!;
     private IProjectionManager _mockManager = null!;
     private ISubscriptionManager _mockSubscriptionManager = null!;
+    private IOutboxSubscriptionManager _mockOutboxSubscriptionManager = null!;
 
     public async ValueTask InitializeAsync()
     {
@@ -626,6 +700,7 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
         _mockSubscriptionManager = Substitute.For<ISubscriptionManager>();
         _mockSubscriptionManager.GetAllStatusesAsync(Arg.Any<CancellationToken>())
             .Returns(new List<SubscriptionStatusDto>());
+        _mockOutboxSubscriptionManager = Substitute.For<IOutboxSubscriptionManager>();
 
         _host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -637,12 +712,13 @@ public class AdminEndpointOptionsTests : IAsyncLifetime
                         services.AddRouting();
                         services.AddSingleton(_mockManager);
                         services.AddSingleton(_mockSubscriptionManager);
+                        services.AddSingleton(_mockOutboxSubscriptionManager);
                     })
                     .Configure(app =>
                     {
                         app.UseRouting();
 
-                       
+
                         app.UseEndpoints(endpoints =>
                         {
                             endpoints.MapGroup("/custom/admin")

@@ -89,7 +89,8 @@ public sealed class OutboxIntegrationAdapterTests
         services.AddSingleton(publisher);
         services.AddCloudEventOutboxSubscription<RecordingCloudEventSubscription>(options =>
             options.MapEvent<OrderAdded>(
-                @event => new CloudEvent("urn:orders", "com.example.order-added", @event.Data)));
+                @event => new CloudEvent("urn:orders", "com.example.order-added", @event.Data)),
+            subscription => subscription.Name = "cloud-orders");
         using var provider = services.BuildServiceProvider();
         var subscription = provider.GetServices<IOutboxSubscription>().Single();
 
@@ -97,6 +98,9 @@ public sealed class OutboxIntegrationAdapterTests
 
         var cloudEvent = Assert.Single(publisher.Events);
         Assert.Equal("com.example.order-added", cloudEvent.Type);
+        Assert.Equal(
+            "cloud-orders",
+            provider.GetRequiredService<OutboxSubscriptionRegistration>().Name);
     }
 
     [Fact]
@@ -106,10 +110,14 @@ public sealed class OutboxIntegrationAdapterTests
 
         services.AddEventGridOutboxSubscription(options =>
             options.MapEvent<OrderAdded>(
-                @event => new CloudEvent("urn:orders", "com.example.order-added", @event.Data)));
+                @event => new CloudEvent("urn:orders", "com.example.order-added", @event.Data)),
+            subscription => subscription.Name = "event-grid-orders");
         using var provider = services.BuildServiceProvider();
 
         Assert.Single(provider.GetServices<IOutboxSubscription>());
+        Assert.Equal(
+            "event-grid-orders",
+            provider.GetRequiredService<OutboxSubscriptionRegistration>().Name);
     }
 
     [Fact]
@@ -214,10 +222,14 @@ public sealed class OutboxIntegrationAdapterTests
 
         services.AddMassTransitOutboxSubscription(options =>
             options.AddEvent<OrderAdded, OrderPublished>(
-                @event => new OrderPublished(@event.Data.OrderId, @event.Sequence)));
+                @event => new OrderPublished(@event.Data.OrderId, @event.Sequence)),
+            subscription => subscription.Name = "mass-transit-orders");
         using var provider = services.BuildServiceProvider();
 
         Assert.Single(provider.GetServices<IOutboxSubscription>());
+        Assert.Equal(
+            "mass-transit-orders",
+            provider.GetRequiredService<OutboxSubscriptionRegistration>().Name);
     }
 
     private static TestOutboxEvent<OrderAdded> CreateOutboxEvent()

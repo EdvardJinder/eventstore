@@ -32,6 +32,17 @@ To rename an existing registration without replaying it:
 Logical names must be unique; duplicate registrations fail during configuration or daemon startup. The same
 name is used for checkpoints, distributed locks, status APIs, logs, traces, and metrics.
 
+Entity-outbox subscriptions follow the same identity rule:
+
+```csharp
+services.AddOutboxSubscription<PublishOrders>(
+    options => options.Name = "publish-orders");
+```
+
+Their checkpoints live in `OutboxSubscriptions`. Stop every outbox daemon and
+update `SubscriptionAssemblyQualifiedName` before adopting a stable name for an
+existing unnamed registration if replay is not desired.
+
 ## Typed and filtered subscriptions
 
 Implement `ISubscription<TEvent>` and register it with both type parameters to receive typed payloads without
@@ -54,9 +65,17 @@ Unmaterializable events fail and enter the normal retry flow by default. `Skip` 
 raw persisted metadata before advancing. Changing a logical event type registration does not break a logical
 type filter as long as the persisted `TypeName` remains stable.
 
+Entity-outbox registrations support logical event type, CLR event type, tenant,
+source entity type, and entity change-kind filters with the same OR-within and
+AND-between behavior. They also support the same fail, skip, quarantine, and
+custom unknown-event policies.
+
 ## Telemetry and time
 
 Daemons use the DI-provided `TimeProvider` when available, falling back to `TimeProvider.System`. They publish
 activities and metrics under `EventStoreCore.Daemons`, including batch duration, processed and failed events,
 retries, checkpoint lag, and lock contention. Register one or more `IDaemonFaultObserver` implementations to
 receive structured projection fault and subscription fault/dead-letter transitions.
+
+Entity-outbox dispatch uses the same diagnostic sources with daemon kind
+`outbox-subscription`.

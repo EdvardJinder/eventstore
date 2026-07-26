@@ -10,9 +10,14 @@ namespace EventStoreCore;
 internal sealed class EntityOutboxReader<TDbContext>(
     TDbContext dbContext,
     EntityOutboxRegistry<TDbContext> registry,
-    EventTypeRegistry eventTypes) : IOutboxReader
+    EventTypeRegistry eventTypes,
+    IEnumerable<OutboxSubscriptionRegistration> registrations) : IOutboxReader
     where TDbContext : DbContext
 {
+    private readonly IReadOnlySet<string> _registeredSubscriptionNames = registrations
+        .Select(registration => registration.Name)
+        .ToHashSet(StringComparer.Ordinal);
+
     public async Task<IReadOnlyList<IOutboxEvent>> ReadAsync(
         long afterSequence,
         int maxCount = 100,
@@ -55,7 +60,13 @@ internal sealed class EntityOutboxReader<TDbContext>(
 
         var checkpoints = await dbContext.Set<DbOutboxSubscription>()
             .AsNoTracking()
-            .Select(subscription => subscription.Sequence)
+            .Select(subscription => new
+            {
+                subscription.SubscriptionAssemblyQualifiedName,
+                subscription.CheckpointScope,
+                subscription.TenantId,
+                subscription.Sequence
+            })
             .ToListAsync(ct);
 
         if (checkpoints.Count == 0)
@@ -63,7 +74,36 @@ internal sealed class EntityOutboxReader<TDbContext>(
             return 0;
         }
 
-        var safeSequence = Math.Min(throughSequence, checkpoints.Min());
+        var tenantScoped = checkpoints.Any(checkpoint =>
+            checkpoint.CheckpointScope == CheckpointScope.Tenant);
+        if (tenantScoped)
+        {
+            var tenantIds = await dbContext.Set<DbOutboxMessage>()
+                .AsNoTracking()
+                .Select(message => message.TenantId)
+                .Distinct()
+                .ToListAsync(ct);
+            if (_registeredSubscriptionNames.Any(registeredName =>
+                    tenantIds.Any(tenantId =>
+                        checkpoints.All(checkpoint =>
+                            checkpoint.CheckpointScope != CheckpointScope.Tenant ||
+                            checkpoint.SubscriptionAssemblyQualifiedName != registeredName ||
+                            checkpoint.TenantId != tenantId))))
+            {
+                return 0;
+            }
+        }
+        else if (_registeredSubscriptionNames.Any(registeredName =>
+                     checkpoints.All(checkpoint =>
+                         checkpoint.CheckpointScope != CheckpointScope.Global ||
+                         checkpoint.SubscriptionAssemblyQualifiedName != registeredName)))
+        {
+            return 0;
+        }
+
+        var safeSequence = Math.Min(
+            throughSequence,
+            checkpoints.Min(checkpoint => checkpoint.Sequence));
         return await dbContext.Set<DbOutboxMessage>()
             .Where(message => message.Sequence <= safeSequence)
             .ExecuteDeleteAsync(ct);

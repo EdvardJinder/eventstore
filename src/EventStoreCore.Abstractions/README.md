@@ -1,7 +1,8 @@
 # EventStoreCore.Abstractions
 
 Provider-neutral contracts for EventStoreCore events, streams, projections,
-subscriptions, checkpoints, metadata, serialization, and bounded reads.
+subscriptions, entity-outbox management, checkpoints, metadata, serialization,
+and bounded reads.
 
 ```bash
 dotnet add package EventStoreCore.Abstractions

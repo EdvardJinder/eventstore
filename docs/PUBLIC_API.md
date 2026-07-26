@@ -6,7 +6,7 @@ EventStoreCore is still pre-1.0. Public API changes may be made between beta rel
 
 The supported contracts are deliberately concentrated in these areas:
 
-- `EventStoreCore.Abstractions`: events, typed and untyped streams, event stores, projections, subscriptions, checkpoint scopes, optimistic-concurrency expectations, and their management DTOs.
+- `EventStoreCore.Abstractions`: events, typed and untyped streams, event stores, projections, subscriptions, entity-outbox subscriptions, checkpoint scopes, optimistic-concurrency expectations, and their management DTOs.
 - `EventStoreCore`: dependency-injection and EF Core builder interfaces and extension methods, projection and subscription options, snapshot configuration, event type registration, projection context helpers, and public operational exceptions.
 - `EventStoreCore.Postgres` and `EventStoreCore.SqlServer`: provider-specific `ModelBuilder.UseEventStore` extensions.
 - `EventStoreCore.CloudEvents`, `EventStoreCore.EventGrid`, and `EventStoreCore.MassTransit`: transport registration, transformation options, and transport subscription contracts.

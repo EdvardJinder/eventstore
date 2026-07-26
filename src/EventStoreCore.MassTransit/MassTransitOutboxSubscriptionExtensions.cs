@@ -17,12 +17,29 @@ public static class MassTransitOutboxSubscriptionExtensions
         this IServiceCollection services,
         Action<IOutboxEventTransformerOptions> configure)
     {
+        return services.AddMassTransitOutboxSubscription(configure, _ => { });
+    }
+
+    /// <summary>
+    /// Adds a configured MassTransit-backed entity-outbox subscription.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Transformation configuration.</param>
+    /// <param name="configureSubscription">Identity, filtering, and failure-policy configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddMassTransitOutboxSubscription(
+        this IServiceCollection services,
+        Action<IOutboxEventTransformerOptions> configure,
+        Action<OutboxSubscriptionRegistrationOptions> configureSubscription)
+    {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
+        ArgumentNullException.ThrowIfNull(configureSubscription);
 
         services.AddOptions<OutboxEventTransformerOptions>()
             .Configure(configure);
-        services.AddOutboxSubscription<MassTransitOutboxSubscription>();
+        services.AddOutboxSubscription<MassTransitOutboxSubscription>(
+            configureSubscription);
         return services;
     }
 }

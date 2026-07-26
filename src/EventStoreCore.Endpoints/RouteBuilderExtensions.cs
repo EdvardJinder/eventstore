@@ -349,6 +349,195 @@ public static class RouteBuilderExtensions
         .Produces(StatusCodes.Status202Accepted)
         .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/outbox-subscriptions", async (
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+            Results.Ok(tenantId.HasValue
+                ? await manager.GetAllStatusesAsync(tenantId.Value, ct)
+                : await manager.GetAllStatusesAsync(ct)))
+        .WithName("GetAllOutboxSubscriptions")
+        .WithDescription("Gets the status of all registered entity-outbox subscriptions")
+        .Produces<IReadOnlyList<OutboxSubscriptionStatusDto>>();
+
+        group.MapGet("/outbox-subscriptions/{name}", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            var status = tenantId.HasValue
+                ? await manager.GetStatusAsync(name, tenantId.Value, ct)
+                : await manager.GetStatusAsync(name, ct);
+            return status is null ? Results.NotFound() : Results.Ok(status);
+        })
+        .WithName("GetOutboxSubscription")
+        .WithDescription("Gets the status of a registered entity-outbox subscription")
+        .Produces<OutboxSubscriptionStatusDto>()
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/outbox-subscriptions/{name}/pause", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.PauseAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.PauseAsync(name, ct);
+                }
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("PauseOutboxSubscription")
+        .WithDescription("Pauses an entity-outbox subscription")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/outbox-subscriptions/{name}/resume", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.ResumeAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.ResumeAsync(name, ct);
+                }
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("ResumeOutboxSubscription")
+        .WithDescription("Resumes a paused entity-outbox subscription")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/outbox-subscriptions/{name}/failed-event", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            var failedEvent = tenantId.HasValue
+                ? await manager.GetFailedEventAsync(name, tenantId.Value, ct)
+                : await manager.GetFailedEventAsync(name, ct);
+            return failedEvent is null ? Results.NotFound() : Results.Ok(failedEvent);
+        })
+        .WithName("GetOutboxSubscriptionFailedEvent")
+        .WithDescription("Gets the event that faulted or dead-lettered an entity-outbox subscription")
+        .Produces<OutboxFailedEventDto>()
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/outbox-subscriptions/{name}/retry", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.RetryFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.RetryFailedEventAsync(name, ct);
+                }
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("RetryOutboxSubscriptionFailedEvent")
+        .WithDescription("Retries the failed entity-outbox subscription event")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/outbox-subscriptions/{name}/skip", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.SkipFailedEventAsync(name, tenantId.Value, ct);
+                }
+                else
+                {
+                    await manager.SkipFailedEventAsync(name, ct);
+                }
+                return Results.Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("SkipOutboxSubscriptionFailedEvent")
+        .WithDescription("Skips the failed entity-outbox subscription event")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/outbox-subscriptions/{name}/replay", async (
+            [FromRoute] string name,
+            [FromServices] IOutboxSubscriptionManager manager,
+            [FromQuery] long? startSequence,
+            [FromQuery] DateTimeOffset? fromTimestamp,
+            [FromQuery] Guid? tenantId,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                if (tenantId.HasValue)
+                {
+                    await manager.ReplayAsync(name, tenantId.Value, startSequence, fromTimestamp, ct);
+                }
+                else
+                {
+                    await manager.ReplayAsync(name, startSequence, fromTimestamp, ct);
+                }
+                return Results.Accepted();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("ReplayOutboxSubscription")
+        .WithDescription("Replays an entity-outbox subscription from a sequence or timestamp")
+        .Produces(StatusCodes.Status202Accepted)
+        .Produces(StatusCodes.Status400BadRequest);
+
         return group;
     }
 }
