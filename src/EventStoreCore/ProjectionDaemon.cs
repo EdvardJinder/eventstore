@@ -125,7 +125,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         {
             lockHandle = await _distributedLockProvider.TryAcquireLockAsync(
                 lockName,
-                TimeSpan.FromSeconds(2),
+                ValidateLockTimeout(_options.LockTimeout),
                 ct);
 
             if (lockHandle == null)
@@ -155,18 +155,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                     "Projection {Projection} version changed from {OldVersion} to {NewVersion}, triggering rebuild",
                     projection.Name, status.Version, projection.Version);
 
-                await InitiateRebuildAsync(dbContext, projection, status, ct);
+                await InitiateRebuildAsync(dbContext, scope.ServiceProvider, projection, status, ct);
             }
 
             // Process based on current state
             switch (status.State)
             {
                 case ProjectionState.Active:
-                    await ProcessEventsAsync(dbContext, projection, status, ct);
+                    await ProcessEventsAsync(dbContext, scope.ServiceProvider, projection, status, ct);
                     break;
 
                 case ProjectionState.Rebuilding:
-                    await ContinueRebuildAsync(dbContext, projection, status, ct);
+                    await ContinueRebuildAsync(dbContext, scope.ServiceProvider, projection, status, ct);
                     break;
 
                 case ProjectionState.Paused:
@@ -186,6 +186,17 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 _logger.LogDebug("Released lock for projection {Projection}", projection.Name);
             }
         }
+    }
+
+    private static TimeSpan ValidateLockTimeout(TimeSpan timeout)
+    {
+        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(ProjectionDaemonOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.");
+        }
+
+        return timeout;
     }
 
     /// <summary>
@@ -232,11 +243,13 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// Initiates a projection rebuild by clearing data and resetting status.
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="services">The application service provider for the active daemon scope.</param>
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
     internal async Task InitiateRebuildAsync(
         TDbContext dbContext,
+        IServiceProvider services,
         ProjectionRegistration projection,
         DbProjectionStatus status,
         CancellationToken ct)
@@ -262,7 +275,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
         // Clear projection data
         _logger.LogInformation("Clearing data for projection {Projection}", projection.Name);
-        await projection.ClearAction(dbContext, ct);
+        await projection.ClearAction(dbContext, services, ct);
         await dbContext.SaveChangesAsync(ct);
 
         _logger.LogInformation("Rebuild initiated for projection {Projection}, replaying {Total} events", 
@@ -273,16 +286,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// Continues a rebuild by processing the next batch of events.
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="services">The application service provider for the active daemon scope.</param>
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
     private async Task ContinueRebuildAsync(
         TDbContext dbContext,
+        IServiceProvider services,
         ProjectionRegistration projection,
         DbProjectionStatus status,
         CancellationToken ct)
     {
-        var processed = await ProcessBatchAsync(dbContext, projection, status, ct);
+        var processed = await ProcessBatchAsync(dbContext, services, projection, status, ct);
 
 
         if (!processed)
@@ -303,16 +318,18 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// Processes new events for an active projection.
     /// </summary>
     /// <param name="dbContext">The DbContext used for persistence.</param>
+    /// <param name="services">The application service provider for the active daemon scope.</param>
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
     private async Task ProcessEventsAsync(
         TDbContext dbContext,
+        IServiceProvider services,
         ProjectionRegistration projection,
         DbProjectionStatus status,
         CancellationToken ct)
     {
-        var processed = await ProcessBatchAsync(dbContext, projection, status, ct);
+        var processed = await ProcessBatchAsync(dbContext, services, projection, status, ct);
 
 
         if (!processed)
@@ -332,6 +349,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// <returns>True when events were processed; false when no events were available.</returns>
     private async Task<bool> ProcessBatchAsync(
         TDbContext dbContext,
+        IServiceProvider services,
         ProjectionRegistration projection,
         DbProjectionStatus status,
         CancellationToken ct)
@@ -392,7 +410,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 var isNew = dbContext.Entry(snapshot).State == EntityState.Detached;
 
                 // Apply the event
-                await projection.EvolveAction(dbContext, _serviceProvider, snapshot, @event, ct);
+                await projection.EvolveAction(dbContext, services, snapshot, @event, ct);
 
                 // Add snapshot if it was new
                 if (isNew)

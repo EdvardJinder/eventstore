@@ -16,17 +16,14 @@ public sealed class EventualProjectionSubscription<TDbContext, TProjection, TSna
     where TSnapshot : class, new()
 {
     private readonly ProjectionOptions _options;
-    private readonly IServiceProvider _services;
 
     /// <summary>
     /// Creates a subscription that executes projections via the daemon pipeline.
     /// </summary>
     /// <param name="options">Projection options.</param>
-    /// <param name="services">Service provider for resolving dependencies.</param>
-    public EventualProjectionSubscription(ProjectionOptions options, IServiceProvider services)
+    public EventualProjectionSubscription(ProjectionOptions options)
     {
         _options = options;
-        _services = services;
     }
 
     /// <summary>
@@ -45,9 +42,14 @@ public sealed class EventualProjectionSubscription<TDbContext, TProjection, TSna
     /// Handles an event using the projection and DbContext scope.
     /// </summary>
     /// <param name="dbContext">The DbContext scope used for persistence.</param>
+    /// <param name="services">The application service provider for the active daemon scope.</param>
     /// <param name="event">The event to process.</param>
     /// <param name="ct">Cancellation token.</param>
-    public async Task HandleAsync(DbContext dbContext, IEvent @event, CancellationToken ct)
+    public async Task HandleAsync(
+        DbContext dbContext,
+        IServiceProvider services,
+        IEvent @event,
+        CancellationToken ct)
     {
         if (!_options.IsHandeled(@event.EventType))
         {
@@ -61,7 +63,7 @@ public sealed class EventualProjectionSubscription<TDbContext, TProjection, TSna
             .Set<TSnapshot>()
             .FindAsync([key], ct);
 
-        var projectionContext = new ProjectionContext(dbContext, _services);
+        var projectionContext = new ProjectionContext(dbContext, services);
 
         if (snapshot is null)
         {

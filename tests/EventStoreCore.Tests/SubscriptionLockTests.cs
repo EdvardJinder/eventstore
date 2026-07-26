@@ -30,7 +30,9 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
         {
             c.ExistingDbContext<TestDbContext>();
 
-            c.AddSubscriptionDaemon<TestDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
+            c.AddSubscriptionDaemon<TestDbContext>(
+                _ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString),
+                options => options.LockTimeout = TimeSpan.FromMilliseconds(100));
             c.AddSubscription<TestSub>();
         });
 
@@ -57,7 +59,9 @@ public class SubscriptionLockTests(PostgresFixture fixture) : IClassFixture<Post
         services1.AddEventStore(c =>
         {
             c.ExistingDbContext<TestDbContext>();
-            c.AddSubscriptionDaemon<TestDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
+            c.AddSubscriptionDaemon<TestDbContext>(
+                _ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString),
+                options => options.LockTimeout = TimeSpan.FromMilliseconds(100));
             c.AddSubscription<TestSub>();
         });
         services1.AddLogging();

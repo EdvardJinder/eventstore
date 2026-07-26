@@ -1,5 +1,7 @@
 using EventStoreCore.Abstractions;
 
+namespace EventStoreCore;
+
 /// <summary>
 /// Configuration options for subscription processing.
 /// </summary>
@@ -21,7 +23,8 @@ public sealed class SubscriptionOptions
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// Maximum time to hold a distributed lock for a subscription.
+    /// Maximum time to wait to acquire a distributed lock for a subscription.
+    /// The acquired lock is held until its handle is disposed.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
 

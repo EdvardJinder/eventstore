@@ -451,9 +451,7 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
         var checkpointScope = new CheckpointScopeKey(record.CheckpointScope, record.TenantId);
         var totalEvents = await CountEventsAsync(checkpointScope, ct);
         var lastProcessedAt = await GetLastProcessedAtAsync(record.Sequence, checkpointScope, ct);
-        var processedEvents = checkpointScope.IsTenant
-            ? await CountProcessedEventsAsync(record.Sequence, checkpointScope, ct)
-            : (long?)null;
+        var processedEvents = await CountProcessedEventsAsync(record.Sequence, checkpointScope, ct);
 
         return record.ToDto(totalEvents, lastProcessedAt, processedEvents);
     }

@@ -58,7 +58,7 @@ public class MassTransitSubscriptionCoverageTests
     }
 
     [Fact]
-    public async Task Handle_LogsAndSkipsWhenTransformReturnsNull()
+    public async Task Handle_ThrowsWhenTransformReturnsNull()
     {
         var transformerOptions = new EventTransformerOptions();
         transformerOptions.AddEvent<SampleEvent, SampleMessage>(_ => null!);
@@ -78,10 +78,10 @@ public class MassTransitSubscriptionCoverageTests
         };
         var @event = new Event<SampleEvent>(dbEvent);
 
-        await subscription.Handle(@event, TestContext.Current.CancellationToken);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            subscription.Handle(@event, TestContext.Current.CancellationToken));
 
-        await bus.DidNotReceiveWithAnyArgs()
-            .Publish(Arg.Any<object>(), Arg.Any<Type>(), Arg.Any<CancellationToken>());
+        Assert.Contains("Transform returned null", exception.Message);
     }
 
     [Fact]
@@ -108,6 +108,10 @@ public class MassTransitSubscriptionCoverageTests
         await subscription.Handle(@event, TestContext.Current.CancellationToken);
 
         await bus.Received(1)
-            .Publish(Arg.Any<SampleMessage>(), Arg.Any<Type>(), Arg.Any<CancellationToken>());
+            .Publish(
+                Arg.Any<SampleMessage>(),
+                Arg.Any<Type>(),
+                Arg.Any<IPipe<PublishContext>>(),
+                Arg.Any<CancellationToken>());
     }
 }

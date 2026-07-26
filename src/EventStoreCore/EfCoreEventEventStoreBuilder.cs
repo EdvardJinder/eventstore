@@ -41,7 +41,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         }
         else
         {
-            services.AddSingleton<ISubscription>(sp => new EventualProjectionSubscription<TDbContext, TProjection, TSnapshot>(options, sp));
+            services.AddSingleton<ISubscription>(_ => new EventualProjectionSubscription<TDbContext, TProjection, TSnapshot>(options));
         }
     }
 
@@ -58,10 +58,12 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         Action<SubscriptionOptions>? configure = null)
     {
         services.TryAddSingleton(factory);
-        services.Configure<SubscriptionOptions>(opts =>
-        {
-            configure?.Invoke(opts);
-        });
+        services.AddOptions<SubscriptionOptions>()
+            .Configure(opts => configure?.Invoke(opts))
+            .Validate(
+                opts => opts.LockTimeout >= TimeSpan.Zero || opts.LockTimeout == Timeout.InfiniteTimeSpan,
+                $"{nameof(SubscriptionOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.")
+            .ValidateOnStart();
         services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
         services.TryAddScoped<ISubscriptionManager>(sp =>
         {
@@ -81,10 +83,12 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
     {
         services.TryAddSingleton(lockProviderFactory);
 
-        services.Configure<ProjectionDaemonOptions>(opts =>
-        {
-            configure?.Invoke(opts);
-        });
+        services.AddOptions<ProjectionDaemonOptions>()
+            .Configure(opts => configure?.Invoke(opts))
+            .Validate(
+                opts => opts.LockTimeout >= TimeSpan.Zero || opts.LockTimeout == Timeout.InfiniteTimeSpan,
+                $"{nameof(ProjectionDaemonOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.")
+            .ValidateOnStart();
 
         services.TryAddSingleton<ProjectionDaemon<TDbContext>>();
         services.AddHostedService(sp => sp.GetRequiredService<ProjectionDaemon<TDbContext>>());
@@ -95,7 +99,8 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             var lockProvider = sp.GetRequiredService<IDistributedLockProvider>();
             var projections = sp.GetServices<ProjectionRegistration>();
             var logger = sp.GetRequiredService<ILogger<ProjectionManager<TDbContext>>>();
-            return new ProjectionManager<TDbContext>(dbContext, lockProvider, projections, logger);
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProjectionDaemonOptions>>();
+            return new ProjectionManager<TDbContext>(dbContext, lockProvider, projections, logger, sp, options);
         });
     }
 
@@ -107,9 +112,9 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         where TProjection : IProjection<TSnapshot>, new()
         where TSnapshot : class, new()
     {
-        Func<DbContext, CancellationToken, Task> clearAction = async (db, ct) =>
+        Func<DbContext, IServiceProvider, CancellationToken, Task> clearAction = async (db, serviceProvider, ct) =>
         {
-            var context = new ProjectionContext(db, null!);
+            var context = new ProjectionContext(db, serviceProvider);
             await TProjection.ClearAsync(context, ct);
         };
 

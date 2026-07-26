@@ -168,8 +168,23 @@ public class DbProjectionStatusTests
         // Act
         var dto = status.ToDto();
 
-        // Assert - progress can exceed 100%
-        Assert.Equal(150.0, dto.ProgressPercentage);
+        // Assert - externally reported progress is always bounded.
+        Assert.Equal(100.0, dto.ProgressPercentage);
+    }
+
+    [Fact]
+    public void ToDto_UsesProcessedEventCountWhenSequencesContainGaps()
+    {
+        var status = new DbProjectionStatus
+        {
+            ProjectionName = "GappedProjection",
+            Position = 100,
+            TotalEvents = 4
+        };
+
+        var dto = status.ToDto(totalEvents: 4, processedEvents: 2);
+
+        Assert.Equal(50.0, dto.ProgressPercentage);
     }
 
     [Fact]

@@ -46,7 +46,7 @@ public class DaemonHarnessTests
 
         public Task Handle(IEvent @event, CancellationToken ct) => Task.CompletedTask;
 
-        public Task HandleAsync(DbContext dbContext, IEvent @event, CancellationToken ct)
+        public Task HandleAsync(DbContext dbContext, IServiceProvider services, IEvent @event, CancellationToken ct)
         {
             Handled = true;
             return Task.CompletedTask;
@@ -146,7 +146,7 @@ public class DaemonHarnessTests
             ProjectionType = typeof(ProjectionSnapshot),
             SnapshotType = typeof(ProjectionSnapshot),
             Options = options,
-            ClearAction = async (db, ct) =>
+            ClearAction = async (db, _, ct) =>
             {
                 var set = db.Set<ProjectionSnapshot>();
                 foreach (var snapshot in set)

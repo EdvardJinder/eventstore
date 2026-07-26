@@ -9,16 +9,31 @@ namespace EventStoreCore.CloudEvents;
 public sealed class CloudEventTransformerOptions
 {
     internal Dictionary<Type, Func<IEvent, CloudEvent>> _mappings = new();
+    internal HashSet<Type> _preservedCloudEventIds = [];
 
     /// <summary>
     /// Registers a custom CloudEvent mapping for the given event type.
     /// </summary>
     /// <typeparam name="TEvent">The event payload type.</typeparam>
     /// <param name="transform">Transformation function.</param>
-    public void MapEvent<TEvent>(Func<IEvent<TEvent>, CloudEvent> transform)
+    /// <param name="preserveCloudEventId">
+    /// Whether to preserve the ID returned by <paramref name="transform"/>.
+    /// The default replaces it with the stable EventStore event ID.
+    /// </param>
+    public void MapEvent<TEvent>(
+        Func<IEvent<TEvent>, CloudEvent> transform,
+        bool preserveCloudEventId = false)
         where TEvent : class
     {
         _mappings[typeof(TEvent)] = (ievent) => transform((IEvent<TEvent>)ievent);
+        if (preserveCloudEventId)
+        {
+            _preservedCloudEventIds.Add(typeof(TEvent));
+        }
+        else
+        {
+            _preservedCloudEventIds.Remove(typeof(TEvent));
+        }
     }
 
     /// <summary>

@@ -198,7 +198,8 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var stream = await eventStore.FetchForReadingAsync(id, version: 2, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stream);
-        Assert.Equal(2, stream!.Events.Count);
+        Assert.Equal(2, stream!.Version);
+        Assert.Equal(2, stream.Events.Count);
 
         // Verify that the events are the first two events
         Assert.IsType<IEvent<TestEvent>>(stream.Events[0], exactMatch: false);
@@ -397,7 +398,8 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
                 TestContext.Current.CancellationToken);
 
             Assert.NotNull(stream);
-            Assert.Empty(stream!.Events);
+            Assert.Equal(2, stream!.Version);
+            Assert.Empty(stream.Events);
             Assert.Equal("two", stream.State.Name);
             Assert.Equal(2, stream.State.ApplyCount);
         }
@@ -604,6 +606,46 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         Assert.NotNull(readStream);
         Assert.Equal(2, readStream!.Events.Count);
         Assert.Equal(2, await GetCurrentVersionAsync(verifyContext, streamId));
+    }
+
+    [Fact]
+    public async Task AppendAsync_DoesNotCommitUnrelatedTrackedChanges()
+    {
+        var streamId = Guid.NewGuid();
+        var snapshot = new ProjectionTests.UserSnapshot
+        {
+            UserId = Guid.NewGuid(),
+            Name = "pending"
+        };
+
+        using var dbContext = eventStoreFixture.CreateNewContext();
+        dbContext.Add(snapshot);
+
+        await dbContext.Streams.AppendAsync(
+            streamId,
+            ExpectedVersion.NoStream,
+            [new TestEvent()],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EntityState.Added, dbContext.Entry(snapshot).State);
+
+        using var verifyContext = eventStoreFixture.CreateNewContext();
+        Assert.False(await verifyContext.Set<ProjectionTests.UserSnapshot>()
+            .AnyAsync(x => x.UserId == snapshot.UserId, TestContext.Current.CancellationToken));
+        Assert.NotNull(await verifyContext.Streams.FetchForReadingAsync(
+            streamId,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void StartStream_RejectsValueTypeEventPayloads()
+    {
+        using var dbContext = eventStoreFixture.CreateNewContext();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            dbContext.Streams.StartStream(Guid.NewGuid(), events: [42]));
+
+        Assert.Contains("reference types", exception.Message);
     }
 
     [Fact]

@@ -64,7 +64,8 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
 
     #endregion
 
-    private ServiceProvider BuildServiceProvider()
+    private ServiceProvider BuildServiceProvider(
+        CheckpointScope checkpointScope = CheckpointScope.Global)
     {
         var services = new ServiceCollection();
         services.AddDbContext<TestDbContext>(options =>
@@ -77,7 +78,9 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
             {
                 p.Handles<TestEvent>();
             });
-            c.AddProjectionDaemon<TestDbContext>(_ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString));
+            c.AddProjectionDaemon<TestDbContext>(
+                _ => new PostgresDistributedSynchronizationProvider(fixture.ConnectionString),
+                options => options.CheckpointScope = checkpointScope);
         });
 
         services.AddLogging();
@@ -175,7 +178,15 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
             // Use reflection to create instance since constructor is internal
             var type = typeof(ProjectionManager<>).MakeGenericType(typeof(EventStoreDbContext));
             var ctor = type.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
-            return (IProjectionManager)ctor.Invoke(new object[] { db, lockProvider, Enumerable.Empty<ProjectionRegistration>(), logger });
+            return (IProjectionManager)ctor.Invoke(new object[]
+            {
+                db,
+                lockProvider,
+                Enumerable.Empty<ProjectionRegistration>(),
+                logger,
+                sp,
+                Microsoft.Extensions.Options.Options.Create(new ProjectionDaemonOptions())
+            });
         });
 
         var provider = services.BuildServiceProvider();
@@ -234,7 +245,7 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
     [Fact]
     public async Task RebuildAsync_ResetsTenantScopedCheckpointsAfterClearingProjectionData()
     {
-        var provider = BuildServiceProvider();
+        var provider = BuildServiceProvider(CheckpointScope.Tenant);
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
         await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
@@ -280,11 +291,9 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
             .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(snapshots);
-        Assert.Contains(statuses, status =>
+        Assert.DoesNotContain(statuses, status =>
             status.CheckpointScope == CheckpointScope.Global &&
-            status.TenantId == Guid.Empty &&
-            status.State == ProjectionState.Rebuilding &&
-            status.Position == 0);
+            status.State == ProjectionState.Rebuilding);
         Assert.Contains(statuses, status =>
             status.CheckpointScope == CheckpointScope.Tenant &&
             status.TenantId == tenantA &&

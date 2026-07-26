@@ -19,9 +19,11 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
     public class SingleEventConsumer : IConsumer<TestIntegrationEvent>
     {
         public static List<TestIntegrationEvent> HandledEvents { get; } = new();
+        public static Guid? LastMessageId { get; private set; }
         public Task Consume(ConsumeContext<TestIntegrationEvent> context)
         {
             HandledEvents.Add(context.Message);
+            LastMessageId = context.MessageId;
             return Task.CompletedTask;
         }
     }
@@ -98,6 +100,10 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
             .Where(e => e.StreamId == streamId)
             .Select(e => e.Sequence)
             .SingleAsync(TestContext.Current.CancellationToken);
+        var writtenEventId = await eventStoreDbContext.Events
+            .Where(e => e.StreamId == streamId)
+            .Select(e => e.EventId)
+            .SingleAsync(TestContext.Current.CancellationToken);
 
         var harness = provider.GetTestHarness();
         await harness.Start();
@@ -123,6 +129,7 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         Assert.Equal(writtenSequence, subscriptionEntity.Sequence);
         Assert.True(processed, "No event was processed");
         Assert.Single(SingleEventConsumer.HandledEvents);
+        Assert.Equal(writtenEventId, SingleEventConsumer.LastMessageId);
         Assert.IsType<TestIntegrationEvent>(SingleEventConsumer.HandledEvents[0]);
 
 

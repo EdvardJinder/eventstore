@@ -89,6 +89,26 @@ public class SubscriptionDaemonExecutionTests
         }
     }
 
+    private sealed class MutatingThrowingScopedSubscription : IScopedSubscription
+    {
+        public Task Handle(IEvent @event, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task HandleAsync(
+            DbContext dbContext,
+            IServiceProvider services,
+            IEvent @event,
+            CancellationToken ct)
+        {
+            dbContext.Set<DbProjectionStatus>().Add(new DbProjectionStatus
+            {
+                ProjectionName = "must-not-commit",
+                Position = @event.Version
+            });
+            throw new InvalidOperationException("Scoped handler failed after mutation.");
+        }
+    }
+
     private sealed class TenantPoisonSubscription : ISubscription
     {
         private readonly Guid _poisonTenantId;
@@ -115,6 +135,7 @@ public class SubscriptionDaemonExecutionTests
     private sealed class FakeLockProvider : IDistributedLockProvider
     {
         public bool ReturnNullHandle { get; set; }
+        public TimeSpan? LastAcquireTimeout { get; set; }
 
         public IDistributedLock CreateLock(string name) => new FakeLock(this, name);
     }
@@ -134,6 +155,7 @@ public class SubscriptionDaemonExecutionTests
 
         public ValueTask<IDistributedSynchronizationHandle> AcquireAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         {
+            _provider.LastAcquireTimeout = timeout;
             return new ValueTask<IDistributedSynchronizationHandle>(new FakeHandle());
         }
 
@@ -348,6 +370,58 @@ public class SubscriptionDaemonExecutionTests
         Assert.Equal(SubscriptionState.Faulted, subscriptionEntity!.State);
         Assert.Equal(1, subscriptionEntity.Sequence);
         Assert.Equal(2, subscriptionEntity.FailedEventSequence);
+    }
+
+    [Fact]
+    public async Task AcquireSubscriptionLockAsync_UsesConfiguredTimeout()
+    {
+        var db = BuildDbContext();
+        var subscription = new RecordingSubscription();
+        var provider = BuildProvider(db, subscription);
+        var lockProvider = new FakeLockProvider();
+        var configuredTimeout = TimeSpan.FromSeconds(17);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            lockProvider,
+            Options.Create(new SubscriptionOptions { LockTimeout = configuredTimeout }));
+
+        await using var handle = await daemon.AcquireSubscriptionLockAsync<RecordingSubscription>(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(configuredTimeout, lockProvider.LastAcquireTimeout);
+    }
+
+    [Fact]
+    public async Task ProcessNextBatchAsync_RollsBackFailingScopedHandlerMutations()
+    {
+        var db = BuildDbContext();
+        var subscription = new MutatingThrowingScopedSubscription();
+        var provider = BuildProvider(db, subscription);
+        var daemon = new SubscriptionDaemon<ExecutionDbContext>(
+            NullLogger<SubscriptionDaemon<ExecutionDbContext>>.Instance,
+            provider,
+            new FakeLockProvider(),
+            Options.Create(new SubscriptionOptions()));
+
+        db.Streams.StartStream(Guid.NewGuid(), events: [new object()]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await EnsureSequencesAsync(db);
+
+        var processed = await daemon.ProcessNextBatchAsync(
+            provider.CreateScope(),
+            subscription,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, processed);
+        Assert.False(await db.Set<DbProjectionStatus>()
+            .AnyAsync(x => x.ProjectionName == "must-not-commit", TestContext.Current.CancellationToken));
+        var status = await FindSubscriptionAsync(
+            db,
+            subscription.GetType().AssemblyQualifiedName!,
+            CheckpointScope.Global,
+            Guid.Empty);
+        Assert.Equal(SubscriptionState.Faulted, status!.State);
     }
 
     [Fact]

@@ -21,7 +21,8 @@ public sealed class ProjectionDaemonOptions
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Maximum time to hold a distributed lock for a projection.
+    /// Maximum time to wait to acquire a distributed lock for a projection.
+    /// The acquired lock is held until its handle is disposed.
     /// Default is 5 minutes.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
