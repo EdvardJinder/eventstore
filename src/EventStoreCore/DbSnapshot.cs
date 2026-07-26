@@ -1,9 +1,6 @@
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents the latest persisted aggregate snapshot for a stream and state type.
-/// </summary>
-public sealed class DbSnapshot
+internal sealed class DbSnapshot
 {
     /// <summary>
     /// The tenant identifier for multi-tenant scenarios.
@@ -39,4 +36,9 @@ public sealed class DbSnapshot
     /// When the snapshot was recorded in UTC.
     /// </summary>
     public DateTimeOffset Timestamp { get; set; }
+
+    /// <summary>
+    /// The serialized snapshot schema version.
+    /// </summary>
+    public int SchemaVersion { get; set; } = 1;
 }

@@ -2,20 +2,18 @@ using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
 
 namespace EventStoreCore;
 
-/// <summary>
-/// EF Core-backed stream implementation.
-/// </summary>
-public class DbContextStream : IStream
+internal class DbContextStream : IStream
 {
     private readonly DbStream _dbStream;
     private readonly DbContext? _db;
     private IReadOnlyList<IEvent>? _events;
     private readonly EventTypeRegistry? _registry;
     private readonly SnapshotRegistry? _snapshots;
+    private protected IEventStoreSerializer Serializer { get; private set; } =
+        new SystemTextJsonEventStoreSerializer();
 
     /// <summary>
     /// Creates a stream wrapper for the provided stream record.
@@ -52,12 +50,17 @@ public class DbContextStream : IStream
             ?? throw new InvalidOperationException(
                 "EventTypeRegistry is not registered. Call services.AddEventStore() before using the event store.");
         _snapshots = appProvider.GetService<SnapshotRegistry>();
+        Serializer = appProvider.GetService<IEventStoreSerializer>()
+            ?? new SystemTextJsonEventStoreSerializer();
     }
 
     /// <summary>
     /// The tenant identifier for multi-tenant scenarios.
     /// </summary>
     public Guid TenantId => _dbStream.TenantId;
+
+    /// <inheritdoc />
+    public string StreamType => _dbStream.StreamType;
 
     /// <inheritdoc />
     public Guid Id => _dbStream.Id;
@@ -78,7 +81,10 @@ public class DbContextStream : IStream
         {
             ArgumentNullException.ThrowIfNull(@event);
 
-            var eventType = @event.GetType();
+            var append = @event as EventToAppend;
+            var eventData = append?.Data ?? @event;
+            var metadata = append?.Metadata;
+            var eventType = eventData.GetType();
             if (eventType.IsValueType)
             {
                 throw new ArgumentException(
@@ -95,9 +101,15 @@ public class DbContextStream : IStream
                 Version = ++_dbStream.CurrentVersion,
                 Type = eventType.AssemblyQualifiedName!,
                 TypeName = typeName,
-                Data = System.Text.Json.JsonSerializer.Serialize(@event),
+                Data = Serializer.Serialize(eventData, eventType),
                 Timestamp = DateTimeOffset.UtcNow,
-                EventId = Guid.NewGuid()
+                EventId = Guid.NewGuid(),
+                CorrelationId = metadata?.CorrelationId,
+                CausationId = metadata?.CausationId,
+                Actor = metadata?.Actor,
+                Headers = EventHeaders.Serialize(metadata?.Headers
+                    ?? new Dictionary<string, string>()),
+                SchemaVersion = _registry?.ResolveSchemaVersion(eventType) ?? 1
             };
 
             _dbStream.Events.Add(dbEvent);
@@ -111,16 +123,12 @@ public class DbContextStream : IStream
     protected IReadOnlyList<IEvent> MaterializeEvents(IEnumerable<DbEvent> events)
         => events
             .OrderBy(e => e.Version)
-            .Select(e => e.ToEvent(_registry))
+            .Select(e => e.ToEvent(_registry, Serializer))
             .ToList();
 
 }
 
-/// <summary>
-/// EF Core-backed typed stream implementation.
-/// </summary>
-/// <typeparam name="T">The state type rebuilt from the stream.</typeparam>
-public class DbContextStream<T> : DbContextStream, IStream<T> where T : IState, new()
+internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState, new()
 {
     private readonly T? _snapshotState;
     private readonly IReadOnlyList<IEvent>? _stateEvents;
@@ -155,7 +163,9 @@ public class DbContextStream<T> : DbContextStream, IStream<T> where T : IState, 
         {
             var state = _snapshotState is null
                 ? new T()
-                : JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_snapshotState)) ?? new T();
+                : (T?)Serializer.Deserialize(
+                    Serializer.Serialize(_snapshotState, typeof(T)),
+                    typeof(T)) ?? new T();
             foreach (var @event in _stateEvents ?? Events)
             {
                 state.Apply(@event);

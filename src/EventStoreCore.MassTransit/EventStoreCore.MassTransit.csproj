@@ -12,6 +12,8 @@
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+		<Description>MassTransit publisher integration for EventStoreCore subscriptions.</Description>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 
 	</PropertyGroup>
 
@@ -29,6 +31,10 @@
 
 	<ItemGroup>
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 </Project>

@@ -1,9 +1,6 @@
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents a persisted event stream and its metadata.
-/// </summary>
-public sealed class DbStream
+internal sealed class DbStream
 {
     /// <summary>
     /// The tenant identifier for multi-tenant scenarios.

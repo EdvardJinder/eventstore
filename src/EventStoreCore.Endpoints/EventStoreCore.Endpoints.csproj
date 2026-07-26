@@ -15,6 +15,7 @@
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 
     <Description>Admin API endpoints for EventStoreCore projection management</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +25,10 @@
   <ItemGroup>
     <ProjectReference Include="..\EventStoreCore.Abstractions\EventStoreCore.Abstractions.csproj" />
     <ProjectReference Include="..\EventStoreCore\EventStoreCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

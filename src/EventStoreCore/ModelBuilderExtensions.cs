@@ -82,6 +82,20 @@ internal static class ModelBuilderExtensions
             entity.Property(e => e.Timestamp)
                 .IsRequired();
 
+            entity.Property(e => e.CorrelationId);
+
+            entity.Property(e => e.CausationId);
+
+            entity.Property(e => e.Actor);
+
+            entity.Property(e => e.Headers)
+                .IsRequired()
+                .HasDefaultValue("{}");
+
+            entity.Property(e => e.SchemaVersion)
+                .IsRequired()
+                .HasDefaultValue(1);
+
             entity.HasIndex(e => e.TenantId);
 
             entity.HasIndex(e => new { e.TenantId, e.StreamId, e.StreamType });
@@ -116,6 +130,10 @@ internal static class ModelBuilderExtensions
 
             entity.Property(e => e.Timestamp)
                 .IsRequired();
+
+            entity.Property(e => e.SchemaVersion)
+                .IsRequired()
+                .HasDefaultValue(1);
 
             entity.HasIndex(e => e.TenantId);
 

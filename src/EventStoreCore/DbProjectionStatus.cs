@@ -2,10 +2,7 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents the persistent state of a projection for tracking position, version, and status.
-/// </summary>
-public sealed class DbProjectionStatus
+internal sealed class DbProjectionStatus
 {
     /// <summary>
     /// The unique name of the projection (typically the fully qualified type name).

@@ -15,6 +15,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
     public IServiceCollection Services => services;
 
     private readonly List<Action<IServiceProvider, DbContextOptionsBuilder>> dbContextOptionsBuilders = new();
+    private readonly HashSet<string> projectionNames = new(StringComparer.Ordinal);
 
     public void AddProjection<TProjection, TSnapshot>(ProjectionMode mode, Action<IProjectionOptions>? configure)
         where TProjection : IProjection<TSnapshot>, new()
@@ -25,9 +26,13 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
 
         var versionAttr = typeof(TProjection).GetCustomAttributes(typeof(ProjectionVersionAttribute), false)
             .FirstOrDefault() as ProjectionVersionAttribute;
-        var version = versionAttr?.Version ?? options.ProjectionVersion;
+        var version = versionAttr?.Version ?? 1;
 
-        var projectionName = typeof(TProjection).FullName ?? typeof(TProjection).Name;
+        var projectionName = options.LogicalName ?? typeof(TProjection).FullName ?? typeof(TProjection).Name;
+        if (!projectionNames.Add(projectionName))
+        {
+            throw new InvalidOperationException($"A projection with logical name '{projectionName}' is already registered.");
+        }
 
         services.AddSingleton<ProjectionRegistration>(sp =>
             CreateProjectionRegistration<TProjection, TSnapshot>(projectionName, mode, version, options));
@@ -57,6 +62,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         Func<IServiceProvider, IDistributedLockProvider> factory,
         Action<SubscriptionOptions>? configure = null)
     {
+        services.TryAddSingleton<DaemonHealthMonitor>();
         services.TryAddSingleton(factory);
         services.AddOptions<SubscriptionOptions>()
             .Configure(opts => configure?.Invoke(opts))
@@ -70,8 +76,9 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             var dbContext = sp.GetRequiredService<TDbContext>();
             var lockProvider = sp.GetRequiredService<IDistributedLockProvider>();
             var subscriptions = sp.GetServices<ISubscription>();
+            var registrations = sp.GetServices<SubscriptionRegistration>();
             var logger = sp.GetRequiredService<ILogger<SubscriptionManager<TDbContext>>>();
-            return new SubscriptionManager<TDbContext>(dbContext, lockProvider, subscriptions, logger);
+            return new SubscriptionManager<TDbContext>(dbContext, lockProvider, subscriptions, logger, registrations);
         });
         services.AddHostedService(sp => sp.GetRequiredService<SubscriptionDaemon<TDbContext>>());
     }
@@ -81,6 +88,7 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
         Func<IServiceProvider, IDistributedLockProvider> lockProviderFactory,
         Action<ProjectionDaemonOptions>? configure = null)
     {
+        services.TryAddSingleton<DaemonHealthMonitor>();
         services.TryAddSingleton(lockProviderFactory);
 
         services.AddOptions<ProjectionDaemonOptions>()

@@ -6,6 +6,38 @@ namespace EventStoreCore.Abstractions;
 public interface IEventStore
 {
     /// <summary>
+    /// Reads one bounded page of events without materializing the entire stream.
+    /// </summary>
+    /// <param name="streamType">The logical stream type.</param>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier.</param>
+    /// <param name="options">Range, direction, and page-size options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A page when the stream exists; otherwise null.</returns>
+    Task<StreamPage?> ReadPageAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        StreamReadOptions options,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously enumerates a bounded stream range without loading the entire range.
+    /// </summary>
+    /// <param name="streamType">The logical stream type.</param>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <param name="tenantId">The tenant identifier.</param>
+    /// <param name="options">Range, direction, and internal page-size options.</param>
+    /// <param name="cancellationToken">Cancellation token observed between and during page queries.</param>
+    /// <returns>Events in the requested ordering. A missing stream and an empty range both enumerate no events.</returns>
+    IAsyncEnumerable<IEvent> ReadAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        StreamReadOptions options,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Appends events using optimistic concurrency expectations.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>

@@ -14,6 +14,7 @@ public class EventStoreBuilderPostgresExtensionsTests
     private sealed class FakeProjectionOptions : IProjectionOptions
     {
         public bool HandlesAllCalled { get; private set; }
+        public void Name(string name) { }
         public void Handles<T>() where T : class => HandlesAllCalled = true;
         public void HandlesAll() => HandlesAllCalled = true;
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;

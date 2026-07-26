@@ -11,6 +11,7 @@ services.AddHangfire(config => config.UsePostgreSqlStorage(connectionString));
 
 services.AddEventStore(builder =>
 {
+    builder.ExistingDbContext<MyEventStoreDbContext>();
     builder.AddSubscriptionDaemon<MyEventStoreDbContext>();
 
     builder.AddScheduler(s =>
@@ -31,6 +32,9 @@ services.AddEventStore(builder =>
 
 ## Contract
 
+- The application owns its `DbContext`, EventStoreCore migrations, Hangfire
+  storage, and Hangfire server lifetime. `ExistingDbContext<TDbContext>()`
+  enables database-backed replay deduplication for scheduler actions.
 - The action receives Hangfire `IBackgroundJobClient`.
 - The `IServiceProvider` callback argument is scoped to the action invocation.
 - EventStoreCore invokes the action at most once for the same registration, tenant id, and EventStore `EventId`.

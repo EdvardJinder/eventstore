@@ -12,7 +12,7 @@ namespace EventStoreCore.Abstractions;
 public interface IEvent
 {
     /// <summary>
-    ///     Unique identifier for the event. Uses a sequential Guid
+    ///     Unique stable identifier for the event. The identifier is not an ordering value.
     /// </summary>
     Guid Id { get; }
 
@@ -47,6 +47,36 @@ public interface IEvent
     /// </summary>
     Type EventType { get; }
 
+    /// <summary>
+    ///     The logical event type name stored independently of the CLR type name.
+    /// </summary>
+    string TypeName => EventType.Name;
+
+    /// <summary>
+    ///     The logical stream type. The empty string identifies the default stream type.
+    /// </summary>
+    string StreamType => string.Empty;
+
+    /// <summary>
+    ///     The global ordering sequence assigned by persistence.
+    /// </summary>
+    long Sequence => 0;
+
+    /// <summary>
+    ///     Immutable event metadata, including application context and authoritative ordering fields.
+    /// </summary>
+    EventMetadata Metadata => new(
+        correlationId: null,
+        causationId: null,
+        actor: null,
+        headers: null,
+        schemaVersion: 1,
+        eventType: TypeName,
+        streamType: StreamType,
+        tenantId: TenantId,
+        streamId: StreamId,
+        streamVersion: Version,
+        globalSequence: Sequence);
 
 }
 

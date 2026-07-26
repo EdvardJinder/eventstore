@@ -6,10 +6,14 @@ namespace EventStoreCore;
 internal sealed class SnapshotRegistry
 {
     private readonly IReadOnlyList<SnapshotRegistration> _registrations;
+    private readonly IEventStoreSerializer _serializer;
 
-    public SnapshotRegistry(IEnumerable<SnapshotRegistration> registrations)
+    public SnapshotRegistry(
+        IEnumerable<SnapshotRegistration> registrations,
+        IEventStoreSerializer serializer)
     {
         _registrations = registrations.ToArray();
+        _serializer = serializer;
         var duplicate = _registrations
             .GroupBy(r => new { r.StreamType, r.StateType })
             .FirstOrDefault(g => g.Count() > 1);
@@ -35,7 +39,7 @@ internal sealed class SnapshotRegistry
         {
             if (registration.ShouldSnapshot(previousVersion, stream.CurrentVersion))
             {
-                registration.SaveSnapshot(db, stream);
+                registration.SaveSnapshot(db, stream, _serializer);
             }
         }
     }
@@ -53,11 +57,23 @@ internal sealed class SnapshotRegistry
             return null;
         }
 
-        return db.Set<DbSnapshot>()
+        var snapshot = db.Set<DbSnapshot>()
             .AsNoTracking()
             .SingleOrDefault(x => x.StreamId == streamId
                 && x.StreamType == streamType
                 && x.TenantId == tenantId
                 && x.StateType == registration.StateTypeName);
+        if (snapshot is null || snapshot.SchemaVersion == registration.SchemaVersion)
+        {
+            return snapshot;
+        }
+
+        if (registration.MismatchBehavior == SnapshotSchemaMismatchBehavior.Rebuild)
+        {
+            return null;
+        }
+
+        throw new InvalidOperationException(
+            $"Snapshot schema version {snapshot.SchemaVersion} for '{registration.StateTypeName}' does not match configured version {registration.SchemaVersion}.");
     }
 }

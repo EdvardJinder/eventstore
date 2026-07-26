@@ -1,4 +1,5 @@
 using EventStoreCore;
+using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using PostgresExtensions = EventStoreCore.Postgres.ModelBuilderExtensions;
 using SqlServerExtensions = EventStoreCore.SqlServer.ModelBuilderExtensions;
@@ -48,6 +49,33 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
 
         Assert.NotNull(stream);
         Assert.Single(stream!.Events);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task EventStore_ReadsLargeStreamsAcrossPageBoundaries(ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var store = new DbContextEventStore(context);
+        var streamId = Guid.NewGuid();
+        store.StartStream(
+            streamId,
+            events: Enumerable.Range(1, 105).Select(i => new SampleEvent { Name = i.ToString() }));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var page = await store.ReadPageAsync(
+            streamId,
+            new StreamReadOptions { FromVersion = 33, ToVersion = 97, MaxCount = 32 },
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(page);
+        Assert.Equal(Enumerable.Range(33, 32).Select(x => (long)x), page.Events.Select(x => x.Version));
+        Assert.Equal(65, page.NextVersion);
+        Assert.Equal(105, page.StreamVersion);
 
         await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
     }

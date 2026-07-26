@@ -12,6 +12,8 @@
   	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+	  <Description>Behavior-style event stream testing helpers for EventStoreCore.</Description>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
 
@@ -28,6 +30,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EventStoreCore.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

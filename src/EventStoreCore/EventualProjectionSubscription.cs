@@ -10,7 +10,7 @@ namespace EventStoreCore;
 /// <typeparam name="TDbContext">The DbContext type.</typeparam>
 /// <typeparam name="TProjection">The projection implementation.</typeparam>
 /// <typeparam name="TSnapshot">The snapshot type.</typeparam>
-public sealed class EventualProjectionSubscription<TDbContext, TProjection, TSnapshot> : IScopedSubscription
+internal sealed class EventualProjectionSubscription<TDbContext, TProjection, TSnapshot> : IScopedSubscription
     where TDbContext : DbContext
     where TProjection : IProjection<TSnapshot>, new()
     where TSnapshot : class, new()
@@ -51,7 +51,7 @@ public sealed class EventualProjectionSubscription<TDbContext, TProjection, TSna
         IEvent @event,
         CancellationToken ct)
     {
-        if (!_options.IsHandeled(@event.EventType))
+        if (!_options.IsHandled(@event.EventType))
         {
             return;
         }

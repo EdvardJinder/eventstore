@@ -20,6 +20,9 @@ public static class ModelBuilderExtensions
         {
             entity.Property(e => e.Data)
                 .HasColumnType("jsonb");
+
+            entity.Property(e => e.Headers)
+                .HasColumnType("jsonb");
         });
 
         modelBuilder.Entity<DbSnapshot>(entity =>

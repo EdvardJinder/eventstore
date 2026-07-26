@@ -6,6 +6,12 @@ namespace EventStoreCore.Abstractions;
 public interface IProjectionOptions
 {
     /// <summary>
+    /// Assigns a stable logical identity used by checkpoints, locks, status APIs, and logs.
+    /// </summary>
+    /// <param name="name">The non-empty logical projection name.</param>
+    void Name(string name);
+
+    /// <summary>
     /// Registers a handled event type.
     /// </summary>
     /// <typeparam name="T">The event payload type.</typeparam>

@@ -30,7 +30,28 @@ public interface IEventStoreBuilder
     /// <typeparam name="TSubscription">The subscription implementation.</typeparam>
     /// <returns>The builder for chaining.</returns>
     IEventStoreBuilder AddSubscription<TSubscription>()
-        where TSubscription : ISubscription;
+        where TSubscription : class, ISubscription;
+
+    /// <summary>
+    /// Registers a subscription with stable identity, filters, and unknown-event behavior.
+    /// </summary>
+    /// <typeparam name="TSubscription">The subscription implementation.</typeparam>
+    /// <param name="configure">Registration configuration.</param>
+    /// <returns>The builder for chaining.</returns>
+    IEventStoreBuilder AddSubscription<TSubscription>(Action<SubscriptionRegistrationOptions> configure)
+        where TSubscription : class, ISubscription;
+
+    /// <summary>
+    /// Registers a strongly typed subscription while preserving event metadata.
+    /// </summary>
+    /// <typeparam name="TSubscription">The subscription implementation.</typeparam>
+    /// <typeparam name="TEvent">The event payload type.</typeparam>
+    /// <param name="configure">Optional registration configuration.</param>
+    /// <returns>The builder for chaining.</returns>
+    IEventStoreBuilder AddSubscription<TSubscription, TEvent>(
+        Action<SubscriptionRegistrationOptions>? configure = null)
+        where TSubscription : class, ISubscription<TEvent>
+        where TEvent : class;
 }
 
 

@@ -11,7 +11,7 @@ namespace EventStoreCore;
 /// </summary>
 /// <typeparam name="TProjection">The projection implementation.</typeparam>
 /// <typeparam name="TSnapshot">The snapshot type.</typeparam>
-public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesInterceptor
+internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesInterceptor
     where TProjection : IProjection<TSnapshot>, new()
     where TSnapshot : class, new()
 {
@@ -22,6 +22,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
     private readonly IServiceProvider _serviceProvider;
     private readonly string _projectionName;
     private readonly int _projectionVersion;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Creates a new projection interceptor.
@@ -33,8 +34,11 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
     {
         _options = options;
         _serviceProvider = serviceProvider;
-        _projectionName = typeof(TProjection).FullName ?? typeof(TProjection).Name;
+        _projectionName = options.LogicalName
+            ?? typeof(TProjection).FullName
+            ?? typeof(TProjection).Name;
         _projectionVersion = projectionVersion;
+        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
@@ -76,6 +80,8 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
             .ToList();
 
         var registry = _serviceProvider.GetService<EventTypeRegistry>();
+        var serializer = _serviceProvider.GetService<IEventStoreSerializer>()
+            ?? new SystemTextJsonEventStoreSerializer();
         var handledEvents = new List<DbEvent>();
 
         foreach (var stream in streams)
@@ -95,14 +101,14 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
                 IEvent resolved;
                 try
                 {
-                    resolved = entry.Entity.ToEvent(registry);
+                    resolved = entry.Entity.ToEvent(registry, serializer);
                 }
                 catch (EventMaterializationException) when (_options.ShouldIgnoreUnknown)
                 {
                     continue;
                 }
 
-                if (!_options.IsHandeled(resolved.EventType))
+                if (!_options.IsHandled(resolved.EventType))
                 {
                     continue;
                 }
@@ -206,7 +212,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
                     Version = _projectionVersion,
                     State = ProjectionState.Active,
                     Position = maxSequence,
-                    LastProcessedAt = DateTimeOffset.UtcNow
+                    LastProcessedAt = _timeProvider.GetUtcNow()
                 };
                 statusSet.Add(status);
             }
@@ -215,7 +221,7 @@ public sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChangesI
                 status.Version = _projectionVersion;
                 status.State = ProjectionState.Active;
                 status.Position = Math.Max(status.Position, maxSequence);
-                status.LastProcessedAt = DateTimeOffset.UtcNow;
+                status.LastProcessedAt = _timeProvider.GetUtcNow();
                 status.LastError = null;
                 status.FailedEventSequence = null;
             }

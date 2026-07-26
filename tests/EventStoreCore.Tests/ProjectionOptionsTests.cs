@@ -13,8 +13,8 @@ public class ProjectionOptionsTests
     {
         var options = new ProjectionOptions();
 
-        Assert.True(options.IsHandeled(typeof(EventA)));
-        Assert.True(options.IsHandeled(typeof(EventB)));
+        Assert.True(options.IsHandled(typeof(EventA)));
+        Assert.True(options.IsHandled(typeof(EventB)));
     }
 
     [Fact]
@@ -23,8 +23,8 @@ public class ProjectionOptionsTests
         var options = new ProjectionOptions();
         options.Handles<EventA>();
 
-        Assert.True(options.IsHandeled(typeof(EventA)));
-        Assert.False(options.IsHandeled(typeof(EventB)));
+        Assert.True(options.IsHandled(typeof(EventA)));
+        Assert.False(options.IsHandled(typeof(EventB)));
     }
 
     [Fact]
@@ -33,8 +33,8 @@ public class ProjectionOptionsTests
         var options = new ProjectionOptions();
         options.Ignores<EventA>();
 
-        Assert.False(options.IsHandeled(typeof(EventA)));
-        Assert.True(options.IsHandeled(typeof(EventB)));
+        Assert.False(options.IsHandled(typeof(EventA)));
+        Assert.True(options.IsHandled(typeof(EventB)));
     }
 
     [Fact]
@@ -45,9 +45,9 @@ public class ProjectionOptionsTests
         options.Handles<EventB>();
         options.Ignores<EventB>();
 
-        Assert.True(options.IsHandeled(typeof(EventA)));
-        Assert.False(options.IsHandeled(typeof(EventB)));
-        Assert.False(options.IsHandeled(typeof(EventC)));
+        Assert.True(options.IsHandled(typeof(EventA)));
+        Assert.False(options.IsHandled(typeof(EventB)));
+        Assert.False(options.IsHandled(typeof(EventC)));
     }
 
     [Fact]

@@ -24,16 +24,25 @@ public sealed class SubscriptionManager<TDbContext> : ISubscriptionManager
     /// <param name="lockProvider">The distributed lock provider.</param>
     /// <param name="subscriptions">Registered subscriptions.</param>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="registrations">Optional registrations carrying explicit logical names.</param>
     internal SubscriptionManager(
         TDbContext dbContext,
         IDistributedLockProvider lockProvider,
         IEnumerable<ISubscription> subscriptions,
-        ILogger<SubscriptionManager<TDbContext>> logger)
+        ILogger<SubscriptionManager<TDbContext>> logger,
+        IEnumerable<SubscriptionRegistration>? registrations = null)
     {
         _dbContext = dbContext;
         _lockProvider = lockProvider;
-        _subscriptionNames = subscriptions
-            .Select(subscription => subscription.GetType().AssemblyQualifiedName!)
+        var configuredRegistrations = registrations?.ToArray() ?? [];
+        var configuredNames = configuredRegistrations.Select(registration => registration.Name);
+        var configuredTypes = configuredRegistrations
+            .Select(registration => registration.Subscription.GetType())
+            .ToHashSet();
+        _subscriptionNames = configuredNames
+            .Concat(subscriptions
+                .Where(subscription => !configuredTypes.Contains(subscription.GetType()))
+                .Select(subscription => subscription.GetType().AssemblyQualifiedName!))
             .Distinct()
             .ToList();
         _logger = logger;

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnablePackageValidation>false</EnablePackageValidation>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">1.0.0-validation</PackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EventStoreCore" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Abstractions" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.CloudEvents" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Endpoints" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.EventGrid" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Hangfire" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.MassTransit" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Postgres" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Quartz" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Scheduling" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.SDK" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.SqlServer" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Testing" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.TickerQ" Version="$(PackageVersion)" />
+  </ItemGroup>
+</Project>

@@ -12,7 +12,17 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+	  <Description>Provider-neutral contracts for EventStoreCore.</Description>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EventStoreCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

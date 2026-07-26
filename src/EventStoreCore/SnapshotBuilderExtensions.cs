@@ -49,8 +49,28 @@ public static class SnapshotBuilderExtensions
                     "Snapshot interval must be greater than zero.");
             }
 
+            if (options.SchemaVersion <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    options.SchemaVersion,
+                    "Snapshot schema version must be greater than zero.");
+            }
+
+            if (!Enum.IsDefined(options.OnSchemaMismatch))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    options.OnSchemaMismatch,
+                    "Snapshot schema mismatch behavior is not supported.");
+            }
+
             services.AddSingleton<SnapshotRegistration>(
-                new SnapshotRegistration<TState>(streamType, options.Interval));
+                new SnapshotRegistration<TState>(
+                    streamType,
+                    options.Interval,
+                    options.SchemaVersion,
+                    options.OnSchemaMismatch));
 
             return this;
         }

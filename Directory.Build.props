@@ -1,0 +1,14 @@
+<Project>
+  <!-- Source projects are independently shipped; the two test projects are not. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'EventStoreCore.Tests'
+                            and '$(MSBuildProjectName)' != 'EventStoreCore.Scheduling.Tests'">
+    <!-- XML files are emitted beside each assembly and are included by NuGet pack. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Public symbols must be documented so the package API baseline is complete. -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+
+    <!-- Run the SDK's package checks for every independently shipped project. -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+  </PropertyGroup>
+</Project>

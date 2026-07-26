@@ -31,6 +31,17 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build /p:PackageVersion=${{ inputs.version }} /p:ContinuousIntegrationBuild=true /p:GeneratePackageOnBuild=false -o ./artifacts
 
+      - name: Validate package contents
+        shell: pwsh
+        run: ./eng/Validate-Packages.ps1 artifacts
+
+      - name: Build packed-package consumer
+        run: >
+          dotnet build tests/EventStoreCore.PackageSmoke/EventStoreCore.PackageSmoke.csproj
+          --configuration Release
+          /p:PackageVersion=${{ inputs.version }}
+          /p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts
+
       - name: Push to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

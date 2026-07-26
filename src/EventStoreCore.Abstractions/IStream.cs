@@ -16,13 +16,8 @@ public interface IStream : IReadOnlyStream
 /// Represents a typed stream that can append new events.
 /// </summary>
 /// <typeparam name="T">The state type reconstructed from the stream.</typeparam>
-public interface IStream<T> : IReadOnlyStream<T>
+public interface IStream<T> : IStream, IReadOnlyStream<T>
     where T : IState
 {
-    /// <summary>
-    /// Appends one or more events to the stream.
-    /// </summary>
-    /// <param name="events">Events to append.</param>
-    void Append(params IEnumerable<object> events);
 }
 

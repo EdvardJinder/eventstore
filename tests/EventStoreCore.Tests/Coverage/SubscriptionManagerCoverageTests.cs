@@ -45,7 +45,14 @@ public class SubscriptionManagerCoverageTests
             typeof(SubscriptionManager<CoverageDbContext>),
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
             null,
-            new object[] { db, lockProvider, subscriptions, NullLogger<SubscriptionManager<CoverageDbContext>>.Instance },
+            new object[]
+            {
+                db,
+                lockProvider,
+                subscriptions,
+                NullLogger<SubscriptionManager<CoverageDbContext>>.Instance,
+                Array.Empty<SubscriptionRegistration>()
+            },
             null)!;
     }
 

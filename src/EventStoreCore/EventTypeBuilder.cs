@@ -25,11 +25,11 @@ internal sealed class EventTypeBuilder<TEvent>(IServiceCollection services) : IE
         services.AddSingleton(new EventUpcasterRegistration(
             typeof(TEvent),
             fromEventTypeName.Trim(),
-            (dbEvent, targetType) =>
+            (dbEvent, targetType, serializer) =>
             {
                 try
                 {
-                    var oldEvent = JsonSerializer.Deserialize<TOldEvent>(dbEvent.Data);
+                    var oldEvent = serializer.Deserialize(dbEvent.Data, typeof(TOldEvent)) as TOldEvent;
                     if (oldEvent is null)
                     {
                         throw new EventMaterializationException(
@@ -65,7 +65,7 @@ internal sealed class EventTypeBuilder<TEvent>(IServiceCollection services) : IE
         services.AddSingleton(new EventUpcasterRegistration(
             typeof(TEvent),
             fromEventTypeName.Trim(),
-            (dbEvent, targetType) =>
+            (dbEvent, targetType, serializer) =>
             {
                 try
                 {
@@ -92,6 +92,32 @@ internal sealed class EventTypeBuilder<TEvent>(IServiceCollection services) : IE
                 }
             }));
 
+        return this;
+    }
+
+    public IEventTypeBuilder<TEvent> AddUpcaster(
+        int fromSchemaVersion,
+        int toSchemaVersion,
+        Func<string, string> upcaster)
+    {
+        if (fromSchemaVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fromSchemaVersion));
+        }
+
+        if (toSchemaVersion <= fromSchemaVersion)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(toSchemaVersion),
+                "Target schema version must be greater than the source version.");
+        }
+
+        ArgumentNullException.ThrowIfNull(upcaster);
+        services.AddSingleton(new EventSchemaUpcasterRegistration(
+            typeof(TEvent),
+            fromSchemaVersion,
+            toSchemaVersion,
+            upcaster));
         return this;
     }
 
