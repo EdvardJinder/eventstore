@@ -31,6 +31,22 @@ public class ProviderModelConfigurationTests
         }
     }
 
+    private sealed class PostgresOutboxContext(DbContextOptions<PostgresOutboxContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            PostgresExtensions.UseEntityOutbox(modelBuilder);
+        }
+    }
+
+    private sealed class SqlServerOutboxContext(DbContextOptions<SqlServerOutboxContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            SqlServerExtensions.UseEntityOutbox(modelBuilder);
+        }
+    }
+
     [Fact]
     public void PostgresProvider_ConfiguresJsonb()
     {
@@ -69,5 +85,33 @@ public class ProviderModelConfigurationTests
         Assert.Equal("nvarchar(max)", snapshotProperty!.GetColumnType());
     }
 
-    
+    [Fact]
+    public void PostgresOutboxProvider_ConfiguresJsonb_without_event_store_entities()
+    {
+        var options = new DbContextOptionsBuilder<PostgresOutboxContext>()
+            .UseNpgsql("Host=localhost;Database=eventstore;Username=postgres;Password=postgres")
+            .Options;
+
+        using var context = new PostgresOutboxContext(options);
+        var outbox = context.Model.FindEntityType(typeof(DbOutboxMessage));
+
+        Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
+        Assert.Equal("jsonb", outbox?.FindProperty(nameof(DbOutboxMessage.EntityKey))?.GetColumnType());
+        Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
+    }
+
+    [Fact]
+    public void SqlServerOutboxProvider_ConfiguresUnicodeColumns_without_event_store_entities()
+    {
+        var options = new DbContextOptionsBuilder<SqlServerOutboxContext>()
+            .UseSqlServer("Server=localhost;Database=eventstore;User Id=sa;Password=Pass@word1;TrustServerCertificate=True;")
+            .Options;
+
+        using var context = new SqlServerOutboxContext(options);
+        var outbox = context.Model.FindEntityType(typeof(DbOutboxMessage));
+
+        Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
+        Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.EntityKey))?.GetColumnType());
+        Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
+    }
 }

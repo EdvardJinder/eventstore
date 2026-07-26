@@ -1,6 +1,6 @@
 # EventStoreCore
 
-EventStoreCore provides event sourcing, projections, subscriptions, and scheduler-backed delayed work for .NET applications.
+EventStoreCore provides event sourcing, projections, subscriptions, scheduler-backed delayed work, and a standalone EF entity outbox for .NET applications.
 
 ## Install
 
@@ -25,6 +25,8 @@ infrastructure remains application-owned.
 
 - Inline and eventual projections
 - Subscription daemons with checkpointing
+- Atomic domain-event capture from ordinary EF entities
+- Standalone outbox reader and independently checkpointed outbox subscriptions
 - Replay-aware scheduler integrations
 - Provider packages for common infrastructure
 

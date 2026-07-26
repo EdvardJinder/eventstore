@@ -248,4 +248,71 @@ internal static class ModelBuilderExtensions
         });
     }
 
+    internal static void ConfigureEntityOutboxModel(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DbOutboxMessage>(entity =>
+        {
+            entity.ToTable("OutboxMessages");
+            entity.HasKey(message => message.Sequence);
+            entity.HasAlternateKey(message => message.EventId);
+
+            entity.Property(message => message.Sequence)
+                .ValueGeneratedOnAdd();
+            entity.Property(message => message.EventId)
+                .IsRequired();
+            entity.Property(message => message.TenantId)
+                .IsRequired();
+            entity.Property(message => message.Type)
+                .IsRequired();
+            entity.Property(message => message.TypeName)
+                .IsRequired();
+            entity.Property(message => message.Data)
+                .IsRequired();
+            entity.Property(message => message.Timestamp)
+                .IsRequired();
+            entity.Property(message => message.EntityType)
+                .IsRequired();
+            entity.Property(message => message.EntityKey)
+                .IsRequired();
+            entity.Property(message => message.ChangeKind)
+                .IsRequired();
+
+            entity.HasIndex(message => message.TenantId);
+            entity.HasIndex(message => new { message.TenantId, message.Sequence });
+            entity.HasIndex(message => new { message.TypeName, message.Sequence });
+        });
+
+        modelBuilder.Entity<DbOutboxSubscription>(entity =>
+        {
+            entity.ToTable("OutboxSubscriptions");
+            entity.HasKey(subscription => new
+            {
+                subscription.SubscriptionAssemblyQualifiedName,
+                subscription.CheckpointScope,
+                subscription.TenantId
+            });
+
+            entity.Property(subscription => subscription.SubscriptionAssemblyQualifiedName)
+                .IsRequired();
+            entity.Property(subscription => subscription.CheckpointScope)
+                .IsRequired();
+            entity.Property(subscription => subscription.TenantId)
+                .IsRequired();
+            entity.Property(subscription => subscription.Sequence)
+                .IsRequired();
+            entity.Property(subscription => subscription.State)
+                .IsRequired();
+            entity.Property(subscription => subscription.AttemptCount)
+                .IsRequired();
+
+            entity.HasIndex(subscription => subscription.State);
+            entity.HasIndex(subscription => new
+            {
+                subscription.CheckpointScope,
+                subscription.TenantId,
+                subscription.State
+            });
+        });
+    }
+
 }
