@@ -1,4 +1,5 @@
 using EventStoreCore.CloudEvents;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore.EventGrid;
 
@@ -17,5 +18,22 @@ public static class EventGridSubscriptionExtensions
     {
         builder.AddCloudEventSubscription<EventGridSubscription>(configureTransform);
         return builder;
+    }
+
+    /// <summary>
+    /// Adds an Event Grid-backed entity-outbox subscription.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureTransform">Mapping configuration for entity-outbox events.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddEventGridOutboxSubscription(
+        this IServiceCollection services,
+        Action<OutboxCloudEventTransformerOptions> configureTransform)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureTransform);
+
+        services.AddCloudEventOutboxSubscription<EventGridSubscription>(configureTransform);
+        return services;
     }
 }

@@ -12,7 +12,7 @@
 	  <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
 	  <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-	  <Description>Azure Event Grid publisher integration for EventStoreCore.</Description>
+	  <Description>Azure Event Grid publisher integration for EventStoreCore stream and entity-outbox subscriptions.</Description>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 
   </PropertyGroup>
