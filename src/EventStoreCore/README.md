@@ -36,13 +36,50 @@ infrastructure remains application-owned.
 
 - Stream identity consists of stream ID, stream type, and tenant ID.
 - Event versions are ordered within that complete stream identity.
-- Event IDs are generated GUIDs with a uniqueness constraint; their values are
-  stable deduplication keys, not a source of ordering.
+- Event IDs are generated or caller-supplied GUIDs with a uniqueness constraint;
+  their values are stable deduplication keys, not a source of ordering.
+- `AppendOperation` can assign a globally unique operation key. Exact retries
+  recover a compact `AppendResult`; conflicting reuse throws
+  `EventStoreIdempotencyConflictException`.
 - Inline projections participate in the append transaction.
 - Subscriptions and eventual projections are at-least-once and consumers must be
   idempotent.
 - Provider-specific storage types and migration considerations are documented by
   the PostgreSQL and SQL Server packages.
+
+## Idempotent writes
+
+Use `IEventStore.AppendAsync(AppendOperation)` for retry-safe writes. The
+operation can carry a global idempotency key, and each `EventToAppend` can carry
+a caller-supplied global event ID. Metadata and identity wrappers compose in
+either order:
+
+```csharp
+var result = await eventStore.AppendAsync(
+    new AppendOperation(
+        streamId,
+        ExpectedVersion.Exact(7),
+        [payload.WithEventId(eventId).WithMetadata(metadata)])
+    {
+        StreamType = "orders",
+        TenantId = tenantId,
+        IdempotencyKey = commandId
+    },
+    cancellationToken);
+```
+
+The first successful attempt enforces `ExpectedVersion`. An exact retry
+recovers the original version range and event identities without loading the
+stream, even if later events exist. A key or event ID reused by a non-identical
+request throws `EventStoreIdempotencyConflictException`; a different writer
+that races for the same stream version still throws
+`EventStoreConcurrencyException`.
+
+Operation equality covers stream identity, expected version, event order,
+configured serialized payload, logical and CLR event types, schema version,
+metadata, and any supplied event IDs. If no operation key is used, every event
+in a retried batch must have a caller-supplied ID so the complete batch can be
+proven identical.
 
 ## Bounded stream reads
 

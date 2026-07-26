@@ -7,7 +7,8 @@ namespace EventStoreCore.Abstractions;
 /// </summary>
 /// <remarks>
 /// Correlation, causation, actor, and application headers may be supplied when an event is appended.
-/// Ordering and identity fields are assigned by the event store and are authoritative when the event is read.
+/// Ordering fields are assigned by the event store. Event identity may be caller-supplied through
+/// <see cref="EventToAppend" />; persisted values are authoritative when the event is read.
 /// </remarks>
 public sealed class EventMetadata
 {

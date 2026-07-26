@@ -6,6 +6,53 @@ namespace EventStoreCore.Abstractions;
 public interface IEventStore
 {
     /// <summary>
+    /// Appends an operation and returns its compact committed result.
+    /// </summary>
+    /// <param name="operation">The stream identity, concurrency expectation, events, and optional idempotency key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly committed result, or the original result for an exact duplicate retry.</returns>
+    Task<AppendResult> AppendAsync(
+        AppendOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        if (operation.IdempotencyKey.HasValue)
+        {
+            throw new NotSupportedException(
+                "This event store implementation does not support operation-level idempotency.");
+        }
+
+        return AppendWithoutOperationKeyAsync(this, operation, cancellationToken);
+
+        static async Task<AppendResult> AppendWithoutOperationKeyAsync(
+            IEventStore eventStore,
+            AppendOperation operation,
+            CancellationToken cancellationToken)
+        {
+            var stream = await eventStore.AppendAsync(
+                operation.StreamType,
+                operation.StreamId,
+                operation.TenantId,
+                operation.ExpectedVersion,
+                operation.Events,
+                cancellationToken);
+            var appendedEvents = stream.Events
+                .TakeLast(operation.Events.Count)
+                .Select(@event => new AppendedEventInfo(@event.Id, @event.Version, @event.Sequence))
+                .ToArray();
+
+            return new AppendResult(
+                operation.StreamId,
+                operation.StreamType,
+                operation.TenantId,
+                stream.Version - appendedEvents.Length,
+                stream.Version,
+                appendedEvents,
+                wasAlreadyCommitted: false);
+        }
+    }
+
+    /// <summary>
     /// Reads one bounded page of events without materializing the entire stream.
     /// </summary>
     /// <param name="streamType">The logical stream type.</param>
@@ -429,5 +476,3 @@ public interface IEventStore
     Task<IReadOnlyStream<T>?> FetchForReadingAsync<T>(string streamType, Guid streamId, Guid tenantId, long version, CancellationToken cancellationToken = default)
         where T : IState, new();
 }
-
-

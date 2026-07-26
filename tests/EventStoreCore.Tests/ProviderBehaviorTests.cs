@@ -110,6 +110,158 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task IdempotentAppend_ExactRetryRecoversCommittedResult(ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var streamId = Guid.NewGuid();
+        var operationKey = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var operation = new AppendOperation(
+            streamId,
+            ExpectedVersion.NoStream,
+            [new SampleEvent { Name = "first" }.WithEventId(eventId)])
+        {
+            StreamType = "orders",
+            IdempotencyKey = operationKey
+        };
+
+        var first = await context.Streams.AppendAsync(operation, TestContext.Current.CancellationToken);
+        await context.Streams.AppendAsync(
+            "orders",
+            streamId,
+            ExpectedVersion.Exact(1),
+            [new SampleEvent { Name = "later" }],
+            TestContext.Current.CancellationToken);
+        var retry = await context.Streams.AppendAsync(operation, TestContext.Current.CancellationToken);
+
+        Assert.False(first.WasAlreadyCommitted);
+        Assert.True(retry.WasAlreadyCommitted);
+        Assert.Equal(first.PreviousVersion, retry.PreviousVersion);
+        Assert.Equal(first.CurrentVersion, retry.CurrentVersion);
+        Assert.Equal(first.Events, retry.Events);
+        Assert.Equal(eventId, retry.Events[0].EventId);
+        Assert.Equal(1, retry.CurrentVersion);
+
+        var stream = await context.Streams.FetchForReadingAsync(
+            "orders",
+            streamId,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, stream!.Version);
+        Assert.Equal(2, stream.Events.Count);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task IdempotentAppend_ConflictingReuseIsRejected(ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var streamId = Guid.NewGuid();
+        var operationKey = Guid.NewGuid();
+        await context.Streams.AppendAsync(
+            new AppendOperation(
+                streamId,
+                ExpectedVersion.NoStream,
+                [new SampleEvent { Name = "original" }])
+            {
+                IdempotencyKey = operationKey
+            },
+            TestContext.Current.CancellationToken);
+
+        var conflict = await Assert.ThrowsAsync<EventStoreIdempotencyConflictException>(() =>
+            context.Streams.AppendAsync(
+                new AppendOperation(
+                    streamId,
+                    ExpectedVersion.NoStream,
+                    [new SampleEvent { Name = "different" }])
+                {
+                    IdempotencyKey = operationKey
+                },
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(operationKey, conflict.IdempotencyKey);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task CallerEventId_ExactRetrySucceedsAndConflictingReuseIsRejected(ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var streamId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var exact = new AppendOperation(
+            streamId,
+            ExpectedVersion.NoStream,
+            [new SampleEvent { Name = "original" }.WithEventId(eventId)]);
+
+        var first = await context.Streams.AppendAsync(exact, TestContext.Current.CancellationToken);
+        var retry = await context.Streams.AppendAsync(exact, TestContext.Current.CancellationToken);
+        var conflict = await Assert.ThrowsAsync<EventStoreIdempotencyConflictException>(() =>
+            context.Streams.AppendAsync(
+                new AppendOperation(
+                    streamId,
+                    ExpectedVersion.NoStream,
+                    [new SampleEvent { Name = "different" }.WithEventId(eventId)]),
+                TestContext.Current.CancellationToken));
+
+        Assert.False(first.WasAlreadyCommitted);
+        Assert.True(retry.WasAlreadyCommitted);
+        Assert.Equal(first.Events, retry.Events);
+        Assert.Equal(eventId, conflict.EventId);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task IdempotentAppend_ConcurrentExactRetriesCommitOnce(ProviderKind provider)
+    {
+        await using (var setup = CreateContext(provider))
+        {
+            await setup.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        }
+
+        var streamId = Guid.NewGuid();
+        var operationKey = Guid.NewGuid();
+        var operation = new AppendOperation(
+            streamId,
+            ExpectedVersion.NoStream,
+            [new SampleEvent { Name = "once" }])
+        {
+            IdempotencyKey = operationKey
+        };
+
+        async Task<AppendResult> AppendFromNewContext()
+        {
+            await using var writer = CreateContext(provider);
+            return await writer.Streams.AppendAsync(operation, TestContext.Current.CancellationToken);
+        }
+
+        var results = await Task.WhenAll(AppendFromNewContext(), AppendFromNewContext());
+
+        Assert.Single(results, result => !result.WasAlreadyCommitted);
+        Assert.Single(results, result => result.WasAlreadyCommitted);
+        Assert.Equal(results[0].Events, results[1].Events);
+
+        await using var verification = CreateContext(provider);
+        var stream = await verification.Streams.FetchForReadingAsync(
+            streamId,
+            TestContext.Current.CancellationToken);
+        Assert.Single(stream!.Events);
+        await verification.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
     private DbContext CreateContext(ProviderKind provider)
     {
         return provider switch

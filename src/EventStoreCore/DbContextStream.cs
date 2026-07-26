@@ -103,7 +103,7 @@ internal class DbContextStream : IStream
                 TypeName = typeName,
                 Data = Serializer.Serialize(eventData, eventType),
                 Timestamp = DateTimeOffset.UtcNow,
-                EventId = Guid.NewGuid(),
+                EventId = append?.EventId ?? Guid.NewGuid(),
                 CorrelationId = metadata?.CorrelationId,
                 CausationId = metadata?.CausationId,
                 Actor = metadata?.Actor,
@@ -174,4 +174,3 @@ internal class DbContextStream<T> : DbContextStream, IStream<T> where T : IState
         }
     }
 }
-
