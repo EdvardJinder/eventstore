@@ -9,6 +9,84 @@ public class ProjectionOptionsTests
     private sealed class EventC;
 
     [Fact]
+    public void PersistedFiltersCombineCategoriesAndAllowMultipleValues()
+    {
+        var tenant = Guid.NewGuid();
+        var stream = Guid.NewGuid();
+        var options = new ProjectionOptions();
+        options.IncludeLogicalEventType("order_created");
+        options.IncludeLogicalEventType("order_updated");
+        options.IncludeStreamType("orders");
+        options.IncludeStream(stream);
+        options.IncludeTenant(tenant);
+
+        var matching = new DbEvent
+        {
+            Type = typeof(EventA).AssemblyQualifiedName!,
+            TypeName = "order_updated",
+            StreamType = "orders",
+            StreamId = stream,
+            TenantId = tenant
+        };
+
+        Assert.True(options.MatchesPersisted(matching));
+        Assert.False(options.MatchesPersisted(new DbEvent
+        {
+            Type = typeof(EventA).AssemblyQualifiedName!,
+            TypeName = "order_updated",
+            StreamType = "audit",
+            StreamId = stream,
+            TenantId = tenant
+        }));
+    }
+
+    [Fact]
+    public void PersistedFilterArgumentsAreValidated()
+    {
+        var options = new ProjectionOptions();
+
+        Assert.Throws<ArgumentException>(() => options.IncludeLogicalEventType(" "));
+        Assert.Throws<ArgumentNullException>(() => options.IncludeStreamType(null!));
+        options.IncludeStreamType(string.Empty);
+    }
+
+    [Fact]
+    public void MaterializedFiltersUseSameCategorySemantics()
+    {
+        var tenant = Guid.NewGuid();
+        var stream = Guid.NewGuid();
+        var options = new ProjectionOptions();
+        options.Handles<EventA>();
+        options.Handles<EventB>();
+        options.IncludeLogicalEventType("order_created");
+        options.IncludeLogicalEventType("order_updated");
+        options.IncludeStreamType("orders");
+        options.IncludeStream(stream);
+        options.IncludeTenant(tenant);
+
+        var matching = new DbEvent
+        {
+            Type = typeof(EventB).AssemblyQualifiedName!,
+            TypeName = "order_updated",
+            StreamType = "orders",
+            StreamId = stream,
+            TenantId = tenant,
+            Data = "{}"
+        }.ToEvent();
+
+        Assert.True(options.Matches(matching));
+        Assert.False(options.Matches(new DbEvent
+        {
+            Type = typeof(EventC).AssemblyQualifiedName!,
+            TypeName = "order_updated",
+            StreamType = "orders",
+            StreamId = stream,
+            TenantId = tenant,
+            Data = "{}"
+        }.ToEvent()));
+    }
+
+    [Fact]
     public void HandlesAll_IsDefault()
     {
         var options = new ProjectionOptions();

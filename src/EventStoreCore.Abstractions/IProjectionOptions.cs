@@ -12,6 +12,54 @@ public interface IProjectionOptions
     void Name(string name);
 
     /// <summary>
+    /// Includes events with the specified logical event type.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="logicalEventType">The non-empty logical event type name.</param>
+    /// <exception cref="NotSupportedException">
+    /// The projection options implementation does not support persisted event filters.
+    /// </exception>
+    void IncludeLogicalEventType(string logicalEventType) =>
+        throw new NotSupportedException(
+            "This projection options implementation does not support persisted event filters.");
+
+    /// <summary>
+    /// Includes events from the specified logical stream type.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="streamType">The stream type, including an empty string for the default stream type.</param>
+    /// <exception cref="NotSupportedException">
+    /// The projection options implementation does not support persisted event filters.
+    /// </exception>
+    void IncludeStreamType(string streamType) =>
+        throw new NotSupportedException(
+            "This projection options implementation does not support persisted event filters.");
+
+    /// <summary>
+    /// Includes events from the specified stream identifier.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    /// <exception cref="NotSupportedException">
+    /// The projection options implementation does not support persisted event filters.
+    /// </exception>
+    void IncludeStream(Guid streamId) =>
+        throw new NotSupportedException(
+            "This projection options implementation does not support persisted event filters.");
+
+    /// <summary>
+    /// Includes events for the specified tenant.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="tenantId">The tenant identifier.</param>
+    /// <exception cref="NotSupportedException">
+    /// The projection options implementation does not support persisted event filters.
+    /// </exception>
+    void IncludeTenant(Guid tenantId) =>
+        throw new NotSupportedException(
+            "This projection options implementation does not support persisted event filters.");
+
+    /// <summary>
     /// Registers a handled event type.
     /// </summary>
     /// <typeparam name="T">The event payload type.</typeparam>
@@ -41,4 +89,3 @@ public interface IProjectionOptions
     /// </summary>
     void IgnoreUnknown();
 }
-

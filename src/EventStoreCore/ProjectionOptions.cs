@@ -7,6 +7,10 @@ internal sealed class ProjectionOptions : IProjectionOptions
 {
     private readonly HashSet<Type> _handledEventTypes = new();
     private readonly HashSet<Type> _ignoredEventTypes = new();
+    private readonly HashSet<string> _logicalEventTypes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _streamTypes = new(StringComparer.Ordinal);
+    private readonly HashSet<Guid> _streamIds = [];
+    private readonly HashSet<Guid> _tenantIds = [];
     private bool HandlesAllEvents = true;
     private bool _ignoreUnknown;
 
@@ -18,6 +22,26 @@ internal sealed class ProjectionOptions : IProjectionOptions
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         LogicalName = name;
     }
+
+    /// <inheritdoc />
+    public void IncludeLogicalEventType(string logicalEventType)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(logicalEventType);
+        _logicalEventTypes.Add(logicalEventType);
+    }
+
+    /// <inheritdoc />
+    public void IncludeStreamType(string streamType)
+    {
+        ArgumentNullException.ThrowIfNull(streamType);
+        _streamTypes.Add(streamType);
+    }
+
+    /// <inheritdoc />
+    public void IncludeStream(Guid streamId) => _streamIds.Add(streamId);
+
+    /// <inheritdoc />
+    public void IncludeTenant(Guid tenantId) => _tenantIds.Add(tenantId);
 
     /// <summary>
     /// Registers a handled event type.
@@ -71,7 +95,49 @@ internal sealed class ProjectionOptions : IProjectionOptions
         return HandlesAllEvents || _handledEventTypes.Contains(eventType);
     }
 
-    private Dictionary<Type, Func<IEvent<object>, object>> _keySelectors = new();
+    internal bool MatchesPersisted(DbEvent @event) =>
+        (_logicalEventTypes.Count == 0 || _logicalEventTypes.Contains(@event.TypeName)) &&
+        (_streamTypes.Count == 0 || _streamTypes.Contains(@event.StreamType)) &&
+        (_streamIds.Count == 0 || _streamIds.Contains(@event.StreamId)) &&
+        (_tenantIds.Count == 0 || _tenantIds.Contains(@event.TenantId));
+
+    internal bool Matches(IEvent @event) =>
+        (_logicalEventTypes.Count == 0 || _logicalEventTypes.Contains(@event.TypeName)) &&
+        (_streamTypes.Count == 0 || _streamTypes.Contains(@event.StreamType)) &&
+        (_streamIds.Count == 0 || _streamIds.Contains(@event.StreamId)) &&
+        (_tenantIds.Count == 0 || _tenantIds.Contains(@event.TenantId)) &&
+        IsHandled(@event.EventType);
+
+    internal IQueryable<DbEvent> ApplyPersistedFilters(IQueryable<DbEvent> query)
+    {
+        if (_logicalEventTypes.Count > 0)
+        {
+            var logicalEventTypes = _logicalEventTypes.ToArray();
+            query = query.Where(@event => logicalEventTypes.Contains(@event.TypeName));
+        }
+
+        if (_streamTypes.Count > 0)
+        {
+            var streamTypes = _streamTypes.ToArray();
+            query = query.Where(@event => streamTypes.Contains(@event.StreamType));
+        }
+
+        if (_streamIds.Count > 0)
+        {
+            var streamIds = _streamIds.ToArray();
+            query = query.Where(@event => streamIds.Contains(@event.StreamId));
+        }
+
+        if (_tenantIds.Count > 0)
+        {
+            var tenantIds = _tenantIds.ToArray();
+            query = query.Where(@event => tenantIds.Contains(@event.TenantId));
+        }
+
+        return query;
+    }
+
+    private readonly Dictionary<Type, Func<IEvent<object>, object>> _keySelectors = new();
     private void KeySelector<TEvent>(Func<IEvent<TEvent>, object> keySelector) where TEvent : class
     {
         _keySelectors[typeof(TEvent)] = e => keySelector((IEvent<TEvent>)e);
@@ -100,4 +166,3 @@ internal sealed class ProjectionOptions : IProjectionOptions
         }
     }
 }
-

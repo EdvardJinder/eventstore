@@ -383,6 +383,80 @@ public class ProjectionTests(PostgresFixture fixture) : IClassFixture<PostgresFi
         Assert.Null(status.FailedEventSequence);
     }
 
+    [Fact]
+    public async Task InlineProjectionAppliesComposableFiltersAndCheckpointsFilteredEvents()
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<EventStoreDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        var includedTenant = Guid.NewGuid();
+        var includedStream = Guid.NewGuid();
+        services.AddEventStore(c =>
+        {
+            c.ExistingDbContext<EventStoreDbContext>();
+            c.AddProjection<EventStoreDbContext, UserProjection, UserSnapshot>(
+                ProjectionMode.Inline,
+                options =>
+                {
+                    options.Name("filtered-users-inline");
+                    options.Handles<UserCreated>();
+                    options.Handles<UserNameUpdated>();
+                    options.IncludeLogicalEventType("user_created");
+                    options.IncludeStreamType("orders");
+                    options.IncludeStream(includedStream);
+                    options.IncludeTenant(includedTenant);
+                });
+        });
+
+        services.AddLogging();
+        using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await db.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        db.Streams.StartStream(
+            "orders",
+            includedStream,
+            includedTenant,
+            events:
+            [
+                new UserCreated { Name = "included" },
+                new UserNameUpdated { NewName = "logical-type-filtered" }
+            ]);
+        db.Streams.StartStream(
+            "audit",
+            includedStream,
+            includedTenant,
+            events: [new UserCreated { Name = "stream-type-filtered" }]);
+        db.Streams.StartStream(
+            "orders",
+            Guid.NewGuid(),
+            includedTenant,
+            events: [new UserCreated { Name = "stream-id-filtered" }]);
+        db.Streams.StartStream(
+            "orders",
+            includedStream,
+            Guid.NewGuid(),
+            events: [new UserCreated { Name = "tenant-filtered" }]);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var snapshots = await db.Set<UserSnapshot>()
+            .AsNoTracking()
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var headSequence = await db.Set<DbEvent>()
+            .MaxAsync(@event => @event.Sequence, TestContext.Current.CancellationToken);
+        var status = await db.Set<DbProjectionStatus>()
+            .AsNoTracking()
+            .SingleAsync(
+                row => row.ProjectionName == "filtered-users-inline",
+                TestContext.Current.CancellationToken);
+
+        var snapshot = Assert.Single(snapshots);
+        Assert.Equal(includedStream, snapshot.UserId);
+        Assert.Equal("included", snapshot.Name);
+        Assert.Equal(headSequence, status.Position);
+    }
+
 
     [Fact]
     public async Task ProjectionWithCompositeKey()

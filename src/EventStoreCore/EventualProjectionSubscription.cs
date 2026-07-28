@@ -51,7 +51,7 @@ internal sealed class EventualProjectionSubscription<TDbContext, TProjection, TS
         IEvent @event,
         CancellationToken ct)
     {
-        if (!_options.IsHandled(@event.EventType))
+        if (!_options.Matches(@event))
         {
             return;
         }
@@ -77,4 +77,3 @@ internal sealed class EventualProjectionSubscription<TDbContext, TProjection, TS
         }
     }
 }
-

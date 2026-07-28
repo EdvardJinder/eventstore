@@ -115,6 +115,17 @@ public class EventStoreBuilderPostgresExtensionsTests
     }
 
     [Fact]
+    public void ExistingProjectionOptionsImplementationUsesCompatibilityDefaultForFilters()
+    {
+        IProjectionOptions options = new FakeProjectionOptions();
+
+        var exception = Assert.Throws<NotSupportedException>(
+            () => options.IncludeTenant(Guid.NewGuid()));
+
+        Assert.Contains("persisted event filters", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AddSubscriptionDaemon_UsesDefaultLockProviderFactory()
     {
         var services = new ServiceCollection();

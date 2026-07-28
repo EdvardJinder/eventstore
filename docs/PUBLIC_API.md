@@ -33,6 +33,7 @@ The following changes are intentional for the next beta:
 - Generic stream interfaces inherit common members instead of declaring duplicates.
 - Projection versions are configured exclusively with `ProjectionVersionAttribute`; the default is version 1. The concrete projection-options implementation and its former `Version(int)` method are no longer public.
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.
+- Projection options expose composable logical event type, stream type, stream ID, and tenant filters alongside the existing CLR event-type handling API.
 - EF persistence rows and EF-backed store/stream implementations are internal. Public event and stream interfaces remain the supported consumption boundary.
 - `DbOutboxMessage` and `DbOutboxSubscription` remain public for backwards
   compatibility.
