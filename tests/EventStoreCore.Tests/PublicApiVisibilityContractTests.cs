@@ -27,8 +27,6 @@ public sealed class PublicApiVisibilityContractTests
     [InlineData(typeof(DbSnapshot))]
     [InlineData(typeof(DbProjectionStatus))]
     [InlineData(typeof(DbSubscription))]
-    [InlineData(typeof(DbOutboxMessage))]
-    [InlineData(typeof(DbOutboxSubscription))]
     [InlineData(typeof(DbSchedulerEventApplication))]
     [InlineData(typeof(DbContextEventStore))]
     [InlineData(typeof(DbContextEventLogReader))]
@@ -50,6 +48,13 @@ public sealed class PublicApiVisibilityContractTests
         Assert.Contains(typeof(IReadOnlyStream<>), publicStreamTypes);
         Assert.Contains(typeof(IStream), publicStreamTypes);
         Assert.Contains(typeof(IStream<>), publicStreamTypes);
+    }
+
+    [Fact]
+    public void Existing_outbox_persistence_types_remain_public_for_compatibility()
+    {
+        Assert.True(typeof(DbOutboxMessage).IsPublic);
+        Assert.True(typeof(DbOutboxSubscription).IsPublic);
     }
 
     [Fact]

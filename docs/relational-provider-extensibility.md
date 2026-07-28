@@ -66,10 +66,12 @@ A compatible provider must support:
   projection, subscription, and outbox queries, either natively or through the
   supported UTC-tick conversion.
 
-Provider packages must not copy, reflect over, or compile against internal
-`Db*` persistence types. Internal schema details can change between pre-1.0
-releases; the two relational configuration methods and their options are the
-supported source and binary contract.
+Provider packages must not copy, reflect over, or compile against EventStoreCore
+`Db*` persistence types. `DbOutboxMessage` and `DbOutboxSubscription` remain
+public only for application backwards compatibility; they are not provider
+extension points. Internal schema details can change between pre-1.0 releases;
+the two relational configuration methods and their options are the supported
+source and binary contract for provider packages.
 
 ## Contract testing
 

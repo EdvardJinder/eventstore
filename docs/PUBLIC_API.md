@@ -34,7 +34,10 @@ The following changes are intentional for the next beta:
 - Projection versions are configured exclusively with `ProjectionVersionAttribute`; the default is version 1. The concrete projection-options implementation and its former `Version(int)` method are no longer public.
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.
 - EF persistence rows and EF-backed store/stream implementations are internal. Public event and stream interfaces remain the supported consumption boundary.
-- `DbOutboxMessage` and `DbOutboxSubscription` now follow that persistence-row policy and are internal.
+- `DbOutboxMessage` and `DbOutboxSubscription` remain public for backwards
+  compatibility, but relational provider packages must use the supported
+  `RelationalModelBuilderExtensions` boundary instead of depending on those
+  persistence rows.
 - Relational provider packages configure Core's internal model through `RelationalModelBuilderExtensions`; provider packages no longer receive friend-assembly access to persistence rows.
 - The generated `Events.Sequence` is the relational event primary key. Stream-version concurrency remains enforced by a unique `(StreamId, StreamType, TenantId, Version)` index.
 - EventStoreCore packages remain `net10.0`-only because their EF Core 10 dependency graph exposes only `net10.0` assets.

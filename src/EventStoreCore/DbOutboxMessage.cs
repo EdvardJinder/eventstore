@@ -2,7 +2,15 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
-internal sealed class DbOutboxMessage
+/// <summary>
+/// Represents an event captured atomically from an EF entity change.
+/// </summary>
+/// <remarks>
+/// This persistence type remains public for backwards compatibility.
+/// Relational provider packages should use <see cref="RelationalModelBuilderExtensions"/>
+/// instead of depending on EventStoreCore persistence types.
+/// </remarks>
+public sealed class DbOutboxMessage
 {
     /// <summary>
     /// The ordered database-generated outbox position.

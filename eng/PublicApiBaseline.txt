@@ -925,6 +925,8 @@ EventStoreCore|T:EventStoreCore.DaemonHealthReport
 EventStoreCore|T:EventStoreCore.DaemonHealthStatus
 EventStoreCore|T:EventStoreCore.DbContextEventStore
 EventStoreCore|T:EventStoreCore.DbContextExtensions
+EventStoreCore|T:EventStoreCore.DbOutboxMessage
+EventStoreCore|T:EventStoreCore.DbOutboxSubscription
 EventStoreCore|T:EventStoreCore.EntityChange`1
 EventStoreCore|T:EventStoreCore.EntityOutboxDaemon`1
 EventStoreCore|T:EventStoreCore.EntityOutboxManager`1

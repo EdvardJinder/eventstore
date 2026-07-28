@@ -2,7 +2,15 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
-internal sealed class DbOutboxSubscription
+/// <summary>
+/// Represents durable progress and retry state for an outbox subscription.
+/// </summary>
+/// <remarks>
+/// This persistence type remains public for backwards compatibility.
+/// Relational provider packages should use <see cref="RelationalModelBuilderExtensions"/>
+/// instead of depending on EventStoreCore persistence types.
+/// </remarks>
+public sealed class DbOutboxSubscription
 {
     /// <summary>
     /// The subscription's assembly-qualified type name.

@@ -593,6 +593,14 @@ multi-tenant store.
 
 **Note**: Changing primary keys in existing databases requires careful migration planning. Consider the impact on your application and data before applying these changes.
 
+For a safe rollout, stop event-store writers, verify that `Sequence` values are
+non-null and unique, apply the primary-key and unique-index migration, and only
+then deploy binaries using this model. Keep the former composite columns and
+their data intact. To roll back, stop writers again, restore the composite
+`(StreamId, StreamType, TenantId, Version)` primary key before deploying the
+previous binaries, and retain a unique `Sequence` index so global ordering and
+deduplication remain protected during the transition.
+
 ## Provider setup and ownership
 
 PostgreSQL, SQL Server, and SQLite applications own their `DbContext`, connection,
