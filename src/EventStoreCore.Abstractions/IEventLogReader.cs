@@ -6,11 +6,14 @@ namespace EventStoreCore.Abstractions;
 public interface IEventLogReader
 {
     /// <summary>
-    /// Reads one bounded page from a stable snapshot of the global event log.
+    /// Reads one bounded page from a stable, commit-ordered view of the global event log.
     /// </summary>
     /// <param name="options">Sequence bounds, filters, and page size.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A page of events and the captured visible global high-water mark.</returns>
+    /// <returns>
+    /// A page of events and the captured global high-water mark. With a supported provider and registered
+    /// EventStoreCore context, no later commit can appear at or below that high-water mark.
+    /// </returns>
     Task<EventLogPage> ReadPageAsync(
         EventLogReadOptions options,
         CancellationToken cancellationToken = default);

@@ -73,6 +73,53 @@ public sealed class SqliteProviderTests
         Assert.Equal(2, recentMessageCount);
     }
 
+    [Fact]
+    public async Task Sqlite_serializes_generated_sequences_until_commit()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"eventstore-sequence-order-{Guid.NewGuid():N}.db");
+        var connectionString =
+            $"Data Source={databasePath};Default Timeout=1;Pooling=False";
+        var options = new DbContextOptionsBuilder<SqliteEventStoreContext>()
+            .UseSqlite(connectionString)
+            .Options;
+
+        try
+        {
+            await using var first = new SqliteEventStoreContext(options);
+            await using var second = new SqliteEventStoreContext(options);
+            await first.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+            await using var firstTransaction =
+                await first.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+            first.Streams.StartStream(Guid.NewGuid(), new SampleEvent("first"));
+            await first.SaveChangesAsync(TestContext.Current.CancellationToken);
+            var firstSequence = first.ChangeTracker.Entries<DbEvent>()
+                .Single()
+                .Entity
+                .Sequence;
+
+            second.Streams.StartStream(Guid.NewGuid(), new SampleEvent("second"));
+            var sqliteException = await Assert.ThrowsAsync<SqliteException>(
+                () => second.SaveChangesAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(5, sqliteException.SqliteErrorCode);
+
+            await firstTransaction.CommitAsync(TestContext.Current.CancellationToken);
+            await second.SaveChangesAsync(TestContext.Current.CancellationToken);
+            var secondSequence = second.ChangeTracker.Entries<DbEvent>()
+                .Single()
+                .Entity
+                .Sequence;
+
+            Assert.True(secondSequence > firstSequence);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static DbOutboxMessage CreateOutboxMessage() =>
         new()
         {

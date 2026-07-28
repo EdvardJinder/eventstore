@@ -172,6 +172,14 @@ advancing.
 
 Each outbox subscription has its own checkpoint, retry state, and distributed lock. One failed destination does not block another. Successfully consumed rows are retained for audit and replay; `IOutboxReader.CleanupAsync` deletes only through the slowest persisted subscription checkpoint. Stream subscriptions and entity-outbox subscriptions are separate logs and have no combined ordering.
 
+The PostgreSQL and SQL Server integrations serialize generated event and outbox
+sequence allocation with a transaction-scoped database lock. The lock is held
+through commit, so a subscription checkpoint cannot pass an uncommitted lower
+sequence that becomes visible later. This applies when the context is registered
+through `ExistingDbContext<TDbContext>()` or `AddEntityOutbox<TDbContext>()`;
+direct SQL and separately constructed EF options must participate in the same
+provider lock contract.
+
 Cleanup returns without deleting rows while any registered subscription has not
 created its first checkpoint, preventing a newly added destination from losing
 events before its daemon initializes.
@@ -531,7 +539,7 @@ await foreach (var @event in eventLogReader.ReadAsync(options, ct))
 }
 ```
 
-`AfterSequence` is exclusive. Each read captures the highest currently visible
+`AfterSequence` is exclusive. Each read captures the highest currently committed
 unfiltered sequence, bounded by an explicit `ThroughSequence`. Explicit pages
 return the effective bound as `HeadSequence`; pass the page's `NextSequence` as
 the next `AfterSequence` and preserve `HeadSequence` as `ThroughSequence`.
@@ -540,12 +548,28 @@ allocated a sequence above its initial bound.
 
 The reader materializes aliases and schema upcasters exactly like stream reads.
 It does not persist consumer checkpoints or make side effects atomic with
-checkpoint storage; custom consumers should remain idempotent. Database
-sequences are allocated before their transactions commit, so concurrently
-in-flight appends can become visible out of allocation order. Live consumers
-that require lossless catch-up should reread an overlap and deduplicate by
-`IEvent.Id`; do not treat an empty filtered page's `HeadSequence` as a strict
-commit fence while append transactions are in flight.
+checkpoint storage; custom consumers should remain idempotent. PostgreSQL and
+SQL Server writers registered through `ExistingDbContext<TDbContext>()` acquire
+the provider's transaction-scoped sequence lock before allocation and retain it
+through commit. `HeadSequence` is therefore a strict commit fence for those
+writes: a later transaction cannot commit an event at or below the captured
+head. Sequence gaps caused by rolled-back transactions remain valid.
+
+### Checkpoint-ordering upgrade
+
+The ordering fix has no schema migration. It does require every process that
+writes `Events` or `OutboxMessages` in a database to use the updated runtime
+registration before consumers rely on the commit fence. For a safe rollout,
+quiesce writers, upgrade all writer instances, and then start subscriptions,
+projection daemons, outbox dispatchers, and custom readers. A mixed deployment
+with an older writer can still allocate without the transaction lock.
+
+Existing checkpoints may already have skipped a late-committing row. The runtime
+cannot infer that history; replay affected subscriptions from a known-safe
+sequence and rebuild affected eventual projections after upgrading. Direct SQL
+writers must acquire the same provider lock or be stopped. The lock serializes
+sequence-allocating transactions until commit, so keep explicit transactions
+that append events or outbox messages short.
 
 Existing databases require an application-owned migration that makes
 `Events.Sequence` the generated primary key and adds the unique
@@ -618,7 +642,10 @@ EventStoreCore model; they do not create or migrate a separate database.
 - `EventId` values are generated GUIDs with a uniqueness constraint. Treat them
   as stable deduplication keys, not chronological or sequential values.
 - Global event-log reads use the generated `Events.Sequence` value as their
-  stable cross-stream cursor.
+  stable, commit-ordered cross-stream cursor.
+- Sequence-allocating event and entity-outbox transactions are serialized with
+  a provider transaction lock; rollback can leave gaps but cannot expose a
+  lower sequence after a higher committed checkpoint.
 - Inline projections share the caller's EF Core transaction. Subscriptions and
   eventual projections are at-least-once.
 - Daemon locks and provider-specific database migrations remain

@@ -75,16 +75,25 @@ var page = await eventLogReader.ReadPageAsync(new EventLogReadOptions
 }, ct);
 ```
 
-Pages expose the highest currently visible unfiltered `HeadSequence`, bounded
+Pages expose the highest currently committed unfiltered `HeadSequence`, bounded
 by an explicit `ThroughSequence`, and an exclusive `NextSequence` cursor. Async
 enumeration freezes that sequence bound automatically. Filters run in the
 database before paging. Event aliases, serializers, and schema upcasters are
 applied during materialization.
 
-Database sequences are allocated before transaction commit. Under concurrent
-appends, a lower sequence can therefore become visible after a higher sequence.
-Live consumers should overlap reads and deduplicate by event ID instead of
-treating `HeadSequence` as a strict commit fence.
+PostgreSQL and SQL Server contexts registered through
+`ExistingDbContext<TDbContext>()` acquire a provider transaction lock before
+allocating generated event or entity-outbox sequences. The lock is retained
+through commit, so `HeadSequence` is a strict commit fence and a durable
+`Sequence > checkpoint` consumer cannot permanently skip a later commit.
+Rollbacks may still leave sequence gaps.
+
+The fix requires all writers for the same database to use the updated
+registration. Quiesce writers during rollout rather than mixing old and new
+writer versions, then replay subscriptions or rebuild projections whose
+existing checkpoints may already have skipped an event. Direct SQL writers must
+participate in the same provider lock contract. No schema migration is needed,
+but sequence-allocating transactions are serialized until commit.
 
 Add an application migration that makes `Events.Sequence` the generated primary
 key and adds the unique stream-identity/version index plus the tenant,
