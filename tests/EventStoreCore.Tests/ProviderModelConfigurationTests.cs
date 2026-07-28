@@ -184,4 +184,42 @@ public class ProviderModelConfigurationTests
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
         Assert.Null(context.Model.FindAnnotation(SequenceCommitOrder.AcquireLockSqlAnnotation));
     }
+
+    [Theory]
+    [InlineData("Postgres")]
+    [InlineData("SqlServer")]
+    public void ProjectionFiltersAreTranslatedBeforeProviderBatchLimits(string provider)
+    {
+        using DbContext context = provider switch
+        {
+            "Postgres" => new PostgresContext(new DbContextOptionsBuilder<PostgresContext>()
+                .UseNpgsql("Host=localhost;Database=eventstore;Username=postgres;Password=postgres")
+                .Options),
+            "SqlServer" => new SqlServerContext(new DbContextOptionsBuilder<SqlServerContext>()
+                .UseSqlServer("Server=localhost;Database=eventstore;User Id=sa;Password=Pass@word1;TrustServerCertificate=True;")
+                .Options),
+            _ => throw new ArgumentOutOfRangeException(nameof(provider))
+        };
+
+        var options = new ProjectionOptions();
+        options.IncludeLogicalEventType("order_created");
+        options.IncludeStreamType("orders");
+        options.IncludeStream(Guid.NewGuid());
+        options.IncludeTenant(Guid.NewGuid());
+
+        var sql = options.ApplyPersistedFilters(context.Set<DbEvent>())
+            .OrderBy(@event => @event.Sequence)
+            .Take(25)
+            .ToQueryString();
+
+        Assert.Contains("WHERE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("TypeName", sql, StringComparison.Ordinal);
+        Assert.Contains("StreamType", sql, StringComparison.Ordinal);
+        Assert.Contains("StreamId", sql, StringComparison.Ordinal);
+        Assert.Contains("TenantId", sql, StringComparison.Ordinal);
+        Assert.Contains(
+            provider == "Postgres" ? "LIMIT" : "TOP",
+            sql,
+            StringComparison.OrdinalIgnoreCase);
+    }
 }

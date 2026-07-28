@@ -237,6 +237,36 @@ Avoid network calls, message publishing, HTTP requests, and other remote side ef
 
 Subscriptions and eventual projections are at-least-once. Consumers should use `EventId` as a stable deduplication key when replay or retry can redeliver an event.
 
+## Projection filtering
+
+Projection registrations can combine CLR event types with logical event type, stream type, stream ID, and
+tenant filters:
+
+```csharp
+builder.AddProjection<MyEventStoreDbContext, OrdersProjection, OrderView>(
+    ProjectionMode.Eventual,
+    options =>
+    {
+        options.Name("north-region-orders");
+        options.Handles<OrderCreated>();
+        options.Handles<OrderUpdated>();
+        options.IncludeLogicalEventType("order_created");
+        options.IncludeLogicalEventType("order_updated");
+        options.IncludeStreamType("orders");
+        options.IncludeTenant(northRegionTenantId);
+    });
+```
+
+Multiple values within one category are ORed, while categories are ANDed. `Handles<T>` registrations form
+the CLR event-type category; `Ignores<T>` still excludes a CLR type. The same rules apply to inline and
+eventual projections. Persisted filters run in the eventual projection database query before the daemon batch
+limit; CLR type checks run after materialization. Filtered events advance projection checkpoints, including
+filtered events after the last matching event.
+
+Unknown events excluded by a persisted filter are not materialized. A matching unknown event fails a
+`HandlesAll` projection by default. `IgnoreUnknown` explicitly skips it, while a projection using
+`Handles<T>` continues to skip unresolvable CLR types because they cannot match its CLR allow-list.
+
 ## Durable scheduled work
 
 Use scheduler-backed subscriptions for durable delayed work. Keep scheduling out of inline projections: delayed jobs are external side effects and belong in the at-least-once subscription pipeline.

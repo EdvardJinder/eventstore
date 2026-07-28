@@ -12,6 +12,34 @@ public interface IProjectionOptions
     void Name(string name);
 
     /// <summary>
+    /// Includes events with the specified logical event type.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="logicalEventType">The non-empty logical event type name.</param>
+    void IncludeLogicalEventType(string logicalEventType);
+
+    /// <summary>
+    /// Includes events from the specified logical stream type.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="streamType">The stream type, including an empty string for the default stream type.</param>
+    void IncludeStreamType(string streamType);
+
+    /// <summary>
+    /// Includes events from the specified stream identifier.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="streamId">The stream identifier.</param>
+    void IncludeStream(Guid streamId);
+
+    /// <summary>
+    /// Includes events for the specified tenant.
+    /// Multiple values in one category are combined with OR; categories are combined with AND.
+    /// </summary>
+    /// <param name="tenantId">The tenant identifier.</param>
+    void IncludeTenant(Guid tenantId);
+
+    /// <summary>
     /// Registers a handled event type.
     /// </summary>
     /// <typeparam name="T">The event payload type.</typeparam>
@@ -41,4 +69,3 @@ public interface IProjectionOptions
     /// </summary>
     void IgnoreUnknown();
 }
-
