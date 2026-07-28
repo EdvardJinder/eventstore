@@ -570,7 +570,7 @@ public class ProjectionManagerTests(PostgresFixture fixture) : IClassFixture<Pos
         db.Streams.StartStream(streamId, events: [new TestEvent { Value = "test" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var dbEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var dbEvent = await db.Set<DbEvent>().FirstAsync(TestContext.Current.CancellationToken);
 
         var projectionName = typeof(TestProjection).FullName!;
         

@@ -22,6 +22,7 @@ $expectedPackages = @(
     "EventStoreCore.Quartz",
     "EventStoreCore.Scheduling",
     "EventStoreCore.SDK",
+    "EventStoreCore.Sqlite",
     "EventStoreCore.SqlServer",
     "EventStoreCore.Testing",
     "EventStoreCore.TickerQ"

@@ -96,11 +96,11 @@ public class MassTransitSubscriptionTests(PostgresFixture fixture) : IClassFixtu
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var writtenSequence = await eventStoreDbContext.Events
+        var writtenSequence = await eventStoreDbContext.Set<DbEvent>()
             .Where(e => e.StreamId == streamId)
             .Select(e => e.Sequence)
             .SingleAsync(TestContext.Current.CancellationToken);
-        var writtenEventId = await eventStoreDbContext.Events
+        var writtenEventId = await eventStoreDbContext.Set<DbEvent>()
             .Where(e => e.StreamId == streamId)
             .Select(e => e.EventId)
             .SingleAsync(TestContext.Current.CancellationToken);

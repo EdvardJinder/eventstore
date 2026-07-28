@@ -50,7 +50,7 @@ internal static class ModelBuilderExtensions
         {
             entity.ToTable("Events");
 
-            entity.HasKey(e => new { e.StreamId, e.StreamType, e.TenantId, e.Version });
+            entity.HasKey(e => e.Sequence);
 
             entity.HasAlternateKey(e => e.EventId);
 
@@ -98,7 +98,7 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => e.TenantId);
 
-            entity.HasIndex(e => e.Sequence)
+            entity.HasIndex(e => new { e.StreamId, e.StreamType, e.TenantId, e.Version })
                 .IsUnique();
 
             entity.HasIndex(e => new { e.TenantId, e.Sequence });

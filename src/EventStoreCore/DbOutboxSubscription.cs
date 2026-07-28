@@ -2,10 +2,7 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents durable progress and retry state for an outbox subscription.
-/// </summary>
-public sealed class DbOutboxSubscription
+internal sealed class DbOutboxSubscription
 {
     /// <summary>
     /// The subscription's assembly-qualified type name.

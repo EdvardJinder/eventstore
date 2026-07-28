@@ -1,14 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace EventStoreCore.SqlServer;
+namespace EventStoreCore.Sqlite;
 
 /// <summary>
-/// SQL Server-specific EF Core model configuration for the event store.
+/// SQLite-specific EF Core model configuration for the event store.
 /// </summary>
 public static class ModelBuilderExtensions
 {
     /// <summary>
-    /// Configures the event store schema using SQL Server column types.
+    /// Configures the event store schema using SQLite column types.
     /// </summary>
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEventStore(this ModelBuilder modelBuilder)
@@ -16,11 +16,15 @@ public static class ModelBuilderExtensions
         global::EventStoreCore.RelationalModelBuilderExtensions
             .ConfigureEventStoreRelationalModel(
                 modelBuilder,
-                new global::EventStoreCore.RelationalProviderModelOptions("nvarchar(max)"));
+                new global::EventStoreCore.RelationalProviderModelOptions("TEXT")
+                {
+                    ConvertDateTimeOffsetsToUtcTicks = true
+                });
     }
 
     /// <summary>
-    /// Configures only the standalone EF entity-outbox schema using SQL Server column types.
+    /// Configures only the standalone EF entity-outbox schema using SQLite
+    /// column types.
     /// </summary>
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEntityOutbox(this ModelBuilder modelBuilder)
@@ -28,6 +32,9 @@ public static class ModelBuilderExtensions
         global::EventStoreCore.RelationalModelBuilderExtensions
             .ConfigureEntityOutboxRelationalModel(
                 modelBuilder,
-                new global::EventStoreCore.RelationalProviderModelOptions("nvarchar(max)"));
+                new global::EventStoreCore.RelationalProviderModelOptions("TEXT")
+                {
+                    ConvertDateTimeOffsetsToUtcTicks = true
+                });
     }
 }

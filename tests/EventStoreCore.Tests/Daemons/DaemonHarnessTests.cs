@@ -188,7 +188,7 @@ public class DaemonHarnessTests
         db.Streams.StartStream(Guid.NewGuid(), events: [new ProjectionEvent { Name = "one" }]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var storedEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var storedEvent = await db.Set<DbEvent>().FirstAsync(TestContext.Current.CancellationToken);
         if (storedEvent.Sequence == 0)
         {
             storedEvent.Sequence = 1;
@@ -348,7 +348,7 @@ public class DaemonHarnessTests
             Type = typeof(ProjectionEvent).AssemblyQualifiedName!,
             Data = "{\"Name\":\"Active\"}"
         };
-        db.Events.Add(dbEvent);
+        db.Set<DbEvent>().Add(dbEvent);
         db.Set<DbProjectionStatus>().Add(new DbProjectionStatus
         {
             ProjectionName = registration.Name,
@@ -406,7 +406,7 @@ public class DaemonHarnessTests
             TypeName = "old_projection_event",
             Data = "{\"OldName\":\"Upcasted\"}"
         };
-        db.Events.Add(dbEvent);
+        db.Set<DbEvent>().Add(dbEvent);
         db.Set<DbProjectionStatus>().Add(new DbProjectionStatus
         {
             ProjectionName = registration.Name,

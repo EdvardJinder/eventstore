@@ -40,17 +40,19 @@ calling `UseEventStore()`.
 
 - Event payloads and snapshots use SQL Server `nvarchar(max)` columns.
 - Stream identity is `(Id, StreamType, TenantId)`.
-- Event ordering within a stream is protected by the
-  `(StreamId, StreamType, TenantId, Version)` key.
+- Event ordering within a stream is protected by a unique
+  `(StreamId, StreamType, TenantId, Version)` index.
 - `EventId` is a generated GUID with a global uniqueness constraint; consumers
   must not rely on GUID ordering.
-- Global event-log reads use the unique `Events.Sequence` index plus filtered
-  sequence indexes for tenant, logical stream type, and logical event type.
+- Global event-log reads use the generated `Events.Sequence` primary key plus
+  filtered sequence indexes for tenant, logical stream type, and logical event
+  type.
 - Inline projections share the append transaction. Subscription and eventual
   projection delivery is at-least-once.
 - Daemons require an application-provided `IDistributedLockProvider`.
 
 Provider-specific database migrations remain application owned. Review generated
 migrations when upgrading EventStoreCore, especially changes to keys, indexes,
-or required metadata columns. Existing databases adding global event-log reads
-need a migration for the new event sequence indexes.
+or required metadata columns. Existing databases need a migration that makes
+`Events.Sequence` the generated primary key and adds the unique stream-version
+index.

@@ -2,10 +2,7 @@ using EventStoreCore.Abstractions;
 
 namespace EventStoreCore;
 
-/// <summary>
-/// Represents an event captured atomically from an EF entity change.
-/// </summary>
-public sealed class DbOutboxMessage
+internal sealed class DbOutboxMessage
 {
     /// <summary>
     /// The ordered database-generated outbox position.

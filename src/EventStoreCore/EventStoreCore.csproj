@@ -32,8 +32,6 @@
 
 	<ItemGroup>
 		<InternalsVisibleTo Include="EventStoreCore.CloudEvents" />
-		<InternalsVisibleTo Include="EventStoreCore.Postgres" />
-		<InternalsVisibleTo Include="EventStoreCore.SqlServer" />
 		<InternalsVisibleTo Include="EventStoreCore.Cosmos" />
 		<InternalsVisibleTo Include="EventStoreCore.Testing" />
 		<InternalsVisibleTo Include="EventStoreCore.Tests" />

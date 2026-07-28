@@ -41,7 +41,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
     private static async Task ResetDatabaseAsync(EventStoreDbContext dbContext, CancellationToken ct)
     {
         await dbContext.Set<DbSubscription>().ExecuteDeleteAsync(ct);
-        await dbContext.Events.ExecuteDeleteAsync(ct);
+        await dbContext.Set<DbEvent>().ExecuteDeleteAsync(ct);
         await dbContext.Set<DbStream>().ExecuteDeleteAsync(ct);
     }
 
@@ -102,7 +102,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         db.Streams.StartStream(streamId, events: [new TestEvent(), new TestEvent()]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var dbEvents = await db.Events
+        var dbEvents = await db.Set<DbEvent>()
             .OrderBy(e => e.Sequence)
             .ToListAsync(TestContext.Current.CancellationToken);
 
@@ -252,7 +252,7 @@ public class SubscriptionManagerTests(PostgresFixture fixture) : IClassFixture<P
         db.Streams.StartStream(streamId, events: [new TestEvent()]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var dbEvent = await db.Events.FirstAsync(TestContext.Current.CancellationToken);
+        var dbEvent = await db.Set<DbEvent>().FirstAsync(TestContext.Current.CancellationToken);
         var name = typeof(TestSub).AssemblyQualifiedName!;
         db.Set<DbSubscription>().Add(new DbSubscription
         {
