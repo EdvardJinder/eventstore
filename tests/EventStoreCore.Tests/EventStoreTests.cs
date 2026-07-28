@@ -9,8 +9,18 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStoreCore.Tests;
 
-public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixture<EventStoreFixture>
+public class EventStoreTests(EventStoreFixture eventStoreFixture)
+    : IClassFixture<EventStoreFixture>, IAsyncLifetime
 {
+    public ValueTask InitializeAsync()
+    {
+        // Some tests recreate the shared database, which resets generated
+        // sequences. Do not retain entities keyed by an earlier sequence.
+        eventStoreFixture.Context.ChangeTracker.Clear();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public class TestEvent
     {
@@ -822,4 +832,3 @@ public class EventStoreTests(EventStoreFixture eventStoreFixture) : IClassFixtur
         }
     }
 }
-
