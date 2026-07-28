@@ -41,6 +41,12 @@ infrastructure remains application-owned.
 - Inline projections participate in the append transaction.
 - Subscriptions and eventual projections are at-least-once and consumers must be
   idempotent.
+- Daemons isolate each registration/checkpoint scope in its own logical worker
+  and apply a configurable `MaxConcurrentWorkers` bound to active
+  batch executions. Distributed-lock, polling, and retry waits do not occupy
+  worker capacity.
+- Distributed locks continue to cover handler or projection execution and
+  checkpoint persistence. Shutdown cancels and awaits all logical workers.
 - Provider-specific storage types and migration considerations are documented by
   the PostgreSQL and SQL Server packages.
 

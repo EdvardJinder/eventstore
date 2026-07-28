@@ -63,35 +63,205 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Projection daemon starting with {Count} registered projections", _projections.Count);
+        var limiter = new DaemonExecutionLimiter(
+            _options.MaxConcurrentWorkers,
+            _timeProvider);
+        var workers = _projections
+            .Select(projection => RunProjectionAsync(
+                projection,
+                limiter,
+                stoppingToken))
+            .ToArray();
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            foreach (var projection in _projections)
-            {
-                if (stoppingToken.IsCancellationRequested)
-                    break;
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Projection daemon stopping gracefully");
+        }
+    }
 
+    private async Task RunProjectionAsync(
+        ProjectionRegistration projection,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Global)
+        {
+            await RunCheckpointWorkerAsync(
+                projection,
+                CheckpointScopeKey.Global,
+                limiter,
+                ct);
+            return;
+        }
+
+        var scopeWorkers = new Dictionary<CheckpointScopeKey, Task>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
                 try
                 {
-                    await ProcessProjectionAsync(projection, stoppingToken);
+                    foreach (var checkpointScope in await GetCheckpointScopesAsync(
+                        projection.Name,
+                        ct))
+                    {
+                        if (!scopeWorkers.ContainsKey(checkpointScope))
+                        {
+                            scopeWorkers.Add(
+                                checkpointScope,
+                                RunCheckpointWorkerAsync(
+                                    projection,
+                                    checkpointScope,
+                                    limiter,
+                                    ct));
+                        }
+                    }
+
+                    await Task.Delay(
+                        _options.PollingInterval,
+                        _timeProvider,
+                        ct);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    _logger.LogInformation("Projection daemon stopping gracefully");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing projection {Projection}", projection.Name);
-                    EventStoreDaemonDiagnostics.Retry(projection.Name, "projection");
-                    await Task.Delay(_options.RetryDelay, _timeProvider, stoppingToken);
+                    _logger.LogError(
+                        ex,
+                        "Error discovering checkpoint scopes for projection {Projection}. Retrying in {RetryDelay}",
+                        projection.Name,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(
+                        projection.Name,
+                        "projection");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
                 }
             }
+        }
+        finally
+        {
+            await AwaitWorkersAsync(scopeWorkers.Values);
+        }
+    }
 
-            if (!stoppingToken.IsCancellationRequested)
+    private async Task RunCheckpointWorkerAsync(
+        ProjectionRegistration projection,
+        CheckpointScopeKey checkpointScope,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        EventStoreDaemonDiagnostics.WorkerStarted(
+            projection.Name,
+            "projection");
+        try
+        {
+            while (!ct.IsCancellationRequested)
             {
-                await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
+                try
+                {
+                    IDistributedSynchronizationHandle? lockHandle = null;
+                    bool processed;
+                    try
+                    {
+                        lockHandle = await AcquireProjectionLockAsync(
+                            projection,
+                            checkpointScope,
+                            ValidateLockTimeout(_options.LockTimeout),
+                            ct);
+                        processed = lockHandle is not null &&
+                            await limiter.RunAsync(
+                                projection.Name,
+                                "projection",
+                                token => ProcessProjectionScopeUnderLockAsync(
+                                    projection,
+                                    checkpointScope,
+                                    token),
+                                ct);
+
+                        if (processed && _options.BatchDelay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(
+                                _options.BatchDelay,
+                                _timeProvider,
+                                ct);
+                        }
+                    }
+                    finally
+                    {
+                        if (lockHandle is not null)
+                        {
+                            await lockHandle.DisposeAsync();
+                            _logger.LogDebug(
+                                "Released lock for projection {Projection} in checkpoint scope {Scope}",
+                                projection.Name,
+                                checkpointScope);
+                        }
+                    }
+
+                    if (!processed)
+                    {
+                        await Task.Delay(
+                            _options.PollingInterval,
+                            _timeProvider,
+                            ct);
+                    }
+                    else if (_options.BatchDelay <= TimeSpan.Zero)
+                    {
+                        await Task.Yield();
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Error processing projection {Projection} in checkpoint scope {Scope}. Retrying in {RetryDelay}",
+                        projection.Name,
+                        checkpointScope,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(
+                        projection.Name,
+                        "projection");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
+                }
             }
+        }
+        finally
+        {
+            EventStoreDaemonDiagnostics.WorkerStopped(
+                projection.Name,
+                "projection");
+        }
+    }
+
+    private async Task DelayAfterFailureAsync(TimeSpan delay, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delay, _timeProvider, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private static async Task AwaitWorkersAsync(IEnumerable<Task> workers)
+    {
+        try
+        {
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -131,74 +301,122 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
         CheckpointScopeKey checkpointScope,
         CancellationToken ct)
     {
-        var lockName = $"projection:{projection.Name}{checkpointScope.LockSuffix}";
-
-        IDistributedSynchronizationHandle? lockHandle = null;
-        try
+        var lockHandle = await AcquireProjectionLockAsync(
+            projection,
+            checkpointScope,
+            ValidateLockTimeout(_options.LockTimeout),
+            ct);
+        if (lockHandle is null)
         {
-            lockHandle = await _distributedLockProvider.TryAcquireLockAsync(
-                lockName,
-                ValidateLockTimeout(_options.LockTimeout),
-                ct);
-
-            if (lockHandle == null)
-            {
-                EventStoreDaemonDiagnostics.LockContended(projection.Name, "projection");
-                _logger.LogDebug("Could not acquire lock for projection {Projection}, another instance may be processing", projection.Name);
-                return;
-            }
-
-            _logger.LogDebug("Acquired lock for projection {Projection}", projection.Name);
-
-            using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
-
-            var status = await GetOrCreateStatusAsync(dbContext, projection, checkpointScope, ct);
-
-            // Check for version mismatch and trigger rebuild if configured
-            if (_options.AutoRebuildOnVersionChange && status.Version != projection.Version)
-            {
-                if (checkpointScope.IsTenant)
-                {
-                    throw new InvalidOperationException(
-                        "Tenant-scoped projection checkpoints do not support automatic rebuild because projection ClearAsync is not tenant-aware. " +
-                        "Disable AutoRebuildOnVersionChange or run a global projection rebuild.");
-                }
-
-                _logger.LogInformation(
-                    "Projection {Projection} version changed from {OldVersion} to {NewVersion}, triggering rebuild",
-                    projection.Name, status.Version, projection.Version);
-
-                await InitiateRebuildAsync(dbContext, scope.ServiceProvider, projection, status, ct);
-            }
-
-            // Process based on current state
-            switch (status.State)
-            {
-                case ProjectionState.Active:
-                    await ProcessEventsAsync(dbContext, scope.ServiceProvider, projection, status, ct);
-                    break;
-
-                case ProjectionState.Rebuilding:
-                    await ContinueRebuildAsync(dbContext, scope.ServiceProvider, projection, status, ct);
-                    break;
-
-                case ProjectionState.Paused:
-                    _logger.LogDebug("Projection {Projection} is paused, skipping", projection.Name);
-                    break;
-
-                case ProjectionState.Faulted:
-                    _logger.LogDebug("Projection {Projection} is faulted, requires manual intervention", projection.Name);
-                    break;
-            }
+            return;
         }
-        finally
+
+        await using (lockHandle)
         {
-            if (lockHandle != null)
+            await ProcessProjectionScopeUnderLockAsync(
+                projection,
+                checkpointScope,
+                ct);
+        }
+        _logger.LogDebug(
+            "Released lock for projection {Projection} in checkpoint scope {Scope}",
+            projection.Name,
+            checkpointScope);
+    }
+
+    private async Task<IDistributedSynchronizationHandle?> AcquireProjectionLockAsync(
+        ProjectionRegistration projection,
+        CheckpointScopeKey checkpointScope,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
+        var lockName = $"projection:{projection.Name}{checkpointScope.LockSuffix}";
+        var lockHandle = await _distributedLockProvider.TryAcquireLockAsync(
+            lockName,
+            timeout,
+            ct);
+        if (lockHandle is null)
+        {
+            EventStoreDaemonDiagnostics.LockContended(projection.Name, "projection");
+            _logger.LogDebug(
+                "Could not acquire lock for projection {Projection} in checkpoint scope {Scope}, another instance may be processing",
+                projection.Name,
+                checkpointScope);
+            return null;
+        }
+
+        _logger.LogDebug(
+            "Acquired lock for projection {Projection} in checkpoint scope {Scope}",
+            projection.Name,
+            checkpointScope);
+        return lockHandle;
+    }
+
+    private async Task<bool> ProcessProjectionScopeUnderLockAsync(
+        ProjectionRegistration projection,
+        CheckpointScopeKey checkpointScope,
+        CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
+
+        var status = await GetOrCreateStatusAsync(
+            dbContext,
+            projection,
+            checkpointScope,
+            ct);
+
+        // Check for version mismatch and trigger rebuild if configured
+        if (_options.AutoRebuildOnVersionChange && status.Version != projection.Version)
+        {
+            if (checkpointScope.IsTenant)
             {
-                await lockHandle.DisposeAsync();
-                _logger.LogDebug("Released lock for projection {Projection}", projection.Name);
+                throw new InvalidOperationException(
+                    "Tenant-scoped projection checkpoints do not support automatic rebuild because projection ClearAsync is not tenant-aware. " +
+                    "Disable AutoRebuildOnVersionChange or run a global projection rebuild.");
             }
+
+            _logger.LogInformation(
+                "Projection {Projection} version changed from {OldVersion} to {NewVersion}, triggering rebuild",
+                projection.Name, status.Version, projection.Version);
+
+            await InitiateRebuildAsync(
+                dbContext,
+                scope.ServiceProvider,
+                projection,
+                status,
+                ct);
+        }
+
+        // Process based on current state
+        switch (status.State)
+        {
+            case ProjectionState.Active:
+                return await ProcessEventsAsync(
+                    dbContext,
+                    scope.ServiceProvider,
+                    projection,
+                    status,
+                    ct);
+
+            case ProjectionState.Rebuilding:
+                return await ContinueRebuildAsync(
+                    dbContext,
+                    scope.ServiceProvider,
+                    projection,
+                    status,
+                    ct);
+
+            case ProjectionState.Paused:
+                _logger.LogDebug("Projection {Projection} is paused, skipping", projection.Name);
+                return false;
+
+            case ProjectionState.Faulted:
+                _logger.LogDebug("Projection {Projection} is faulted, requires manual intervention", projection.Name);
+                return false;
+
+            default:
+                return false;
         }
     }
 
@@ -305,7 +523,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
-    private async Task ContinueRebuildAsync(
+    private async Task<bool> ContinueRebuildAsync(
         TDbContext dbContext,
         IServiceProvider services,
         ProjectionRegistration projection,
@@ -327,6 +545,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 projection.Name,
                 status.RebuildCompletedAt - status.RebuildStartedAt);
         }
+
+        return processed;
     }
 
     /// <summary>
@@ -337,7 +557,7 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     /// <param name="projection">The projection registration.</param>
     /// <param name="status">The current projection status.</param>
     /// <param name="ct">Cancellation token.</param>
-    private async Task ProcessEventsAsync(
+    private async Task<bool> ProcessEventsAsync(
         TDbContext dbContext,
         IServiceProvider services,
         ProjectionRegistration projection,
@@ -352,6 +572,8 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
             _logger.LogDebug("Projection {Projection} is caught up at position {Position}", 
                 projection.Name, status.Position);
         }
+
+        return processed;
     }
 
     /// <summary>
@@ -372,7 +594,10 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
     {
         var checkpointScope = new CheckpointScopeKey(status.CheckpointScope, status.TenantId);
         var startedAt = _timeProvider.GetTimestamp();
-        using var activity = EventStoreDaemonDiagnostics.StartBatch(projection.Name, "projection");
+        using var activity = EventStoreDaemonDiagnostics.StartBatch(
+            projection.Name,
+            "projection",
+            checkpointScope);
         var events = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
             .Where(e => e.Sequence > status.Position)
             .OrderBy(e => e.Sequence)
@@ -382,7 +607,10 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
 
         if (events.Count == 0)
         {
-            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(
+                projection.Name,
+                "projection",
+                checkpointScope);
             return false;
         }
 
@@ -450,12 +678,6 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 "Processed batch for projection {Projection}, new position: {Position}",
                 projection.Name, status.Position);
 
-            // Optional batch delay for throttling
-            if (_options.BatchDelay > TimeSpan.Zero)
-            {
-                await Task.Delay(_options.BatchDelay, _timeProvider, ct);
-            }
-
             var checkpointLag = await ApplyCheckpointScope(dbContext.Events, checkpointScope)
                 .LongCountAsync(e => e.Sequence > status.Position, ct);
             EventStoreDaemonDiagnostics.BatchCompleted(
@@ -464,14 +686,25 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                 events.Count,
                 _timeProvider.GetElapsedTime(startedAt),
                 checkpointLag);
-            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(projection.Name, "projection");
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(
+                projection.Name,
+                "projection",
+                checkpointScope);
             return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
                 "Error processing event at sequence {Sequence} for projection {Projection}",
                 status.Position + 1, projection.Name);
+
+            // Release any provider locks held by the failed transaction before a
+            // separate context persists the durable fault checkpoint.
+            await transaction.RollbackAsync(ct);
 
             // Mark projection as faulted
             status.State = ProjectionState.Faulted;
@@ -578,6 +811,10 @@ public sealed class ProjectionDaemon<TDbContext> : BackgroundService
                     identity);
             }
         }
-        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(identity, "projection", exception);
+        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(
+            identity,
+            "projection",
+            exception,
+            new CheckpointScopeKey(status.CheckpointScope, status.TenantId));
     }
 }

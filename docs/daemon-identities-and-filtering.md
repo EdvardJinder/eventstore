@@ -79,3 +79,25 @@ receive structured projection fault and subscription fault/dead-letter transitio
 
 Entity-outbox dispatch uses the same diagnostic sources with daemon kind
 `outbox-subscription`.
+
+Each registration/checkpoint scope has an independent logical worker.
+`MaxConcurrentWorkers` on `SubscriptionOptions`, `ProjectionDaemonOptions`, and
+`EntityOutboxOptions` bounds concurrent batch executions per daemon instance.
+Distributed-lock waits, polling, retry, and projection batch delays happen
+outside the concurrency slot. The scheduler additionally emits:
+
+- `eventstore.daemon.workers.active` for logical workers currently running.
+- `eventstore.daemon.workers.executing` for workers currently processing a
+  batch.
+- `eventstore.daemon.workers.throttled` when an attempt waits for configured
+  capacity.
+- `eventstore.daemon.worker.queue.duration` for that capacity wait.
+
+These instruments use the existing logical identity and daemon-kind tags. They
+intentionally do not attach tenant IDs, avoiding an unbounded metric-cardinality
+dimension. Batch activities include checkpoint-scope and, for tenant-scoped
+work, tenant-ID tags. `DaemonFaultNotification` remains the scope- and
+tenant-specific fault signal.
+
+Health entries are tracked per registration/checkpoint scope internally, so a
+healthy tenant heartbeat cannot clear a durable fault in another tenant scope.

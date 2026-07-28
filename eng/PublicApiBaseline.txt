@@ -828,6 +828,7 @@ EventStoreCore|P:EventStoreCore.EntityChange`1.Entity
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.BatchSize
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.CheckpointScope
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.LockTimeout
+EventStoreCore|P:EventStoreCore.EntityOutboxOptions.MaxConcurrentWorkers
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.MaxRetryAttempts
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.PollingInterval
 EventStoreCore|P:EventStoreCore.EntityOutboxOptions.RetryDelay
@@ -863,6 +864,7 @@ EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.BatchDelay
 EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.BatchSize
 EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.CheckpointScope
 EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.LockTimeout
+EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.MaxConcurrentWorkers
 EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.PollingInterval
 EventStoreCore|P:EventStoreCore.ProjectionDaemonOptions.RetryDelay
 EventStoreCore|P:EventStoreCore.ProjectionOptions.ShouldIgnoreUnknown
@@ -883,6 +885,7 @@ EventStoreCore|P:EventStoreCore.SubscriptionOptions.BatchSize
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.CheckpointFrequency
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.CheckpointScope
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.LockTimeout
+EventStoreCore|P:EventStoreCore.SubscriptionOptions.MaxConcurrentWorkers
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.MaxRetryAttempts
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.PollingInterval
 EventStoreCore|P:EventStoreCore.SubscriptionOptions.RetryDelay

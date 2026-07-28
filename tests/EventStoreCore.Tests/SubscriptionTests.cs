@@ -135,7 +135,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
     private static async Task ResetDatabaseAsync(EventStoreDbContext dbContext, CancellationToken ct)
     {
         await dbContext.Set<DbSubscription>().ExecuteDeleteAsync(ct);
-        await dbContext.Events.ExecuteDeleteAsync(ct);
+        await dbContext.Set<DbEvent>().ExecuteDeleteAsync(ct);
         await dbContext.Set<DbStream>().ExecuteDeleteAsync(ct);
     }
 
@@ -143,7 +143,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
     {
         await dbContext.Set<ProcessedEventRecord>().ExecuteDeleteAsync(ct);
         await dbContext.Set<DbSubscription>().ExecuteDeleteAsync(ct);
-        await dbContext.Events.ExecuteDeleteAsync(ct);
+        await dbContext.Set<DbEvent>().ExecuteDeleteAsync(ct);
         await dbContext.Set<DbStream>().ExecuteDeleteAsync(ct);
     }
 
@@ -161,7 +161,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         var streamId = Guid.NewGuid();
         eventStore.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var persistedEvent = await eventStoreDbContext.Events
+        var persistedEvent = await eventStoreDbContext.Set<DbEvent>()
             .AsNoTracking()
             .SingleAsync(e => e.StreamId == streamId, TestContext.Current.CancellationToken);
 
@@ -243,7 +243,7 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
         eventStoreDbContext.Streams.StartStream(streamId, events: [new TestEvent()]);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var expectedEvent = await eventStoreDbContext.Events
+        var expectedEvent = await eventStoreDbContext.Set<DbEvent>()
             .AsNoTracking()
             .SingleAsync(e => e.StreamId == streamId, TestContext.Current.CancellationToken);
 
@@ -338,4 +338,3 @@ public class SubscriptionTests(PostgresFixture fixture) : IClassFixture<Postgres
                 TestContext.Current.CancellationToken);
     }
 }
-

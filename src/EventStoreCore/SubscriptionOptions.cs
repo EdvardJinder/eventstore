@@ -8,28 +8,35 @@ namespace EventStoreCore;
 public sealed class SubscriptionOptions
 {
     /// <summary>
-    /// The number of events to read and process in each daemon batch.
+    /// The maximum number of subscription checkpoint workers that may process batches concurrently.
+    /// Polling and retry delays do not consume concurrency slots. The value must be positive.
+    /// </summary>
+    public int MaxConcurrentWorkers { get; set; } = 8;
+
+    /// <summary>
+    /// The positive number of events to read and process in each daemon batch.
     /// </summary>
     public int BatchSize { get; set; } = 500;
 
     /// <summary>
-    /// How many processed events to handle before persisting the subscription checkpoint.
+    /// The positive number of processed events to handle before persisting the subscription checkpoint.
     /// </summary>
     public int CheckpointFrequency { get; set; } = 1;
 
     /// <summary>
-    /// How often to poll for new events when caught up.
+    /// How often to poll for new events when caught up. The value must be non-negative.
     /// </summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Maximum time to wait to acquire a distributed lock for a subscription.
-    /// The acquired lock is held until its handle is disposed.
+    /// Lock acquisition does not consume worker capacity. The acquired lock is held
+    /// until its handle is disposed.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Maximum retry attempts before giving up in the daemon loop.
+    /// The positive maximum retry attempts before giving up in the daemon loop.
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;
 
@@ -39,7 +46,7 @@ public sealed class SubscriptionOptions
     public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
 
     /// <summary>
-    /// Delay between retry attempts when processing fails.
+    /// Delay between retry attempts when processing fails. The value must be non-negative.
     /// </summary>
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(10);
 }

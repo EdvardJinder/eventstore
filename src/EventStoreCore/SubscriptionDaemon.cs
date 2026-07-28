@@ -37,44 +37,142 @@ public sealed class SubscriptionDaemon<TDbContext>(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var registrations = GetRegistrations();
+        var limiter = new DaemonExecutionLimiter(
+            _options.MaxConcurrentWorkers,
+            _timeProvider);
+        var workers = registrations
+            .Select(registration => RunRegistrationAsync(
+                registration,
+                limiter,
+                stoppingToken))
+            .ToArray();
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            foreach (var registration in registrations)
-            {
-                var subscription = registration.Subscription;
-                var subscriptionType = subscription.GetType();
-                var name = registration.Name;
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Subscription daemon stopping gracefully");
+        }
+    }
 
+    private async Task RunRegistrationAsync(
+        SubscriptionRegistration registration,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Global)
+        {
+            await RunCheckpointWorkerAsync(
+                registration,
+                CheckpointScopeKey.Global,
+                limiter,
+                ct);
+            return;
+        }
+
+        var scopeWorkers = new Dictionary<CheckpointScopeKey, Task>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
                 try
                 {
-                    var checkpointScopes = await GetCheckpointScopesAsync(name, stoppingToken);
-
-                    if (checkpointScopes.Count == 0)
-                    {
-                        await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
-                        continue;
-                    }
-
-                    var processedAny = false;
+                    var checkpointScopes = await GetCheckpointScopesAsync(
+                        registration.Name,
+                        ct);
                     foreach (var checkpointScope in checkpointScopes)
                     {
-                        var acquired = await AcquireSubscriptionLockAsync(name, checkpointScope, stoppingToken);
-
-                        if (acquired == null)
+                        if (!scopeWorkers.ContainsKey(checkpointScope))
                         {
-                            continue;
+                            scopeWorkers.Add(
+                                checkpointScope,
+                                RunCheckpointWorkerAsync(
+                                    registration,
+                                    checkpointScope,
+                                    limiter,
+                                    ct));
                         }
+                    }
 
+                    await Task.Delay(
+                        _options.PollingInterval,
+                        _timeProvider,
+                        ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Error discovering checkpoint scopes for subscription {Subscription}. Retrying in {RetryDelay}",
+                        registration.Name,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(
+                        registration.Name,
+                        "subscription");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
+                }
+            }
+        }
+        finally
+        {
+            await AwaitWorkersAsync(scopeWorkers.Values);
+        }
+    }
+
+    private async Task RunCheckpointWorkerAsync(
+        SubscriptionRegistration registration,
+        CheckpointScopeKey checkpointScope,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        var name = registration.Name;
+        EventStoreDaemonDiagnostics.WorkerStarted(name, "subscription");
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    var acquired = await AcquireSubscriptionLockAsync(
+                        name,
+                        checkpointScope,
+                        ValidateLockTimeout(_options.LockTimeout),
+                        ct);
+                    var iteration = (ProcessedCount: 0, Delay: _options.PollingInterval);
+                    if (acquired is not null)
+                    {
                         await using (acquired)
                         {
-                            using var scope = _serviceProvider.CreateScope();
-                            var processedCount = await ProcessNextBatchAsync(
-                                scope,
-                                registration,
-                                stoppingToken,
-                                checkpointScope);
-                            processedAny = processedAny || processedCount > 0;
+                            iteration = await limiter.RunAsync(
+                                name,
+                                "subscription",
+                                async token =>
+                                {
+                                    using var scope = _serviceProvider.CreateScope();
+                                    var processed = await ProcessNextBatchAsync(
+                                        scope,
+                                        registration,
+                                        token,
+                                        checkpointScope);
+                                    var checkpoint = scope.ServiceProvider
+                                        .GetRequiredService<TDbContext>()
+                                        .Set<DbSubscription>()
+                                        .Local
+                                        .FirstOrDefault(row =>
+                                            row.SubscriptionAssemblyQualifiedName == name &&
+                                            row.CheckpointScope == checkpointScope.Scope &&
+                                            row.TenantId == checkpointScope.TenantId);
+                                    return (
+                                        processed,
+                                        GetNextDelay(checkpoint));
+                                },
+                                ct);
                         }
 
                         logger.LogInformation(
@@ -83,36 +181,76 @@ public sealed class SubscriptionDaemon<TDbContext>(
                             checkpointScope);
                     }
 
-                    if (!processedAny)
+                    if (iteration.ProcessedCount == 0)
                     {
                         logger.LogInformation(
-                            "No new events to process for subscription {Subscription}",
-                            name);
-                        await Task.Delay(_options.PollingInterval, _timeProvider, stoppingToken);
+                            "No new events to process for subscription {Subscription} in checkpoint scope {Scope}",
+                            name,
+                            checkpointScope);
+                        await Task.Delay(
+                            iteration.Delay,
+                            _timeProvider,
+                            ct);
+                    }
+                    else
+                    {
+                        await Task.Yield();
                     }
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    logger.LogInformation("Subscription {Subscription} stopping gracefully", name);
                     break;
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex,
-                        "Error processing events for subscription {Subscription}. Retrying in {RetrySeconds} seconds",
-                        name, _options.RetryDelay);
-
-                    try
-                    {
-                        EventStoreDaemonDiagnostics.Retry(name, "subscription");
-                        await Task.Delay(_options.RetryDelay, _timeProvider, stoppingToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
+                    logger.LogError(
+                        ex,
+                        "Error processing events for subscription {Subscription} in checkpoint scope {Scope}. Retrying in {RetryDelay}",
+                        name,
+                        checkpointScope,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(name, "subscription");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
                 }
             }
+        }
+        finally
+        {
+            EventStoreDaemonDiagnostics.WorkerStopped(name, "subscription");
+        }
+    }
+
+    private async Task DelayAfterFailureAsync(TimeSpan delay, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delay, _timeProvider, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private TimeSpan GetNextDelay(DbSubscription? checkpoint)
+    {
+        if (checkpoint?.State == SubscriptionState.Faulted &&
+            checkpoint.NextAttemptAt is { } nextAttemptAt)
+        {
+            var remaining = nextAttemptAt - _timeProvider.GetUtcNow();
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+
+        return _options.PollingInterval;
+    }
+
+    private static async Task AwaitWorkersAsync(IEnumerable<Task> workers)
+    {
+        try
+        {
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -195,7 +333,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
         var name = registration.Name;
         var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
         var startedAt = _timeProvider.GetTimestamp();
-        using var activity = EventStoreDaemonDiagnostics.StartBatch(name, "subscription");
+        using var activity = EventStoreDaemonDiagnostics.StartBatch(
+            name,
+            "subscription",
+            checkpointScope);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
 
@@ -250,7 +391,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     await transaction.CommitAsync(stoppingToken);
                 }
 
-                _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(name, "subscription");
+                _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(
+                    name,
+                    "subscription",
+                    checkpointScope);
                 return 0;
             }
 
@@ -428,7 +572,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 processedCount,
                 _timeProvider.GetElapsedTime(startedAt),
                 checkpointLag);
-            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(name, "subscription");
+            _serviceProvider.GetService<DaemonHealthMonitor>()?.Heartbeat(
+                name,
+                "subscription",
+                checkpointScope);
 
             return processedCount;
         }
@@ -453,6 +600,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
         return await AcquireSubscriptionLockAsync(
             typeof(TSub).AssemblyQualifiedName!,
             CheckpointScopeKey.Global,
+            ValidateLockTimeout(_options.LockTimeout),
             cancellationToken);
     }
 
@@ -467,12 +615,14 @@ public sealed class SubscriptionDaemon<TDbContext>(
         return await AcquireSubscriptionLockAsync(
             subType.AssemblyQualifiedName!,
             CheckpointScopeKey.Global,
+            ValidateLockTimeout(_options.LockTimeout),
             cancellationToken);
     }
 
     private async Task<IAsyncDisposable?> AcquireSubscriptionLockAsync(
         string subscriptionName,
         CheckpointScopeKey checkpointScope,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         var lockName = $"{subscriptionName}{checkpointScope.LockSuffix}";
@@ -485,7 +635,7 @@ public sealed class SubscriptionDaemon<TDbContext>(
                 subscriptionName,
                 checkpointScope);
             var acquired = await _distributedLockProvider
-                  .AcquireLockAsync(lockName, ValidateLockTimeout(_options.LockTimeout), cancellationToken: cancellationToken);
+                  .AcquireLockAsync(lockName, timeout, cancellationToken: cancellationToken);
 
             if (acquired == null)
             {
@@ -735,6 +885,10 @@ public sealed class SubscriptionDaemon<TDbContext>(
                     identity);
             }
         }
-        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(identity, kind, exception);
+        _serviceProvider.GetService<DaemonHealthMonitor>()?.Fault(
+            identity,
+            kind,
+            exception,
+            checkpointScope);
     }
 }

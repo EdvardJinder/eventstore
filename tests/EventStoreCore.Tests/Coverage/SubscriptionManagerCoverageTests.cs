@@ -149,7 +149,7 @@ public class SubscriptionManagerCoverageTests
         db.Streams.StartStream(streamId, events: [new object()]);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var trackedEvent = await db.Events
+        var trackedEvent = await db.Set<DbEvent>()
             .OrderBy(e => e.Sequence)
             .FirstAsync(TestContext.Current.CancellationToken);
         trackedEvent.Timestamp = DateTimeOffset.UtcNow;

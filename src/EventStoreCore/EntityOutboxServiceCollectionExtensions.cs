@@ -167,7 +167,29 @@ public static class EntityOutboxServiceCollectionExtensions
 
         services.TryAddSingleton(lockProviderFactory);
         services.TryAddSingleton<DaemonHealthMonitor>();
-        services.Configure<EntityOutboxOptions>(options => configure?.Invoke(options));
+        services.AddOptions<EntityOutboxOptions>()
+            .Configure(options => configure?.Invoke(options))
+            .Validate(
+                options => options.MaxConcurrentWorkers > 0,
+                $"{nameof(EntityOutboxOptions.MaxConcurrentWorkers)} must be positive.")
+            .Validate(
+                options =>
+                    options.LockTimeout >= TimeSpan.Zero ||
+                    options.LockTimeout == Timeout.InfiniteTimeSpan,
+                $"{nameof(EntityOutboxOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.")
+            .Validate(
+                options => options.BatchSize > 0,
+                $"{nameof(EntityOutboxOptions.BatchSize)} must be positive.")
+            .Validate(
+                options => options.MaxRetryAttempts > 0,
+                $"{nameof(EntityOutboxOptions.MaxRetryAttempts)} must be positive.")
+            .Validate(
+                options => options.PollingInterval >= TimeSpan.Zero,
+                $"{nameof(EntityOutboxOptions.PollingInterval)} must be non-negative.")
+            .Validate(
+                options => options.RetryDelay >= TimeSpan.Zero,
+                $"{nameof(EntityOutboxOptions.RetryDelay)} must be non-negative.")
+            .ValidateOnStart();
         services.TryAddSingleton<EntityOutboxDaemon<TDbContext>>();
         services.TryAddScoped<IOutboxSubscriptionManager>(sp =>
             new EntityOutboxManager<TDbContext>(

@@ -9,20 +9,27 @@ namespace EventStoreCore;
 public sealed class ProjectionDaemonOptions
 {
     /// <summary>
-    /// The number of events to process in each batch during rebuilds and catch-up.
+    /// The maximum number of projection checkpoint workers that may process batches concurrently.
+    /// Polling and retry delays do not consume concurrency slots. The value must be positive.
+    /// </summary>
+    public int MaxConcurrentWorkers { get; set; } = 8;
+
+    /// <summary>
+    /// The positive number of events to process in each batch during rebuilds and catch-up.
     /// Default is 500.
     /// </summary>
     public int BatchSize { get; set; } = 500;
 
     /// <summary>
-    /// How often the daemon polls for new events when caught up.
+    /// How often the daemon polls for new events when caught up. The value must be non-negative.
     /// Default is 5 seconds.
     /// </summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Maximum time to wait to acquire a distributed lock for a projection.
-    /// The acquired lock is held until its handle is disposed.
+    /// Lock acquisition does not consume worker capacity. The acquired lock is held
+    /// until its handle is disposed.
     /// Default is 5 minutes.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
@@ -34,7 +41,7 @@ public sealed class ProjectionDaemonOptions
     public bool AutoRebuildOnVersionChange { get; set; } = true;
 
     /// <summary>
-    /// How long to wait before retrying after an error.
+    /// How long to wait before retrying after an error. The value must be non-negative.
     /// Default is 30 seconds.
     /// </summary>
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(30);
@@ -46,7 +53,7 @@ public sealed class ProjectionDaemonOptions
     public CheckpointScope CheckpointScope { get; set; } = CheckpointScope.Global;
 
     /// <summary>
-    /// Optional delay between batches during rebuild (for throttling).
+    /// Optional non-negative delay between batches during rebuild (for throttling).
     /// Default is no delay.
     /// </summary>
     public TimeSpan BatchDelay { get; set; } = TimeSpan.Zero;

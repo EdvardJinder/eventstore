@@ -34,3 +34,7 @@ The following changes are intentional for the next beta:
 - Projection versions are configured exclusively with `ProjectionVersionAttribute`; the default is version 1. The concrete projection-options implementation and its former `Version(int)` method are no longer public.
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.
 - EF persistence rows and EF-backed store/stream implementations are internal. Public event and stream interfaces remain the supported consumption boundary.
+- `SubscriptionOptions`, `ProjectionDaemonOptions`, and `EntityOutboxOptions`
+  expose `MaxConcurrentWorkers` to bound independent registration/checkpoint
+  workers. The positive value defaults to `8`; polling and retry delays happen
+  outside the active-work limit.

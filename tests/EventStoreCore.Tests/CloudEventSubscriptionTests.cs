@@ -77,7 +77,7 @@ public class CloudEventSubscriptionTests(PostgresFixture fixture) : IClassFixtur
         List<object> events = [new TestEvent(), new TestEvent2()];
         eventStore.StartStream(streamId, events: events);
         await eventStoreDbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var lastWrittenSequence = await eventStoreDbContext.Events
+        var lastWrittenSequence = await eventStoreDbContext.Set<DbEvent>()
             .Where(e => e.StreamId == streamId)
             .MaxAsync(e => e.Sequence, TestContext.Current.CancellationToken);
 

@@ -69,6 +69,24 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             .Validate(
                 opts => opts.LockTimeout >= TimeSpan.Zero || opts.LockTimeout == Timeout.InfiniteTimeSpan,
                 $"{nameof(SubscriptionOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.")
+            .Validate(
+                opts => opts.MaxConcurrentWorkers > 0,
+                $"{nameof(SubscriptionOptions.MaxConcurrentWorkers)} must be positive.")
+            .Validate(
+                opts => opts.BatchSize > 0,
+                $"{nameof(SubscriptionOptions.BatchSize)} must be positive.")
+            .Validate(
+                opts => opts.CheckpointFrequency > 0,
+                $"{nameof(SubscriptionOptions.CheckpointFrequency)} must be positive.")
+            .Validate(
+                opts => opts.MaxRetryAttempts > 0,
+                $"{nameof(SubscriptionOptions.MaxRetryAttempts)} must be positive.")
+            .Validate(
+                opts => opts.PollingInterval >= TimeSpan.Zero,
+                $"{nameof(SubscriptionOptions.PollingInterval)} must be non-negative.")
+            .Validate(
+                opts => opts.RetryDelay >= TimeSpan.Zero,
+                $"{nameof(SubscriptionOptions.RetryDelay)} must be non-negative.")
             .ValidateOnStart();
         services.TryAddSingleton<SubscriptionDaemon<TDbContext>>();
         services.TryAddScoped<ISubscriptionManager>(sp =>
@@ -96,6 +114,21 @@ internal sealed class EfCoreEventEventStoreBuilder<TDbContext>(
             .Validate(
                 opts => opts.LockTimeout >= TimeSpan.Zero || opts.LockTimeout == Timeout.InfiniteTimeSpan,
                 $"{nameof(ProjectionDaemonOptions.LockTimeout)} must be non-negative or Timeout.InfiniteTimeSpan.")
+            .Validate(
+                opts => opts.MaxConcurrentWorkers > 0,
+                $"{nameof(ProjectionDaemonOptions.MaxConcurrentWorkers)} must be positive.")
+            .Validate(
+                opts => opts.BatchSize > 0,
+                $"{nameof(ProjectionDaemonOptions.BatchSize)} must be positive.")
+            .Validate(
+                opts => opts.PollingInterval >= TimeSpan.Zero,
+                $"{nameof(ProjectionDaemonOptions.PollingInterval)} must be non-negative.")
+            .Validate(
+                opts => opts.RetryDelay >= TimeSpan.Zero,
+                $"{nameof(ProjectionDaemonOptions.RetryDelay)} must be non-negative.")
+            .Validate(
+                opts => opts.BatchDelay >= TimeSpan.Zero,
+                $"{nameof(ProjectionDaemonOptions.BatchDelay)} must be non-negative.")
             .ValidateOnStart();
 
         services.TryAddSingleton<ProjectionDaemon<TDbContext>>();

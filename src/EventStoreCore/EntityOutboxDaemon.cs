@@ -33,54 +33,217 @@ public sealed class EntityOutboxDaemon<TDbContext>(
         var registrations = serviceProvider
             .GetServices<OutboxSubscriptionRegistration>()
             .ToArray();
+        var limiter = new DaemonExecutionLimiter(
+            _options.MaxConcurrentWorkers,
+            timeProvider);
+        var workers = registrations
+            .Select(registration => RunRegistrationAsync(
+                registration,
+                limiter,
+                stoppingToken))
+            .ToArray();
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            var processedAny = false;
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Entity outbox daemon stopping gracefully.");
+        }
+    }
 
-            foreach (var registration in registrations)
+    private async Task RunRegistrationAsync(
+        OutboxSubscriptionRegistration registration,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        if (_options.CheckpointScope == CheckpointScope.Global)
+        {
+            await RunCheckpointWorkerAsync(
+                registration,
+                CheckpointScopeKey.Global,
+                limiter,
+                ct);
+            return;
+        }
+
+        var scopeWorkers = new Dictionary<CheckpointScopeKey, Task>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
             {
                 try
                 {
-                    foreach (var checkpointScope in await GetCheckpointScopesAsync(registration, stoppingToken))
+                    foreach (var checkpointScope in await GetCheckpointScopesAsync(
+                        registration,
+                        ct))
                     {
-                        await using var acquired = await AcquireLockAsync(
-                            registration.Name,
-                            checkpointScope,
-                            stoppingToken);
-                        if (acquired is null)
+                        if (!scopeWorkers.ContainsKey(checkpointScope))
                         {
-                            continue;
+                            scopeWorkers.Add(
+                                checkpointScope,
+                                RunCheckpointWorkerAsync(
+                                    registration,
+                                    checkpointScope,
+                                    limiter,
+                                    ct));
                         }
-
-                        using var handlerScope = serviceProvider.CreateScope();
-                        using var checkpointScopeServices = serviceProvider.CreateScope();
-                        var subscription = registration.Resolve(handlerScope.ServiceProvider);
-                        processedAny |= await ProcessNextBatchAsync(
-                            checkpointScopeServices,
-                            subscription,
-                            registration,
-                            checkpointScope,
-                            stoppingToken) > 0;
                     }
+
+                    await Task.Delay(
+                        _options.PollingInterval,
+                        timeProvider,
+                        ct);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    return;
+                    break;
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(
                         ex,
-                        "Entity outbox subscription {Subscription} failed.",
-                        registration.Name);
+                        "Error discovering checkpoint scopes for entity outbox subscription {Subscription}. Retrying in {RetryDelay}.",
+                        registration.Name,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(
+                        registration.Name,
+                        "outbox-subscription");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
                 }
             }
+        }
+        finally
+        {
+            await AwaitWorkersAsync(scopeWorkers.Values);
+        }
+    }
 
-            if (!processedAny)
+    private async Task RunCheckpointWorkerAsync(
+        OutboxSubscriptionRegistration registration,
+        CheckpointScopeKey checkpointScope,
+        DaemonExecutionLimiter limiter,
+        CancellationToken ct)
+    {
+        var name = registration.Name;
+        EventStoreDaemonDiagnostics.WorkerStarted(name, "outbox-subscription");
+        try
+        {
+            while (!ct.IsCancellationRequested)
             {
-                await Task.Delay(_options.PollingInterval, timeProvider, stoppingToken);
+                try
+                {
+                    var acquired = await AcquireLockAsync(
+                        name,
+                        checkpointScope,
+                        ct);
+                    var iteration = (ProcessedCount: 0, Delay: _options.PollingInterval);
+                    if (acquired is not null)
+                    {
+                        await using (acquired)
+                        {
+                            iteration = await limiter.RunAsync(
+                                name,
+                                "outbox-subscription",
+                                async token =>
+                                {
+                                    using var handlerScope = serviceProvider.CreateScope();
+                                    using var checkpointScopeServices = serviceProvider.CreateScope();
+                                    var subscription = registration.Resolve(
+                                        handlerScope.ServiceProvider);
+                                    var processed = await ProcessNextBatchAsync(
+                                        checkpointScopeServices,
+                                        subscription,
+                                        registration,
+                                        checkpointScope,
+                                        token);
+                                    var checkpoint = checkpointScopeServices.ServiceProvider
+                                        .GetRequiredService<TDbContext>()
+                                        .Set<DbOutboxSubscription>()
+                                        .Local
+                                        .FirstOrDefault(row =>
+                                            row.SubscriptionAssemblyQualifiedName == name &&
+                                            row.CheckpointScope == checkpointScope.Scope &&
+                                            row.TenantId == checkpointScope.TenantId);
+                                    return (
+                                        processed,
+                                        GetNextDelay(checkpoint));
+                                },
+                                ct);
+                        }
+                    }
+
+                    if (iteration.ProcessedCount == 0)
+                    {
+                        await Task.Delay(
+                            iteration.Delay,
+                            timeProvider,
+                            ct);
+                    }
+                    else
+                    {
+                        await Task.Yield();
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Entity outbox subscription {Subscription} failed in checkpoint scope {Scope}. Retrying in {RetryDelay}.",
+                        name,
+                        checkpointScope,
+                        _options.RetryDelay);
+                    EventStoreDaemonDiagnostics.Retry(
+                        name,
+                        "outbox-subscription");
+                    await DelayAfterFailureAsync(_options.RetryDelay, ct);
+                }
             }
+        }
+        finally
+        {
+            EventStoreDaemonDiagnostics.WorkerStopped(
+                name,
+                "outbox-subscription");
+        }
+    }
+
+    private async Task DelayAfterFailureAsync(TimeSpan delay, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delay, timeProvider, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private TimeSpan GetNextDelay(DbOutboxSubscription? checkpoint)
+    {
+        if (checkpoint?.State == SubscriptionState.Faulted &&
+            checkpoint.NextAttemptAt is { } nextAttemptAt)
+        {
+            var remaining = nextAttemptAt - timeProvider.GetUtcNow();
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+
+        return _options.PollingInterval;
+    }
+
+    private static async Task AwaitWorkersAsync(IEnumerable<Task> workers)
+    {
+        try
+        {
+            await Task.WhenAll(workers);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -120,7 +283,10 @@ public sealed class EntityOutboxDaemon<TDbContext>(
         var reader = (EntityOutboxReader<TDbContext>)scope.ServiceProvider.GetRequiredService<IOutboxReader>();
         var name = registration.Name;
         var startedAt = timeProvider.GetTimestamp();
-        using var activity = EventStoreDaemonDiagnostics.StartBatch(name, "outbox-subscription");
+        using var activity = EventStoreDaemonDiagnostics.StartBatch(
+            name,
+            "outbox-subscription",
+            checkpointScope);
 
         var checkpoint = await dbContext.Set<DbOutboxSubscription>().FirstOrDefaultAsync(
             row =>
@@ -146,7 +312,7 @@ public sealed class EntityOutboxDaemon<TDbContext>(
             if (checkpoint.State == SubscriptionState.Paused)
             {
                 serviceProvider.GetService<DaemonHealthMonitor>()?
-                    .Heartbeat(name, "outbox-subscription");
+                    .Heartbeat(name, "outbox-subscription", checkpointScope);
             }
             return 0;
         }
@@ -281,7 +447,7 @@ public sealed class EntityOutboxDaemon<TDbContext>(
             timeProvider.GetElapsedTime(startedAt),
             Math.Max(0, lag));
         serviceProvider.GetService<DaemonHealthMonitor>()?
-            .Heartbeat(name, "outbox-subscription");
+            .Heartbeat(name, "outbox-subscription", checkpointScope);
         return processed;
     }
 
@@ -328,7 +494,10 @@ public sealed class EntityOutboxDaemon<TDbContext>(
         var lockName = $"entity-outbox:{subscriptionName}{checkpointScope.LockSuffix}";
         try
         {
-            var acquired = await distributedLockProvider.AcquireLockAsync(lockName, _options.LockTimeout, ct);
+            var acquired = await distributedLockProvider.AcquireLockAsync(
+                lockName,
+                _options.LockTimeout,
+                ct);
             return acquired as IAsyncDisposable ?? acquired;
         }
         catch (TimeoutException)
@@ -424,6 +593,6 @@ public sealed class EntityOutboxDaemon<TDbContext>(
         }
 
         serviceProvider.GetService<DaemonHealthMonitor>()?
-            .Fault(identity, "outbox-subscription", exception);
+            .Fault(identity, "outbox-subscription", exception, checkpointScope);
     }
 }

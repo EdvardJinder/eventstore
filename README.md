@@ -209,6 +209,33 @@ redeliver the event and handlers must remain idempotent.
 
 Add migrations for the `OutboxMessages` and `OutboxSubscriptions` tables after enabling the feature.
 
+## Daemon scheduling, isolation, and backpressure
+
+Stream subscriptions, entity-outbox subscriptions, and eventual projections run
+one logical worker per registration and checkpoint scope. A caught-up, paused,
+retrying, failing, or slow worker therefore does not impose its polling or retry
+delay on another worker. Tenant-scoped daemons add workers as new event or
+checkpoint tenants are discovered.
+
+Each daemon has a positive `MaxConcurrentWorkers` option, defaulting to `8`.
+The limit bounds concurrent batch executions within that daemon instance;
+additional logical workers wait for capacity. Distributed-lock waits, polling,
+retrying, and projection `BatchDelay` happen outside the capacity slot, providing
+backpressure without recreating head-of-line blocking.
+
+Ordering remains serial within one registration/checkpoint scope. Its existing
+distributed lock is held across reading, handler or projection execution, and
+checkpoint persistence. This preserves the at-least-once contract: a crash after
+delivery but before checkpoint persistence may redeliver, and handlers must
+remain idempotent.
+
+Daemon shutdown cancels discovery, lock waits, batch work, and delays, then
+awaits every logical worker so scopes and acquired locks are disposed. Handlers
+should honor their cancellation token. Tenant-scoped stream subscriptions use
+the registered handler instance from multiple scope workers, so those handlers
+must also be safe for concurrent calls; set `MaxConcurrentWorkers = 1` when
+serial handler invocation is required.
+
 ## Inline projection contract
 
 Inline projections run inside the same `DbContext` scope and `SaveChanges` transaction that appends events. If an inline projection throws, the append is rolled back with it.
@@ -469,13 +496,18 @@ services.AddEventStore(builder =>
 
     builder.AddSubscriptionDaemon<MyEventStoreDbContext>(
         _ => distributedLockProvider,
-        options => options.CheckpointScope = CheckpointScope.Tenant);
+        options =>
+        {
+            options.CheckpointScope = CheckpointScope.Tenant;
+            options.MaxConcurrentWorkers = 8;
+        });
 
     builder.AddProjectionDaemon<MyEventStoreDbContext>(
         _ => distributedLockProvider,
         options =>
         {
             options.CheckpointScope = CheckpointScope.Tenant;
+            options.MaxConcurrentWorkers = 8;
             options.AutoRebuildOnVersionChange = false;
         });
 });

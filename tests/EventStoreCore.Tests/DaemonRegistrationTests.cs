@@ -131,4 +131,25 @@ public sealed class DaemonRegistrationTests
         Assert.Single(report.Entries);
         Assert.Equal(time.GetUtcNow().AddMinutes(-6), report.Entries[0].LastHeartbeat);
     }
+
+    [Fact]
+    public void Healthy_tenant_heartbeat_does_not_clear_another_tenant_fault()
+    {
+        var monitor = new DaemonHealthMonitor();
+        var faultedTenant = CheckpointScopeKey.Tenant(Guid.NewGuid());
+        var healthyTenant = CheckpointScopeKey.Tenant(Guid.NewGuid());
+
+        monitor.Fault(
+            "orders",
+            "subscription",
+            new InvalidOperationException("failed"),
+            faultedTenant);
+        monitor.Heartbeat("orders", "subscription", healthyTenant);
+
+        var report = monitor.CheckHealth(TimeSpan.FromMinutes(5));
+
+        Assert.Equal(DaemonHealthStatus.Unhealthy, report.Status);
+        Assert.Equal(2, report.Entries.Count);
+        Assert.Single(report.Entries, entry => entry.IsFaulted);
+    }
 }

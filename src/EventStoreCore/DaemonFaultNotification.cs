@@ -6,7 +6,9 @@ namespace EventStoreCore;
 /// Describes a durable daemon fault or dead-letter transition.
 /// </summary>
 /// <param name="Identity">The stable logical projection or subscription identity.</param>
-/// <param name="DaemonKind">The daemon kind: <c>projection</c> or <c>subscription</c>.</param>
+/// <param name="DaemonKind">
+/// The daemon kind: <c>projection</c>, <c>subscription</c>, or <c>outbox-subscription</c>.
+/// </param>
 /// <param name="State">The new persisted fault state.</param>
 /// <param name="CheckpointScope">The checkpoint scope.</param>
 /// <param name="TenantId">The tenant identifier for a tenant-scoped checkpoint.</param>

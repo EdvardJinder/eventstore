@@ -35,9 +35,12 @@ public sealed class DaemonHealthMonitor
         return new DaemonHealthReport(status, entries);
     }
 
-    internal void Heartbeat(string identity, string daemonKind) =>
+    internal void Heartbeat(
+        string identity,
+        string daemonKind,
+        CheckpointScopeKey checkpointScope = default) =>
         _entries.AddOrUpdate(
-            $"{daemonKind}:{identity}",
+            GetKey(identity, daemonKind, checkpointScope),
             _ => new DaemonHealthEntry(identity, daemonKind, _timeProvider.GetUtcNow(), false, null),
             (_, current) => current with
             {
@@ -46,9 +49,13 @@ public sealed class DaemonHealthMonitor
                 LastError = null
             });
 
-    internal void Fault(string identity, string daemonKind, Exception exception) =>
+    internal void Fault(
+        string identity,
+        string daemonKind,
+        Exception exception,
+        CheckpointScopeKey checkpointScope = default) =>
         _entries.AddOrUpdate(
-            $"{daemonKind}:{identity}",
+            GetKey(identity, daemonKind, checkpointScope),
             _ => new DaemonHealthEntry(identity, daemonKind, _timeProvider.GetUtcNow(), true, exception.Message),
             (_, current) => current with
             {
@@ -56,6 +63,12 @@ public sealed class DaemonHealthMonitor
                 IsFaulted = true,
                 LastError = exception.Message
             });
+
+    private static string GetKey(
+        string identity,
+        string daemonKind,
+        CheckpointScopeKey checkpointScope) =>
+        $"{daemonKind}:{identity}{checkpointScope.LockSuffix}";
 }
 
 /// <summary>Overall daemon health state.</summary>
@@ -79,7 +92,7 @@ public sealed record DaemonHealthReport(
     IReadOnlyList<DaemonHealthEntry> Entries);
 
 /// <summary>
-/// Represents liveness and fault information for one logical daemon identity.
+/// Represents liveness and fault information for one logical daemon checkpoint.
 /// </summary>
 /// <param name="Identity">The stable logical identity.</param>
 /// <param name="DaemonKind">The daemon kind.</param>

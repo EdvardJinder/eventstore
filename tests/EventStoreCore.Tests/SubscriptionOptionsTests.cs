@@ -10,6 +10,7 @@ public class SubscriptionOptionsTests
     {
         var options = new SubscriptionOptions();
 
+        Assert.Equal(8, options.MaxConcurrentWorkers);
         Assert.Equal(500, options.BatchSize);
         Assert.Equal(1, options.CheckpointFrequency);
         Assert.Equal(TimeSpan.FromSeconds(10), options.PollingInterval);
