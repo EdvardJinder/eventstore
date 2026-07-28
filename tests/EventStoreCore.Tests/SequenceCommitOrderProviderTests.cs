@@ -1,8 +1,12 @@
 using System.Data.Common;
 using EventStoreCore.Abstractions;
+using Medallion.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using PostgresExtensions = EventStoreCore.Postgres.ModelBuilderExtensions;
 using SqlServerExtensions = EventStoreCore.SqlServer.ModelBuilderExtensions;
 
@@ -57,6 +61,109 @@ public sealed class SequenceCommitOrderProviderTests :
                 options => options.UseSqlServer(_sqlServerFixture.ConnectionString)),
             _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null)
         };
+    }
+
+    [Fact]
+    public async Task Filtered_projection_checkpoint_cannot_skip_delayed_lower_sequence()
+    {
+        var insertObserver = new PendingSequenceInsertObserver();
+        var services = new ServiceCollection();
+        services.AddSingleton(insertObserver);
+        services.AddDbContext<PostgresEventContext>((sp, options) =>
+        {
+            options.UseNpgsql(_postgresFixture.ConnectionString);
+            options.AddInterceptors(sp.GetRequiredService<PendingSequenceInsertObserver>());
+        });
+        services.AddEventStore(builder => builder.ExistingDbContext<PostgresEventContext>());
+
+        await using var serviceProvider = services.BuildServiceProvider();
+        await using var firstScope = serviceProvider.CreateAsyncScope();
+        await using var secondScope = serviceProvider.CreateAsyncScope();
+        await using var projectionScope = serviceProvider.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<PostgresEventContext>();
+        var second = secondScope.ServiceProvider.GetRequiredService<PostgresEventContext>();
+        var projectionContext =
+            projectionScope.ServiceProvider.GetRequiredService<PostgresEventContext>();
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        await first.Database.EnsureDeletedAsync(cancellationToken);
+        await first.Database.EnsureCreatedAsync(cancellationToken);
+
+        const string projectionName = "gap-safe-filtered-sequence";
+        first.Set<DbProjectionStatus>().Add(
+            new DbProjectionStatus
+            {
+                ProjectionName = projectionName,
+                Version = 1,
+                State = ProjectionState.Active,
+                Position = 0
+            });
+        await first.SaveChangesAsync(cancellationToken);
+
+        await using var firstTransaction =
+            await first.Database.BeginTransactionAsync(cancellationToken);
+        first.Streams.StartStream(
+            "orders",
+            Guid.NewGuid(),
+            events: [new SequenceEvent("matching-lower")]);
+        await first.SaveChangesAsync(cancellationToken);
+        var firstEvent = first.ChangeTracker.Entries<DbEvent>()
+            .Single()
+            .Entity;
+
+        var projectionOptions = new ProjectionOptions();
+        projectionOptions.Handles<SequenceEvent>();
+        projectionOptions.IncludeLogicalEventType(firstEvent.TypeName);
+        var evolvedSequences = new List<long>();
+        var registration = BuildFilteredProjectionRegistration(
+            projectionName,
+            projectionOptions,
+            evolvedSequences);
+        var status = await projectionContext.Set<DbProjectionStatus>()
+            .SingleAsync(
+                row => row.ProjectionName == projectionName,
+                cancellationToken);
+
+        var insertStarted = insertObserver.Arm(typeof(DbEvent));
+        second.Streams.StartStream(
+            "orders",
+            Guid.NewGuid(),
+            events: [new IgnoredSequenceEvent("non-matching-higher")]);
+        var secondSave = second.SaveChangesAsync(cancellationToken);
+        await insertStarted.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+
+        var completed = await Task.WhenAny(
+            secondSave,
+            Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken));
+        if (completed == secondSave)
+        {
+            await secondSave;
+            await ProcessFilteredProjectionBatchAsync(
+                projectionContext,
+                projectionScope.ServiceProvider,
+                registration,
+                status,
+                cancellationToken);
+        }
+
+        await firstTransaction.CommitAsync(cancellationToken);
+        await secondSave.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        var secondSequence = second.ChangeTracker.Entries<DbEvent>()
+            .Single()
+            .Entity
+            .Sequence;
+
+        await ProcessFilteredProjectionBatchAsync(
+            projectionContext,
+            projectionScope.ServiceProvider,
+            registration,
+            status,
+            cancellationToken);
+
+        Assert.Equal([firstEvent.Sequence], evolvedSequences);
+        Assert.Equal(secondSequence, status.Position);
+
+        await projectionContext.Database.EnsureDeletedAsync(cancellationToken);
     }
 
     private static async Task VerifyEventSequenceCommitOrderAsync<TDbContext>(
@@ -197,6 +304,59 @@ public sealed class SequenceCommitOrderProviderTests :
         await second.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
     }
 
+    private static ProjectionRegistration BuildFilteredProjectionRegistration(
+        string name,
+        ProjectionOptions options,
+        ICollection<long> evolvedSequences) =>
+        new()
+        {
+            Name = name,
+            Mode = ProjectionMode.Eventual,
+            Version = 1,
+            ProjectionType = typeof(SequenceProjectionSnapshot),
+            SnapshotType = typeof(SequenceProjectionSnapshot),
+            Options = options,
+            ClearAction = (_, _, _) => Task.CompletedTask,
+            EvolveAction = (_, _, snapshot, @event, _) =>
+            {
+                var projection = (SequenceProjectionSnapshot)snapshot;
+                projection.Id = @event.StreamId;
+                evolvedSequences.Add(@event.Sequence);
+                return Task.CompletedTask;
+            },
+            GetOrCreateSnapshotAction = async (db, key, ct) =>
+            {
+                var streamId = (Guid)key;
+                return await db.Set<SequenceProjectionSnapshot>()
+                    .FindAsync([streamId], ct)
+                    ?? new SequenceProjectionSnapshot { Id = streamId };
+            },
+            AddSnapshotAction = (db, snapshot) => db.Add(snapshot)
+        };
+
+    private static async Task<bool> ProcessFilteredProjectionBatchAsync<TDbContext>(
+        TDbContext dbContext,
+        IServiceProvider services,
+        ProjectionRegistration registration,
+        DbProjectionStatus status,
+        CancellationToken cancellationToken)
+        where TDbContext : DbContext
+    {
+        var daemon = new ProjectionDaemon<TDbContext>(
+            NullLogger<ProjectionDaemon<TDbContext>>.Instance,
+            services,
+            Substitute.For<IDistributedLockProvider>(),
+            Options.Create(new ProjectionDaemonOptions { BatchSize = 10 }));
+        var processBatch = typeof(ProjectionDaemon<TDbContext>).GetMethod(
+            "ProcessBatchAsync",
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic)!;
+        var task = (Task<bool>)processBatch.Invoke(
+            daemon,
+            [dbContext, services, registration, status, cancellationToken])!;
+        return await task;
+    }
+
     public enum ProviderKind
     {
         Postgres,
@@ -204,6 +364,13 @@ public sealed class SequenceCommitOrderProviderTests :
     }
 
     private sealed record SequenceEvent(string Name);
+
+    private sealed record IgnoredSequenceEvent(string Name);
+
+    private sealed class SequenceProjectionSnapshot
+    {
+        public Guid Id { get; set; }
+    }
 
     private sealed record EntityCreated(Guid EntityId);
 
@@ -218,6 +385,7 @@ public sealed class SequenceCommitOrderProviderTests :
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             PostgresExtensions.UseEventStore(modelBuilder);
+            modelBuilder.Entity<SequenceProjectionSnapshot>().HasKey(snapshot => snapshot.Id);
         }
     }
 

@@ -188,6 +188,7 @@ public class ProviderModelConfigurationTests
     [Theory]
     [InlineData("Postgres")]
     [InlineData("SqlServer")]
+    [InlineData("Sqlite")]
     public void ProjectionFiltersAreTranslatedBeforeProviderBatchLimits(string provider)
     {
         using DbContext context = provider switch
@@ -197,6 +198,9 @@ public class ProviderModelConfigurationTests
                 .Options),
             "SqlServer" => new SqlServerContext(new DbContextOptionsBuilder<SqlServerContext>()
                 .UseSqlServer("Server=localhost;Database=eventstore;User Id=sa;Password=Pass@word1;TrustServerCertificate=True;")
+                .Options),
+            "Sqlite" => new SqliteContext(new DbContextOptionsBuilder<SqliteContext>()
+                .UseSqlite("Data Source=:memory:")
                 .Options),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
@@ -218,7 +222,7 @@ public class ProviderModelConfigurationTests
         Assert.Contains("StreamId", sql, StringComparison.Ordinal);
         Assert.Contains("TenantId", sql, StringComparison.Ordinal);
         Assert.Contains(
-            provider == "Postgres" ? "LIMIT" : "TOP",
+            provider == "SqlServer" ? "TOP" : "LIMIT",
             sql,
             StringComparison.OrdinalIgnoreCase);
     }

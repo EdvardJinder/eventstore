@@ -15,10 +15,6 @@ public class EventStoreBuilderPostgresExtensionsTests
     {
         public bool HandlesAllCalled { get; private set; }
         public void Name(string name) { }
-        public void IncludeLogicalEventType(string logicalEventType) { }
-        public void IncludeStreamType(string streamType) { }
-        public void IncludeStream(Guid streamId) { }
-        public void IncludeTenant(Guid tenantId) { }
         public void Handles<T>() where T : class => HandlesAllCalled = true;
         public void HandlesAll() => HandlesAllCalled = true;
         public void Handles<TEvent>(Func<IEvent<TEvent>, object>? keySelector = null) where TEvent : class => HandlesAllCalled = true;
@@ -116,6 +112,17 @@ public class EventStoreBuilderPostgresExtensionsTests
         var projectionOptions = new FakeProjectionOptions();
         registrar.AddedConfigure!(projectionOptions);
         Assert.True(projectionOptions.HandlesAllCalled);
+    }
+
+    [Fact]
+    public void ExistingProjectionOptionsImplementationUsesCompatibilityDefaultForFilters()
+    {
+        IProjectionOptions options = new FakeProjectionOptions();
+
+        var exception = Assert.Throws<NotSupportedException>(
+            () => options.IncludeTenant(Guid.NewGuid()));
+
+        Assert.Contains("persisted event filters", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
