@@ -669,8 +669,9 @@ EventStoreCore model; they do not create or migrate a separate database.
   open connection for their full lifetime.
 - All three providers use `(Id, StreamType, TenantId)` as stream identity and enforce
   event versions within that identity.
-- `EventId` values are generated GUIDs with a uniqueness constraint. Treat them
-  as stable deduplication keys, not chronological or sequential values.
+- `EventId` values are generated or caller-supplied GUIDs with a uniqueness
+  constraint. Treat them as stable deduplication keys, not chronological or
+  sequential values.
 - Global event-log reads use the generated `Events.Sequence` value as their
   stable, commit-ordered cross-stream cursor.
 - Sequence-allocating event and entity-outbox transactions are serialized with
@@ -719,6 +720,50 @@ All runtime and provider packages target `net10.0`. EventStoreCore uses EF Core
 `net10.0` assets. Earlier target frameworks therefore cannot be tested against
 the dependency graph used by this release. The packages deliberately do not
 declare cosmetic `net8.0` or `net9.0` targets.
+
+## Idempotent appends
+
+Use `AppendOperation` when a caller may retry after an ambiguous timeout or
+connection failure. Assign every event a stable, globally unique ID before the
+first attempt:
+
+```csharp
+var operation = new AppendOperation(
+    streamId,
+    ExpectedVersion.Exact(3),
+    [
+        new FundsDeposited(100m)
+            .WithMetadata(metadata)
+            .WithEventId(eventId)
+    ])
+{
+    StreamType = "accounts",
+    TenantId = tenantId
+};
+
+AppendResult result = await eventStore.AppendAsync(operation, ct);
+```
+
+`AppendResult` contains the previous and committed stream versions plus each
+committed event ID, stream version, and global sequence. It does not materialize
+the stream. `WasAlreadyCommitted` distinguishes a recovered retry result from
+the attempt that performed the write.
+
+Event IDs are global, not scoped by tenant or stream. Every event in a retryable
+batch must have a caller-supplied ID. The IDs must resolve to the same
+contiguous, ordered events with the same logical type, schema version,
+serialized payload, and metadata.
+Partial overlap, a changed order or payload, a different stream, or reuse of one
+ID in a mixed identified/unidentified batch throws
+`EventStoreIdempotencyConflictException`. An exact retry returns the original
+result before checking the stream's now-current version, so it remains safe
+after later appends.
+
+The stream update, events, inline projections, and snapshots commit in the same
+EF Core transaction. PostgreSQL, SQL Server, and SQLite use the existing unique
+`Events.EventId` constraint, so this feature adds no table or migration.
+Ordinary competing writes with different event IDs continue to use the existing
+optimistic-concurrency rules.
 
 ## Project guidelines
 

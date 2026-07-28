@@ -28,6 +28,14 @@ Every shipped project generates XML documentation and enables the .NET SDK packa
 
 The following changes are intentional for the next beta:
 
+- `IEventStore.AppendAsync(AppendOperation)` adds a backwards-compatible
+  default contract for compact append results. EventStoreCore's EF
+  implementation overrides it with caller-supplied event-ID retry recovery.
+- `EventToAppend` can carry a caller-supplied event ID, and
+  `EventAppendExtensions.WithEventId` composes with `WithMetadata`.
+- `AppendResult`, `AppendedEventInfo`, and
+  `EventStoreIdempotencyConflictException` expose committed write identity and
+  conflicting event-ID reuse without exposing EF persistence types.
 - `IReadOnlyStream<T>` now inherits `IReadOnlyStream`, and `IStream<T>` now inherits both `IReadOnlyStream<T>` and `IStream`.
 - All stream interfaces expose the complete persistence identity: `Id`, `StreamType`, and `TenantId`.
 - Generic stream interfaces inherit common members instead of declaring duplicates.

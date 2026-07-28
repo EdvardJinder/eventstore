@@ -42,8 +42,8 @@ calling `UseEventStore()`.
 - Stream identity is `(Id, StreamType, TenantId)`.
 - Event ordering within a stream is protected by a unique
   `(StreamId, StreamType, TenantId, Version)` index.
-- `EventId` is a generated GUID with a global uniqueness constraint; consumers
-  must not rely on GUID ordering.
+- `EventId` is a generated or caller-supplied GUID with a global uniqueness
+  constraint; consumers must not rely on GUID ordering.
 - Global event-log reads use the generated `Events.Sequence` primary key plus
   filtered sequence indexes for tenant, logical stream type, and logical event
   type.
