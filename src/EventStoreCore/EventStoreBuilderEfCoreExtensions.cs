@@ -35,7 +35,8 @@ public static class EventStoreBuilderEfCoreExtensions
     }
 
     /// <summary>
-    /// Registers an existing DbContext and enables event store integrations, including EF-backed scheduler registration tracking.
+    /// Registers an existing DbContext and enables event store integrations, including EF-backed scheduler registration tracking
+    /// and provider-specific commit ordering for generated global sequences.
     /// </summary>
     /// <typeparam name="TDbContext">The DbContext type.</typeparam>
     /// <param name="builder">The event store builder.</param>
@@ -51,12 +52,14 @@ public static class EventStoreBuilderEfCoreExtensions
 
         var efBuilder = new EfCoreEventEventStoreBuilder<TDbContext>(builder.Services);
 
+        SequenceCommitOrder.AddServices(builder.Services);
         builder.Services.AddSingleton<ISchedulerEventApplicationStore, EfCoreSchedulerEventApplicationStore<TDbContext>>();
         builder.Services.TryAddScoped<IEventLogReader>(serviceProvider =>
             new DbContextEventLogReader(serviceProvider.GetRequiredService<TDbContext>()));
 
         efBuilder.Services.AddDbContext<TDbContext>((sp, options) =>
         {
+            SequenceCommitOrder.Configure(sp, options);
             efBuilder.ConfigureProjections(sp, options);
         });
 
@@ -162,4 +165,3 @@ public static class EventStoreBuilderEfCoreExtensions
         return builder;
     }
 }
-

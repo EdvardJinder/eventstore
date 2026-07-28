@@ -9,12 +9,13 @@ namespace EventStoreCore.Postgres;
 public static class ModelBuilderExtensions
 {
     /// <summary>
-    /// Configures the event store schema using Postgres column types.
+    /// Configures the event store schema using Postgres column types and commit-order lock metadata.
     /// </summary>
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEventStore(this ModelBuilder modelBuilder)
     {
         global::EventStoreCore.ModelBuilderExtensions.ConfigureEventStoreModel(modelBuilder);
+        ConfigureCommitOrderedSequences(modelBuilder, includesEvents: true, includesOutbox: false);
 
         modelBuilder.Entity<DbEvent>(entity =>
         {
@@ -34,13 +35,37 @@ public static class ModelBuilderExtensions
     }
 
     /// <summary>
-    /// Configures only the standalone EF entity-outbox schema using Postgres column types.
+    /// Configures only the standalone EF entity-outbox schema using Postgres column types and commit-order lock metadata.
     /// </summary>
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEntityOutbox(this ModelBuilder modelBuilder)
     {
         global::EventStoreCore.ModelBuilderExtensions.ConfigureEntityOutboxModel(modelBuilder);
+        ConfigureCommitOrderedSequences(modelBuilder, includesEvents: false, includesOutbox: true);
         ConfigureOutboxProviderTypes(modelBuilder);
+    }
+
+    private static void ConfigureCommitOrderedSequences(
+        ModelBuilder modelBuilder,
+        bool includesEvents,
+        bool includesOutbox)
+    {
+        modelBuilder.Model.SetAnnotation(
+            SequenceCommitOrder.AcquireLockSqlAnnotation,
+            "SELECT pg_advisory_xact_lock(1163281236, 1397048149)");
+        if (includesEvents)
+        {
+            modelBuilder.Model.SetAnnotation(
+                SequenceCommitOrder.EventsInsertMarkerAnnotation,
+                "INSERT INTO \"Events\"");
+        }
+
+        if (includesOutbox)
+        {
+            modelBuilder.Model.SetAnnotation(
+                SequenceCommitOrder.OutboxInsertMarkerAnnotation,
+                "INSERT INTO \"OutboxMessages\"");
+        }
     }
 
     private static void ConfigureOutboxProviderTypes(ModelBuilder modelBuilder)

@@ -54,6 +54,10 @@ the connection alive for the full test or application scope when using
   `(StreamId, StreamType, TenantId, Version)` index.
 - The integer `Events.Sequence` primary key provides the generated global event
   position required by SQLite.
+- SQLite permits only one database writer at a time, so generated sequences
+  cannot commit out of allocation order and no additional application lock is
+  installed. A competing writer can receive `SQLITE_BUSY` after the configured
+  busy timeout; applications should retry that transaction.
 - `EventId` is a generated GUID with a global uniqueness constraint; consumers
   must not rely on GUID ordering.
 - Inline projections share the append transaction. Subscription and eventual

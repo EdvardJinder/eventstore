@@ -13,7 +13,8 @@ namespace EventStoreCore;
 public static class EntityOutboxServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds entity change capture and an <see cref="IOutboxReader" /> for an existing EF context.
+    /// Adds entity change capture, provider-specific commit ordering for generated outbox sequences,
+    /// and an <see cref="IOutboxReader" /> for an existing EF context.
     /// </summary>
     /// <typeparam name="TDbContext">The context containing the application entities and outbox tables.</typeparam>
     /// <param name="services">The service collection.</param>
@@ -37,6 +38,7 @@ public static class EntityOutboxServiceCollectionExtensions
             sp.GetServices<EventTypeRegistration>(),
             sp.GetServices<EventTypeAliasRegistration>(),
             sp.GetServices<EventUpcasterRegistration>()));
+        SequenceCommitOrder.AddServices(services);
 
         services.AddDbContext<TDbContext>((sp, options) =>
         {
@@ -44,6 +46,7 @@ public static class EntityOutboxServiceCollectionExtensions
                 sp.GetRequiredService<EntityOutboxRegistry<TDbContext>>(),
                 sp.GetRequiredService<EventTypeRegistry>(),
                 sp.GetRequiredService<TimeProvider>()));
+            SequenceCommitOrder.Configure(sp, options);
         });
 
         services.TryAddScoped<IOutboxReader, EntityOutboxReader<TDbContext>>();
