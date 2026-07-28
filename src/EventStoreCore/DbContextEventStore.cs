@@ -2,8 +2,10 @@ using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace EventStoreCore;
 
@@ -17,6 +19,30 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     private readonly EventTypeRegistry? _eventTypes = ResolveService<EventTypeRegistry>(db);
     private readonly IEventStoreSerializer _serializer =
         ResolveService<IEventStoreSerializer>(db) ?? new SystemTextJsonEventStoreSerializer();
+
+    /// <inheritdoc />
+    public Task<AppendResult> AppendAsync(
+        AppendOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(operation.StreamType);
+        if (operation.IdempotencyKey == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Append operation idempotency keys cannot be empty.",
+                nameof(operation));
+        }
+
+        return AppendCoreAsync(
+            operation.StreamType,
+            operation.StreamId,
+            operation.TenantId,
+            operation.ExpectedVersion,
+            operation.Events,
+            operation.IdempotencyKey,
+            cancellationToken);
+    }
 
     /// <inheritdoc />
     public async Task<StreamPage?> ReadPageAsync(
@@ -191,11 +217,84 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
         IEnumerable<object> events,
         CancellationToken cancellationToken = default)
     {
+        await AppendCoreAsync(
+            streamType,
+            streamId,
+            tenantId,
+            expectedVersion,
+            events,
+            idempotencyKey: null,
+            cancellationToken);
+
+        var committedStream = await db.Set<DbStream>()
+            .Where(x => x.Id == streamId && x.StreamType == streamType && x.TenantId == tenantId)
+            .Include(x => x.Events)
+            .SingleAsync(cancellationToken);
+
+        return new DbContextStream(committedStream, db);
+    }
+
+    private async Task<AppendResult> AppendCoreAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IEnumerable<object> events,
+        Guid? idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(streamType);
         ArgumentNullException.ThrowIfNull(events);
 
         var eventList = events.ToArray();
         ValidateEventPayloads(eventList, nameof(events));
+        var requiresPreparedEvents = idempotencyKey.HasValue
+            || eventList.OfType<EventToAppend>().Any(append => append.EventId.HasValue);
+        var preparedEvents = requiresPreparedEvents ? PrepareEvents(eventList) : [];
+        if (requiresPreparedEvents)
+        {
+            ValidateEventIds(preparedEvents);
+        }
+
+        var requestHash = idempotencyKey.HasValue
+            ? ComputeRequestHash(streamType, streamId, tenantId, expectedVersion, preparedEvents)
+            : null;
         var unrelatedChanges = CaptureUnrelatedChanges();
+
+        if (idempotencyKey.HasValue)
+        {
+            var committedOperation = await FindAppendOperationAsync(
+                idempotencyKey.Value,
+                requestHash!,
+                cancellationToken);
+            if (committedOperation is not null)
+            {
+                return await CreateResultAsync(committedOperation, wasAlreadyCommitted: true, cancellationToken);
+            }
+        }
+
+        var eventRetry = await TryResolveEventIdRetryAsync(
+            streamType,
+            streamId,
+            tenantId,
+            expectedVersion,
+            preparedEvents,
+            cancellationToken);
+        if (eventRetry is not null)
+        {
+            if (idempotencyKey.HasValue)
+            {
+                return await ClaimOperationForCommittedEventsAsync(
+                    idempotencyKey.Value,
+                    requestHash!,
+                    eventRetry,
+                    unrelatedChanges,
+                    cancellationToken);
+            }
+
+            return eventRetry;
+        }
+
         var stream = await db.Set<DbStream>()
             .Where(x => x.TenantId == tenantId && x.StreamType == streamType)
             .Include(x => x.Events)
@@ -231,19 +330,65 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             _ => throw new InvalidOperationException($"Unsupported expected-version mode: {expectedVersion.Mode}")
         };
 
+        var previousVersion = stream.CurrentVersion;
         new DbContextStream(stream, db).Append(eventList);
+        if (idempotencyKey.HasValue)
+        {
+            db.Add(new DbAppendOperation
+            {
+                IdempotencyKey = idempotencyKey.Value,
+                RequestHash = requestHash!,
+                StreamId = streamId,
+                StreamType = streamType,
+                TenantId = tenantId,
+                PreviousVersion = previousVersion,
+                CurrentVersion = stream.CurrentVersion,
+                Timestamp = DateTimeOffset.UtcNow
+            });
+        }
+
         SuppressUnrelatedChanges(unrelatedChanges);
 
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            return new DbContextStream(stream, db);
+            return await CreateResultAsync(
+                streamType,
+                streamId,
+                tenantId,
+                previousVersion,
+                stream.CurrentVersion,
+                wasAlreadyCommitted: false,
+                cancellationToken);
         }
         catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
         {
-            foreach (var entry in ex.Entries.Where(entry => entry.Entity is DbEvent or DbStream))
+            DetachAppendEntries(ex);
+
+            if (idempotencyKey.HasValue)
             {
-                entry.State = EntityState.Detached;
+                var committedOperation = await FindAppendOperationAsync(
+                    idempotencyKey.Value,
+                    requestHash!,
+                    cancellationToken,
+                    ex);
+                if (committedOperation is not null)
+                {
+                    return await CreateResultAsync(committedOperation, wasAlreadyCommitted: true, cancellationToken);
+                }
+            }
+
+            eventRetry = await TryResolveEventIdRetryAsync(
+                streamType,
+                streamId,
+                tenantId,
+                expectedVersion,
+                preparedEvents,
+                cancellationToken,
+                ex);
+            if (eventRetry is not null)
+            {
+                return eventRetry;
             }
 
             var actualVersion = await GetActualVersionAsync(streamType, streamId, tenantId, cancellationToken);
@@ -494,9 +639,357 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
         return dbStream;
     }
 
+    private PreparedEvent[] PrepareEvents(IEnumerable<object> events)
+    {
+        return events.Select(@event =>
+        {
+            var append = @event as EventToAppend;
+            var eventData = append?.Data ?? @event;
+            var metadata = append?.Metadata;
+            var eventType = eventData.GetType();
+
+            return new PreparedEvent(
+                append?.EventId,
+                eventType.AssemblyQualifiedName!,
+                _eventTypes?.ResolveName(eventType) ?? EventTypeNameHelper.ToSnakeCase(eventType),
+                _serializer.Serialize(eventData, eventType),
+                metadata?.CorrelationId,
+                metadata?.CausationId,
+                metadata?.Actor,
+                EventHeaders.Serialize(metadata?.Headers ?? new Dictionary<string, string>()),
+                _eventTypes?.ResolveSchemaVersion(eventType) ?? 1);
+        }).ToArray();
+    }
+
+    private static void ValidateEventIds(IEnumerable<PreparedEvent> events)
+    {
+        var eventIds = new HashSet<Guid>();
+        foreach (var @event in events)
+        {
+            if (@event.EventId == Guid.Empty)
+            {
+                throw new ArgumentException("Event identifiers cannot be empty.", nameof(events));
+            }
+
+            if (@event.EventId.HasValue && !eventIds.Add(@event.EventId.Value))
+            {
+                throw new ArgumentException(
+                    $"Event identifier '{@event.EventId}' is repeated within the append batch.",
+                    nameof(events));
+            }
+        }
+    }
+
+    private async Task<DbAppendOperation?> FindAppendOperationAsync(
+        Guid idempotencyKey,
+        string requestHash,
+        CancellationToken cancellationToken,
+        Exception? innerException = null)
+    {
+        var operation = await db.Set<DbAppendOperation>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                candidate => candidate.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (operation is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(operation.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            throw new EventStoreIdempotencyConflictException(
+                $"Append idempotency key '{idempotencyKey}' was already committed for a different request.",
+                idempotencyKey,
+                innerException: innerException);
+        }
+
+        return operation;
+    }
+
+    private async Task<AppendResult?> TryResolveEventIdRetryAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IReadOnlyList<PreparedEvent> preparedEvents,
+        CancellationToken cancellationToken,
+        Exception? innerException = null)
+    {
+        var suppliedIds = preparedEvents
+            .Where(@event => @event.EventId.HasValue)
+            .Select(@event => @event.EventId!.Value)
+            .ToArray();
+        if (suppliedIds.Length == 0)
+        {
+            return null;
+        }
+
+        var storedEvents = await db.Set<DbEvent>()
+            .AsNoTracking()
+            .Where(@event => suppliedIds.Contains(@event.EventId))
+            .ToListAsync(cancellationToken);
+        if (storedEvents.Count == 0)
+        {
+            return null;
+        }
+
+        var firstConflictingId = storedEvents[0].EventId;
+        if (suppliedIds.Length != preparedEvents.Count || storedEvents.Count != preparedEvents.Count)
+        {
+            throw CreateEventIdConflict(firstConflictingId, innerException);
+        }
+
+        var storedById = storedEvents.ToDictionary(@event => @event.EventId);
+        var orderedStoredEvents = new DbEvent[preparedEvents.Count];
+        for (var index = 0; index < preparedEvents.Count; index++)
+        {
+            var prepared = preparedEvents[index];
+            if (!prepared.EventId.HasValue
+                || !storedById.TryGetValue(prepared.EventId.Value, out var stored)
+                || stored.StreamId != streamId
+                || stored.StreamType != streamType
+                || stored.TenantId != tenantId
+                || !Matches(prepared, stored))
+            {
+                throw CreateEventIdConflict(prepared.EventId ?? firstConflictingId, innerException);
+            }
+
+            orderedStoredEvents[index] = stored;
+        }
+
+        var firstVersion = orderedStoredEvents[0].Version;
+        for (var index = 0; index < orderedStoredEvents.Length; index++)
+        {
+            if (orderedStoredEvents[index].Version != firstVersion + index)
+            {
+                throw CreateEventIdConflict(orderedStoredEvents[index].EventId, innerException);
+            }
+        }
+
+        var previousVersion = firstVersion - 1;
+        if ((expectedVersion.Mode == ExpectedVersionMode.NoStream && previousVersion != 0)
+            || (expectedVersion.Mode == ExpectedVersionMode.Exact
+                && previousVersion != expectedVersion.Version))
+        {
+            throw CreateEventIdConflict(firstConflictingId, innerException);
+        }
+
+        return new AppendResult(
+            streamId,
+            streamType,
+            tenantId,
+            previousVersion,
+            orderedStoredEvents[^1].Version,
+            orderedStoredEvents
+                .Select(@event => new AppendedEventInfo(@event.EventId, @event.Version, @event.Sequence))
+                .ToArray(),
+            wasAlreadyCommitted: true);
+    }
+
+    private async Task<AppendResult> ClaimOperationForCommittedEventsAsync(
+        Guid idempotencyKey,
+        string requestHash,
+        AppendResult committedResult,
+        IReadOnlyList<SuppressedEntry> unrelatedChanges,
+        CancellationToken cancellationToken)
+    {
+        db.Add(new DbAppendOperation
+        {
+            IdempotencyKey = idempotencyKey,
+            RequestHash = requestHash,
+            StreamId = committedResult.StreamId,
+            StreamType = committedResult.StreamType,
+            TenantId = committedResult.TenantId,
+            PreviousVersion = committedResult.PreviousVersion,
+            CurrentVersion = committedResult.CurrentVersion,
+            Timestamp = DateTimeOffset.UtcNow
+        });
+        SuppressUnrelatedChanges(unrelatedChanges);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return committedResult;
+        }
+        catch (DbUpdateException ex) when (IsEventStoreWriteConflict(ex))
+        {
+            DetachAppendEntries(ex);
+            var operation = await FindAppendOperationAsync(
+                idempotencyKey,
+                requestHash,
+                cancellationToken,
+                ex);
+            if (operation is null)
+            {
+                throw;
+            }
+
+            return await CreateResultAsync(operation, wasAlreadyCommitted: true, cancellationToken);
+        }
+        finally
+        {
+            RestoreUnrelatedChanges(unrelatedChanges);
+        }
+    }
+
+    private Task<AppendResult> CreateResultAsync(
+        DbAppendOperation operation,
+        bool wasAlreadyCommitted,
+        CancellationToken cancellationToken)
+    {
+        return CreateResultAsync(
+            operation.StreamType,
+            operation.StreamId,
+            operation.TenantId,
+            operation.PreviousVersion,
+            operation.CurrentVersion,
+            wasAlreadyCommitted,
+            cancellationToken);
+    }
+
+    private async Task<AppendResult> CreateResultAsync(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        long previousVersion,
+        long currentVersion,
+        bool wasAlreadyCommitted,
+        CancellationToken cancellationToken)
+    {
+        var events = await db.Set<DbEvent>()
+            .AsNoTracking()
+            .Where(@event => @event.StreamId == streamId
+                && @event.StreamType == streamType
+                && @event.TenantId == tenantId
+                && @event.Version > previousVersion
+                && @event.Version <= currentVersion)
+            .OrderBy(@event => @event.Version)
+            .Select(@event => new AppendedEventInfo(
+                @event.EventId,
+                @event.Version,
+                @event.Sequence))
+            .ToArrayAsync(cancellationToken);
+
+        if (events.Length != currentVersion - previousVersion)
+        {
+            throw new InvalidOperationException(
+                $"The committed append result for stream '{streamType}/{streamId}' is incomplete.");
+        }
+
+        return new AppendResult(
+            streamId,
+            streamType,
+            tenantId,
+            previousVersion,
+            currentVersion,
+            events,
+            wasAlreadyCommitted);
+    }
+
+    private static bool Matches(PreparedEvent prepared, DbEvent stored)
+    {
+        return string.Equals(prepared.Type, stored.Type, StringComparison.Ordinal)
+            && string.Equals(prepared.TypeName, stored.TypeName, StringComparison.Ordinal)
+            && SerializedValuesEqual(prepared.Data, stored.Data)
+            && prepared.CorrelationId == stored.CorrelationId
+            && prepared.CausationId == stored.CausationId
+            && string.Equals(prepared.Actor, stored.Actor, StringComparison.Ordinal)
+            && SerializedValuesEqual(prepared.Headers, stored.Headers)
+            && prepared.SchemaVersion == stored.SchemaVersion;
+    }
+
+    private static bool SerializedValuesEqual(string left, string right)
+    {
+        if (string.Equals(left, right, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var leftDocument = JsonDocument.Parse(left);
+            using var rightDocument = JsonDocument.Parse(right);
+            return JsonElement.DeepEquals(leftDocument.RootElement, rightDocument.RootElement);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string ComputeRequestHash(
+        string streamType,
+        Guid streamId,
+        Guid tenantId,
+        ExpectedVersion expectedVersion,
+        IReadOnlyList<PreparedEvent> events)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHashValue(hash, streamType);
+        AppendHashValue(hash, streamId.ToString("N"));
+        AppendHashValue(hash, tenantId.ToString("N"));
+        AppendHashValue(hash, ((int)expectedVersion.Mode).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendHashValue(hash, expectedVersion.Version?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendHashValue(hash, events.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        foreach (var @event in events)
+        {
+            AppendHashValue(hash, @event.EventId?.ToString("N"));
+            AppendHashValue(hash, @event.Type);
+            AppendHashValue(hash, @event.TypeName);
+            AppendHashValue(hash, @event.Data);
+            AppendHashValue(hash, @event.CorrelationId?.ToString("N"));
+            AppendHashValue(hash, @event.CausationId?.ToString("N"));
+            AppendHashValue(hash, @event.Actor);
+            AppendHashValue(hash, @event.Headers);
+            AppendHashValue(hash, @event.SchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static void AppendHashValue(IncrementalHash hash, string? value)
+    {
+        var bytes = value is null ? null : Encoding.UTF8.GetBytes(value);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(length, bytes?.Length ?? -1);
+        hash.AppendData(length);
+        if (bytes is not null)
+        {
+            hash.AppendData(bytes);
+        }
+    }
+
+    private static EventStoreIdempotencyConflictException CreateEventIdConflict(
+        Guid eventId,
+        Exception? innerException)
+    {
+        return new EventStoreIdempotencyConflictException(
+            $"Event identifier '{eventId}' was already committed as part of a different append.",
+            eventId: eventId,
+            innerException: innerException);
+    }
+
+    private void DetachAppendEntries(DbUpdateException exception)
+    {
+        foreach (var entry in exception.Entries.Where(
+                     entry => entry.Entity is DbEvent or DbStream or DbAppendOperation))
+        {
+            entry.State = EntityState.Detached;
+        }
+
+        foreach (var entry in db.ChangeTracker.Entries()
+                     .Where(entry => entry.Entity is DbEvent or DbStream or DbAppendOperation)
+                     .ToArray())
+        {
+            entry.State = EntityState.Detached;
+        }
+    }
+
     private static bool IsEventStoreWriteConflict(DbUpdateException exception)
     {
-        return exception.Entries.Any(entry => entry.Entity is DbEvent or DbStream)
+        return exception.Entries.Any(entry => entry.Entity is DbEvent or DbStream or DbAppendOperation)
             && IsUniqueConstraintViolation(exception);
     }
 
@@ -513,7 +1006,7 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
     {
         return db.ChangeTracker.Entries()
             .Where(entry =>
-                entry.Entity is not DbEvent and not DbStream &&
+                entry.Entity is not DbEvent and not DbStream and not DbAppendOperation &&
                 entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             .Select(entry => new SuppressedEntry(entry.Entity, entry.State))
             .ToArray();
@@ -545,7 +1038,20 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
         foreach (var @event in events)
         {
             ArgumentNullException.ThrowIfNull(@event, parameterName);
-            var eventType = @event.GetType();
+            var append = @event as EventToAppend;
+            if (append?.EventId == Guid.Empty)
+            {
+                throw new ArgumentException("Event identifiers cannot be empty.", parameterName);
+            }
+
+            var eventData = append?.Data ?? @event;
+            ArgumentNullException.ThrowIfNull(eventData, parameterName);
+            if (append is not null)
+            {
+                ArgumentNullException.ThrowIfNull(append.Metadata, parameterName);
+            }
+
+            var eventType = eventData.GetType();
             if (eventType.IsValueType)
             {
                 throw new ArgumentException(
@@ -650,5 +1156,14 @@ internal sealed class DbContextEventStore(DbContext db) : IEventStore
             ? default
             : (T?)_serializer.Deserialize(snapshot.Data, typeof(T));
 
+    private sealed record PreparedEvent(
+        Guid? EventId,
+        string Type,
+        string TypeName,
+        string Data,
+        Guid? CorrelationId,
+        Guid? CausationId,
+        string? Actor,
+        string Headers,
+        int SchemaVersion);
 }
-
