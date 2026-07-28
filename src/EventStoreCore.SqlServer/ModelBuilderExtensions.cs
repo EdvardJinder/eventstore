@@ -1,3 +1,4 @@
+using EventStoreCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.SqlServer;
@@ -13,10 +14,23 @@ public static class ModelBuilderExtensions
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEventStore(this ModelBuilder modelBuilder)
     {
-        global::EventStoreCore.RelationalModelBuilderExtensions
-            .ConfigureEventStoreRelationalModel(
-                modelBuilder,
-                new global::EventStoreCore.RelationalProviderModelOptions("nvarchar(max)"));
+        global::EventStoreCore.ModelBuilderExtensions.ConfigureEventStoreModel(modelBuilder);
+
+        modelBuilder.Entity<DbEvent>(entity =>
+        {
+            entity.Property(e => e.Data)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.Headers)
+                .HasColumnType("nvarchar(max)");
+        });
+
+        modelBuilder.Entity<DbSnapshot>(entity =>
+        {
+            entity.Property(e => e.Data)
+                .HasColumnType("nvarchar(max)");
+        });
+
     }
 
     /// <summary>
@@ -25,9 +39,18 @@ public static class ModelBuilderExtensions
     /// <param name="modelBuilder">The model builder.</param>
     public static void UseEntityOutbox(this ModelBuilder modelBuilder)
     {
-        global::EventStoreCore.RelationalModelBuilderExtensions
-            .ConfigureEntityOutboxRelationalModel(
-                modelBuilder,
-                new global::EventStoreCore.RelationalProviderModelOptions("nvarchar(max)"));
+        global::EventStoreCore.ModelBuilderExtensions.ConfigureEntityOutboxModel(modelBuilder);
+        ConfigureOutboxProviderTypes(modelBuilder);
+    }
+
+    private static void ConfigureOutboxProviderTypes(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DbOutboxMessage>(entity =>
+        {
+            entity.Property(message => message.Data)
+                .HasColumnType("nvarchar(max)");
+            entity.Property(message => message.SourceEntityKey)
+                .HasColumnType("nvarchar(max)");
+        });
     }
 }

@@ -7,7 +7,7 @@ EventStoreCore is still pre-1.0. Public API changes may be made between beta rel
 The supported contracts are deliberately concentrated in these areas:
 
 - `EventStoreCore.Abstractions`: events, typed and untyped streams, event stores, global event-log reads, projections, subscriptions, entity-outbox subscriptions, checkpoint scopes, optimistic-concurrency expectations, and their management DTOs.
-- `EventStoreCore`: dependency-injection and EF Core builder interfaces and extension methods, projection and subscription options, snapshot configuration, event type registration, projection context helpers, public operational exceptions, and the deliberately small `RelationalModelBuilderExtensions`/`RelationalProviderModelOptions` contract for relational provider package authors.
+- `EventStoreCore`: dependency-injection and EF Core builder interfaces and extension methods, projection and subscription options, snapshot configuration, event type registration, projection context helpers, and public operational exceptions.
 - `EventStoreCore.Postgres`, `EventStoreCore.SqlServer`, and `EventStoreCore.Sqlite`: provider-specific `ModelBuilder.UseEventStore` and `ModelBuilder.UseEntityOutbox` extensions.
 - `EventStoreCore.CloudEvents`, `EventStoreCore.EventGrid`, and `EventStoreCore.MassTransit`: transport registration, transformation options, and transport subscription contracts.
 - `EventStoreCore.Scheduling`, `EventStoreCore.Hangfire`, `EventStoreCore.Quartz`, and `EventStoreCore.TickerQ`: scheduler builders and provider-specific action registration.
@@ -35,9 +35,9 @@ The following changes are intentional for the next beta:
 - The misspelled projection matching helper `IsHandeled` was renamed to `IsHandled` and made internal.
 - EF persistence rows and EF-backed store/stream implementations are internal. Public event and stream interfaces remain the supported consumption boundary.
 - `DbOutboxMessage` and `DbOutboxSubscription` remain public for backwards
-  compatibility, but relational provider packages must use the supported
-  `RelationalModelBuilderExtensions` boundary instead of depending on those
-  persistence rows.
-- Relational provider packages configure Core's internal model through `RelationalModelBuilderExtensions`; provider packages no longer receive friend-assembly access to persistence rows.
+  compatibility.
+- Official relational provider packages are versioned with Core and configure
+  its internal EF model directly. Third-party provider packages are not a
+  supported extension point.
 - The generated `Events.Sequence` is the relational event primary key. Stream-version concurrency remains enforced by a unique `(StreamId, StreamType, TenantId, Version)` index.
 - EventStoreCore packages remain `net10.0`-only because their EF Core 10 dependency graph exposes only `net10.0` assets.

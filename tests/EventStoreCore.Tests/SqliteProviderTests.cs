@@ -3,42 +3,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventStoreCore.Tests;
 
-public sealed class RelationalProviderContractTests
+public sealed class SqliteProviderTests
 {
-    [Fact]
-    public void Community_provider_can_configure_the_complete_model_without_persistence_types()
-    {
-        var options = new DbContextOptionsBuilder<CommunityProviderContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-
-        using var context = new CommunityProviderContext(options);
-        var eventType = context.Model.FindEntityType("EventStoreCore.DbEvent");
-        var snapshotType = context.Model.FindEntityType("EventStoreCore.DbSnapshot");
-
-        Assert.NotNull(eventType);
-        Assert.NotNull(snapshotType);
-        Assert.Equal("TEXT", eventType!.FindProperty("Data")?.GetColumnType());
-        Assert.Equal("TEXT", eventType.FindProperty("Headers")?.GetColumnType());
-        Assert.Equal("TEXT", snapshotType!.FindProperty("Data")?.GetColumnType());
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(" ")]
-    public void Provider_boundary_rejects_missing_column_types(string? columnType)
-    {
-        var options = new DbContextOptionsBuilder<InvalidProviderContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-
-        var exception = Assert.ThrowsAny<ArgumentException>(
-            () => new InvalidProviderContext(options, columnType!).Model);
-
-        Assert.Equal("serializedDataColumnType", exception.ParamName);
-    }
-
     [Fact]
     public async Task Sqlite_provider_generates_global_sequences_and_reads_the_log()
     {
@@ -118,28 +84,6 @@ public sealed class RelationalProviderContractTests
             SourceEntityType = typeof(object).AssemblyQualifiedName!,
             SourceEntityKey = "{}"
         };
-
-    private sealed class CommunityProviderContext(DbContextOptions<CommunityProviderContext> options)
-        : DbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            modelBuilder.ConfigureEventStoreRelationalModel(
-                new RelationalProviderModelOptions("TEXT"));
-        }
-    }
-
-    private sealed class InvalidProviderContext(
-        DbContextOptions<InvalidProviderContext> options,
-        string columnType)
-        : DbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            modelBuilder.ConfigureEventStoreRelationalModel(
-                new RelationalProviderModelOptions(columnType));
-        }
-    }
 
     private sealed class SqliteEventStoreContext(DbContextOptions<SqliteEventStoreContext> options)
         : DbContext(options)

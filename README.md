@@ -626,35 +626,6 @@ EventStoreCore model; they do not create or migrate a separate database.
 
 See the package READMEs for provider-specific setup and limitations.
 
-### Community relational providers
-
-Provider packages can build on the supported
-`RelationalModelBuilderExtensions` boundary without accessing EventStoreCore's
-internal EF persistence rows:
-
-```csharp
-public static void UseEventStore(this ModelBuilder modelBuilder)
-{
-    modelBuilder.ConfigureEventStoreRelationalModel(
-        new RelationalProviderModelOptions("provider_json_type"));
-}
-
-public static void UseEntityOutbox(this ModelBuilder modelBuilder)
-{
-    modelBuilder.ConfigureEntityOutboxRelationalModel(
-        new RelationalProviderModelOptions("provider_json_type"));
-}
-```
-
-Core owns the tables, keys, relationships, indexes, and value-generation
-contract. The provider supplies only a relational column type suitable for
-serialized payloads and JSON metadata. A provider that cannot translate native
-`DateTimeOffset` range predicates may opt into UTC-tick conversion. Providers
-that require a different persistence shape are not compatible with this
-boundary and should not depend on internal row types. See
-[`docs/relational-provider-extensibility.md`](docs/relational-provider-extensibility.md)
-for the supported contract and test expectations.
-
 ## Optimistic concurrency
 
 Use `AppendAsync` when callers need explicit expected-version semantics instead of fetch-and-append behavior.

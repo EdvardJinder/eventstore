@@ -696,9 +696,6 @@ EventStoreCore|M:EventStoreCore.ProjectionOptions.HandlesAll
 EventStoreCore|M:EventStoreCore.ProjectionOptions.Ignores``1
 EventStoreCore|M:EventStoreCore.ProjectionOptions.IgnoreUnknown
 EventStoreCore|M:EventStoreCore.ProjectionOptions.Name(System.String)
-EventStoreCore|M:EventStoreCore.RelationalModelBuilderExtensions.ConfigureEntityOutboxRelationalModel(Microsoft.EntityFrameworkCore.ModelBuilder,EventStoreCore.RelationalProviderModelOptions)
-EventStoreCore|M:EventStoreCore.RelationalModelBuilderExtensions.ConfigureEventStoreRelationalModel(Microsoft.EntityFrameworkCore.ModelBuilder,EventStoreCore.RelationalProviderModelOptions)
-EventStoreCore|M:EventStoreCore.RelationalProviderModelOptions.#ctor(System.String)
 EventStoreCore|M:EventStoreCore.SnapshotBuilderExtensions.UseSnapshots(EventStoreCore.IEventStoreBuilder,System.Action{EventStoreCore.ISnapshotBuilder})
 EventStoreCore|M:EventStoreCore.SubscriptionDaemon`1.#ctor(Microsoft.Extensions.Logging.ILogger{EventStoreCore.SubscriptionDaemon{`0}},System.IServiceProvider,Medallion.Threading.IDistributedLockProvider,Microsoft.Extensions.Options.IOptions{EventStoreCore.SubscriptionOptions},System.TimeProvider)
 EventStoreCore|M:EventStoreCore.SubscriptionDaemon`1.AcquireSubscriptionLockAsync(System.Type,System.Threading.CancellationToken)
@@ -882,8 +879,6 @@ EventStoreCore|P:EventStoreCore.ProjectionRegistration.Options
 EventStoreCore|P:EventStoreCore.ProjectionRegistration.ProjectionType
 EventStoreCore|P:EventStoreCore.ProjectionRegistration.SnapshotType
 EventStoreCore|P:EventStoreCore.ProjectionRegistration.Version
-EventStoreCore|P:EventStoreCore.RelationalProviderModelOptions.ConvertDateTimeOffsetsToUtcTicks
-EventStoreCore|P:EventStoreCore.RelationalProviderModelOptions.SerializedDataColumnType
 EventStoreCore|P:EventStoreCore.SnapshotOptions.Interval
 EventStoreCore|P:EventStoreCore.SnapshotOptions.OnSchemaMismatch
 EventStoreCore|P:EventStoreCore.SnapshotOptions.SchemaVersion
@@ -962,8 +957,6 @@ EventStoreCore|T:EventStoreCore.ProjectionInterceptor`2
 EventStoreCore|T:EventStoreCore.ProjectionManager`1
 EventStoreCore|T:EventStoreCore.ProjectionMode
 EventStoreCore|T:EventStoreCore.ProjectionRegistration
-EventStoreCore|T:EventStoreCore.RelationalModelBuilderExtensions
-EventStoreCore|T:EventStoreCore.RelationalProviderModelOptions
 EventStoreCore|T:EventStoreCore.SnapshotBuilderExtensions
 EventStoreCore|T:EventStoreCore.SnapshotOptions
 EventStoreCore|T:EventStoreCore.SnapshotSchemaMismatchBehavior

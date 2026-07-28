@@ -58,7 +58,7 @@ public sealed class PublicApiVisibilityContractTests
     }
 
     [Fact]
-    public void Relational_provider_packages_do_not_receive_internal_persistence_access()
+    public void Official_relational_providers_receive_internal_persistence_access()
     {
         var friendAssemblies = typeof(IEventStoreBuilder).Assembly
             .GetCustomAttributes(typeof(InternalsVisibleToAttribute), inherit: false)
@@ -66,8 +66,8 @@ public sealed class PublicApiVisibilityContractTests
             .Select(attribute => attribute.AssemblyName)
             .ToArray();
 
-        Assert.DoesNotContain("EventStoreCore.Postgres", friendAssemblies);
-        Assert.DoesNotContain("EventStoreCore.Sqlite", friendAssemblies);
-        Assert.DoesNotContain("EventStoreCore.SqlServer", friendAssemblies);
+        Assert.Contains("EventStoreCore.Postgres", friendAssemblies);
+        Assert.Contains("EventStoreCore.Sqlite", friendAssemblies);
+        Assert.Contains("EventStoreCore.SqlServer", friendAssemblies);
     }
 }
