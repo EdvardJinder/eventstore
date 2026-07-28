@@ -112,87 +112,6 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
 
     [Theory]
     [MemberData(nameof(Providers))]
-    public async Task IdempotentAppend_ExactRetryRecoversCommittedResult(ProviderKind provider)
-    {
-        await using var context = CreateContext(provider);
-        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
-
-        var streamId = Guid.NewGuid();
-        var operationKey = Guid.NewGuid();
-        var eventId = Guid.NewGuid();
-        var operation = new AppendOperation(
-            streamId,
-            ExpectedVersion.NoStream,
-            [new SampleEvent { Name = "first" }.WithEventId(eventId)])
-        {
-            StreamType = "orders",
-            IdempotencyKey = operationKey
-        };
-
-        var first = await context.Streams.AppendAsync(operation, TestContext.Current.CancellationToken);
-        await context.Streams.AppendAsync(
-            "orders",
-            streamId,
-            ExpectedVersion.Exact(1),
-            [new SampleEvent { Name = "later" }],
-            TestContext.Current.CancellationToken);
-        var retry = await context.Streams.AppendAsync(operation, TestContext.Current.CancellationToken);
-
-        Assert.False(first.WasAlreadyCommitted);
-        Assert.True(retry.WasAlreadyCommitted);
-        Assert.Equal(first.PreviousVersion, retry.PreviousVersion);
-        Assert.Equal(first.CurrentVersion, retry.CurrentVersion);
-        Assert.Equal(first.Events, retry.Events);
-        Assert.Equal(eventId, retry.Events[0].EventId);
-        Assert.Equal(1, retry.CurrentVersion);
-
-        var stream = await context.Streams.FetchForReadingAsync(
-            "orders",
-            streamId,
-            TestContext.Current.CancellationToken);
-        Assert.Equal(2, stream!.Version);
-        Assert.Equal(2, stream.Events.Count);
-
-        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
-    }
-
-    [Theory]
-    [MemberData(nameof(Providers))]
-    public async Task IdempotentAppend_ConflictingReuseIsRejected(ProviderKind provider)
-    {
-        await using var context = CreateContext(provider);
-        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
-
-        var streamId = Guid.NewGuid();
-        var operationKey = Guid.NewGuid();
-        await context.Streams.AppendAsync(
-            new AppendOperation(
-                streamId,
-                ExpectedVersion.NoStream,
-                [new SampleEvent { Name = "original" }])
-            {
-                IdempotencyKey = operationKey
-            },
-            TestContext.Current.CancellationToken);
-
-        var conflict = await Assert.ThrowsAsync<EventStoreIdempotencyConflictException>(() =>
-            context.Streams.AppendAsync(
-                new AppendOperation(
-                    streamId,
-                    ExpectedVersion.NoStream,
-                    [new SampleEvent { Name = "different" }])
-                {
-                    IdempotencyKey = operationKey
-                },
-                TestContext.Current.CancellationToken));
-
-        Assert.Equal(operationKey, conflict.IdempotencyKey);
-
-        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
-    }
-
-    [Theory]
-    [MemberData(nameof(Providers))]
     public async Task CallerEventId_ExactRetrySucceedsAndConflictingReuseIsRejected(ProviderKind provider)
     {
         await using var context = CreateContext(provider);
@@ -206,6 +125,11 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
             [new SampleEvent { Name = "original" }.WithEventId(eventId)]);
 
         var first = await context.Streams.AppendAsync(exact, TestContext.Current.CancellationToken);
+        await context.Streams.AppendAsync(
+            streamId,
+            ExpectedVersion.Exact(1),
+            [new SampleEvent { Name = "later" }],
+            TestContext.Current.CancellationToken);
         var retry = await context.Streams.AppendAsync(exact, TestContext.Current.CancellationToken);
         var conflict = await Assert.ThrowsAsync<EventStoreIdempotencyConflictException>(() =>
             context.Streams.AppendAsync(
@@ -219,6 +143,119 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         Assert.True(retry.WasAlreadyCommitted);
         Assert.Equal(first.Events, retry.Events);
         Assert.Equal(eventId, conflict.EventId);
+        Assert.Equal(1, retry.CurrentVersion);
+
+        var stream = await context.Streams.FetchForReadingAsync(
+            streamId,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, stream!.Version);
+
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task CallerEventId_RequiresEveryEventInTheBatchToBeIdentified(
+        ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var operation = new AppendOperation(
+            Guid.NewGuid(),
+            ExpectedVersion.NoStream,
+            [
+                new SampleEvent { Name = "identified" }.WithEventId(Guid.NewGuid()),
+                new SampleEvent { Name = "generated" }
+            ]);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => context.Streams.AppendAsync(
+                operation,
+                TestContext.Current.CancellationToken));
+
+        Assert.Contains("Every event", exception.Message, StringComparison.Ordinal);
+        await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task AppendOperation_PreservesUnrelatedPendingChanges(
+        ProviderKind provider)
+    {
+        await using var context = CreateContext(provider);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var unrelated = new UnrelatedEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "persisted"
+        };
+        context.Add(unrelated);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        unrelated.Name = "pending";
+        var pendingStreamId = Guid.NewGuid();
+        context.Streams.StartStream(
+            pendingStreamId,
+            events: [new SampleEvent { Name = "pending" }]);
+
+        var committedStreamId = Guid.NewGuid();
+        await context.Streams.AppendAsync(
+            new AppendOperation(
+                committedStreamId,
+                ExpectedVersion.NoStream,
+                [
+                    new SampleEvent { Name = "committed" }
+                        .WithEventId(Guid.NewGuid())
+                ]),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EntityState.Modified, context.Entry(unrelated).State);
+        Assert.Equal("pending", unrelated.Name);
+        Assert.Contains(
+            context.ChangeTracker.Entries<DbStream>(),
+            entry =>
+                entry.Entity.Id == pendingStreamId
+                && entry.State == EntityState.Added);
+
+        await using (var beforePendingSave = CreateContext(provider))
+        {
+            Assert.Equal(
+                "persisted",
+                await beforePendingSave.Set<UnrelatedEntity>()
+                    .AsNoTracking()
+                    .Where(entity => entity.Id == unrelated.Id)
+                    .Select(entity => entity.Name)
+                    .SingleAsync(TestContext.Current.CancellationToken));
+            Assert.False(
+                await beforePendingSave.Set<DbStream>()
+                    .AnyAsync(
+                        stream => stream.Id == pendingStreamId,
+                        TestContext.Current.CancellationToken));
+            Assert.True(
+                await beforePendingSave.Set<DbStream>()
+                    .AnyAsync(
+                        stream => stream.Id == committedStreamId,
+                        TestContext.Current.CancellationToken));
+        }
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await using (var afterPendingSave = CreateContext(provider))
+        {
+            Assert.Equal(
+                "pending",
+                await afterPendingSave.Set<UnrelatedEntity>()
+                    .AsNoTracking()
+                    .Where(entity => entity.Id == unrelated.Id)
+                    .Select(entity => entity.Name)
+                    .SingleAsync(TestContext.Current.CancellationToken));
+            Assert.True(
+                await afterPendingSave.Set<DbStream>()
+                    .AnyAsync(
+                        stream => stream.Id == pendingStreamId,
+                        TestContext.Current.CancellationToken));
+        }
 
         await context.Database.EnsureDeletedAsync(TestContext.Current.CancellationToken);
     }
@@ -233,14 +270,11 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         }
 
         var streamId = Guid.NewGuid();
-        var operationKey = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
         var operation = new AppendOperation(
             streamId,
             ExpectedVersion.NoStream,
-            [new SampleEvent { Name = "once" }])
-        {
-            IdempotencyKey = operationKey
-        };
+            [new SampleEvent { Name = "once" }.WithEventId(eventId)]);
 
         async Task<AppendResult> AppendFromNewContext()
         {
@@ -286,6 +320,7 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             PostgresExtensions.UseEventStore(modelBuilder);
+            modelBuilder.Entity<UnrelatedEntity>();
         }
     }
 
@@ -298,7 +333,14 @@ public class ProviderBehaviorTests : IClassFixture<PostgresFixture>, IClassFixtu
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             SqlServerExtensions.UseEventStore(modelBuilder);
+            modelBuilder.Entity<UnrelatedEntity>();
         }
+    }
+
+    private sealed class UnrelatedEntity
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
     }
 
 

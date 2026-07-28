@@ -1,12 +1,11 @@
 namespace EventStoreCore.Abstractions;
 
 /// <summary>
-/// Describes one atomic append and its optional operation-level idempotency key.
+/// Describes one atomic append that returns a compact committed result.
 /// </summary>
 /// <remarks>
-/// The idempotency key is globally unique. Reusing it with the same stream identity,
-/// expected version, ordered event payloads, metadata, and caller-supplied event IDs
-/// returns the original committed result. Reusing it for a different request conflicts.
+/// Assign a caller-supplied identifier to every event when the append must be
+/// safely retryable. An exact retry returns the original committed result.
 /// </remarks>
 public sealed class AppendOperation
 {
@@ -51,9 +50,4 @@ public sealed class AppendOperation
     /// The ordered events to append.
     /// </summary>
     public IReadOnlyList<object> Events { get; }
-
-    /// <summary>
-    /// The optional globally unique operation idempotency key.
-    /// </summary>
-    public Guid? IdempotencyKey { get; init; }
 }

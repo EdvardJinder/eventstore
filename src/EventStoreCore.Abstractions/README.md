@@ -18,10 +18,10 @@ configure persistence, or start background workers.
 `AppendOperation` is the compact write request for retry-safe appends.
 `AppendResult` reports the committed version range and stable event identities
 without returning a materialized stream. `WithEventId` and `WithMetadata`
-compose an `EventToAppend` envelope in either order. Operation-level
-idempotency requires an event-store implementation that overrides the default
-contract; the EF Core implementation in `EventStoreCore` supports it
-transactionally.
+compose an `EventToAppend` envelope in either order. Caller-event-ID retry
+recovery requires an event-store implementation that overrides the default
+contract; the EF Core implementation in `EventStoreCore` supports it using the
+existing event rows and uniqueness constraint.
 
 `IEventLogReader`, `EventLogReadOptions`, and `EventLogPage` define portable
 global-sequence paging. The `EventStoreCore` package supplies the EF Core

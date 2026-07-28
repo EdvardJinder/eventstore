@@ -162,7 +162,6 @@ EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendedEventInfo.Glob
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendedEventInfo.StreamVersion
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.Events
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.ExpectedVersion
-EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.IdempotencyKey
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.StreamId
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.StreamType
 EventStoreCore.Abstractions|P:EventStoreCore.Abstractions.AppendOperation.TenantId
@@ -653,7 +652,7 @@ EventStoreCore|M:EventStoreCore.EventStoreBuilderSerializationExtensions.UseSeri
 EventStoreCore|M:EventStoreCore.EventStoreBuilderSerializationExtensions.UseSystemTextJson(EventStoreCore.IEventStoreBuilder,System.Action{System.Text.Json.JsonSerializerOptions})
 EventStoreCore|M:EventStoreCore.EventStoreConcurrencyException.#ctor(System.String,System.Guid,System.Guid,EventStoreCore.Abstractions.ExpectedVersion,System.Nullable{System.Int64},System.String,System.Exception)
 EventStoreCore|M:EventStoreCore.EventStoreExtensions.AddEventStore(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{EventStoreCore.IEventStoreBuilder})
-EventStoreCore|M:EventStoreCore.EventStoreIdempotencyConflictException.#ctor(System.String,System.Nullable{System.Guid},System.Nullable{System.Guid},System.Exception)
+EventStoreCore|M:EventStoreCore.EventStoreIdempotencyConflictException.#ctor(System.String,System.Guid,System.Exception)
 EventStoreCore|M:EventStoreCore.EventualProjectionSubscription`3.#ctor(EventStoreCore.ProjectionOptions)
 EventStoreCore|M:EventStoreCore.EventualProjectionSubscription`3.Handle(EventStoreCore.Abstractions.IEvent,System.Threading.CancellationToken)
 EventStoreCore|M:EventStoreCore.EventualProjectionSubscription`3.HandleAsync(Microsoft.EntityFrameworkCore.DbContext,System.IServiceProvider,EventStoreCore.Abstractions.IEvent,System.Threading.CancellationToken)
@@ -888,7 +887,6 @@ EventStoreCore|P:EventStoreCore.EventStoreConcurrencyException.StreamId
 EventStoreCore|P:EventStoreCore.EventStoreConcurrencyException.StreamType
 EventStoreCore|P:EventStoreCore.EventStoreConcurrencyException.TenantId
 EventStoreCore|P:EventStoreCore.EventStoreIdempotencyConflictException.EventId
-EventStoreCore|P:EventStoreCore.EventStoreIdempotencyConflictException.IdempotencyKey
 EventStoreCore|P:EventStoreCore.IEfCoreEventStoreBuilder`1.Services
 EventStoreCore|P:EventStoreCore.IEntityOutboxBuilder.SerializerOptions
 EventStoreCore|P:EventStoreCore.IEventStoreBuilder.Provider

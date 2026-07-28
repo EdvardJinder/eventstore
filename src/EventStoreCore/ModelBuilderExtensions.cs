@@ -113,45 +113,6 @@ internal static class ModelBuilderExtensions
 
             entity.HasIndex(e => new { e.TenantId, e.StreamType, e.Timestamp });
         });
-        modelBuilder.Entity<DbAppendOperation>(entity =>
-        {
-            entity.ToTable("AppendOperations");
-
-            entity.HasKey(operation => operation.IdempotencyKey);
-
-            entity.Property(operation => operation.IdempotencyKey)
-                .ValueGeneratedNever();
-
-            entity.Property(operation => operation.RequestHash)
-                .HasMaxLength(64)
-                .IsRequired();
-
-            entity.Property(operation => operation.StreamId)
-                .IsRequired();
-
-            entity.Property(operation => operation.StreamType)
-                .IsRequired();
-
-            entity.Property(operation => operation.TenantId)
-                .IsRequired();
-
-            entity.Property(operation => operation.PreviousVersion)
-                .IsRequired();
-
-            entity.Property(operation => operation.CurrentVersion)
-                .IsRequired();
-
-            entity.Property(operation => operation.Timestamp)
-                .IsRequired();
-
-            entity.HasIndex(operation => new
-            {
-                operation.StreamId,
-                operation.StreamType,
-                operation.TenantId,
-                operation.CurrentVersion
-            });
-        });
         modelBuilder.Entity<DbSnapshot>(entity =>
         {
             entity.ToTable("Snapshots");

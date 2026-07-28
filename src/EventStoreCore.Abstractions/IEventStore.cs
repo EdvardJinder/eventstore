@@ -8,23 +8,28 @@ public interface IEventStore
     /// <summary>
     /// Appends an operation and returns its compact committed result.
     /// </summary>
-    /// <param name="operation">The stream identity, concurrency expectation, events, and optional idempotency key.</param>
+    /// <param name="operation">The stream identity, concurrency expectation, and events.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The newly committed result, or the original result for an exact duplicate retry.</returns>
+    /// <returns>The committed result.</returns>
+    /// <exception cref="NotSupportedException">
+    /// The implementation does not explicitly support caller-supplied event identifiers.
+    /// </exception>
     Task<AppendResult> AppendAsync(
         AppendOperation operation,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        if (operation.IdempotencyKey.HasValue)
+        if (operation.Events
+            .OfType<EventToAppend>()
+            .Any(@event => @event.EventId.HasValue))
         {
             throw new NotSupportedException(
-                "This event store implementation does not support operation-level idempotency.");
+                "This event store implementation does not support caller-supplied event identifiers.");
         }
 
-        return AppendWithoutOperationKeyAsync(this, operation, cancellationToken);
+        return AppendWithoutCallerEventIdsAsync(this, operation, cancellationToken);
 
-        static async Task<AppendResult> AppendWithoutOperationKeyAsync(
+        static async Task<AppendResult> AppendWithoutCallerEventIdsAsync(
             IEventStore eventStore,
             AppendOperation operation,
             CancellationToken cancellationToken)

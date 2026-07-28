@@ -1,3 +1,4 @@
+using EventStoreCore.Abstractions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -118,6 +119,47 @@ public sealed class SqliteProviderTests
         {
             File.Delete(databasePath);
         }
+    }
+
+    [Fact]
+    public async Task Sqlite_recovers_exact_caller_event_id_retries()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var options = new DbContextOptionsBuilder<SqliteEventStoreContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using var context = new SqliteEventStoreContext(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        var streamId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var operation = new AppendOperation(
+            streamId,
+            ExpectedVersion.NoStream,
+            [new SampleEvent("original").WithEventId(eventId)]);
+
+        var first = await context.Streams.AppendAsync(
+            operation,
+            TestContext.Current.CancellationToken);
+        var retry = await context.Streams.AppendAsync(
+            operation,
+            TestContext.Current.CancellationToken);
+        var conflict = await Assert.ThrowsAsync<EventStoreIdempotencyConflictException>(
+            () => context.Streams.AppendAsync(
+                new AppendOperation(
+                    streamId,
+                    ExpectedVersion.NoStream,
+                    [new SampleEvent("changed").WithEventId(eventId)]),
+                TestContext.Current.CancellationToken));
+
+        Assert.False(first.WasAlreadyCommitted);
+        Assert.True(retry.WasAlreadyCommitted);
+        Assert.Equal(first.Events, retry.Events);
+        Assert.Equal(eventId, conflict.EventId);
+        Assert.Single(
+            await context.Set<DbEvent>()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
     }
 
     private static DbOutboxMessage CreateOutboxMessage() =>

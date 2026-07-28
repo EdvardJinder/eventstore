@@ -724,8 +724,8 @@ declare cosmetic `net8.0` or `net9.0` targets.
 ## Idempotent appends
 
 Use `AppendOperation` when a caller may retry after an ambiguous timeout or
-connection failure. A globally unique operation key identifies the complete,
-ordered request:
+connection failure. Assign every event a stable, globally unique ID before the
+first attempt:
 
 ```csharp
 var operation = new AppendOperation(
@@ -738,8 +738,7 @@ var operation = new AppendOperation(
     ])
 {
     StreamType = "accounts",
-    TenantId = tenantId,
-    IdempotencyKey = commandId
+    TenantId = tenantId
 };
 
 AppendResult result = await eventStore.AppendAsync(operation, ct);
@@ -750,27 +749,21 @@ committed event ID, stream version, and global sequence. It does not materialize
 the stream. `WasAlreadyCommitted` distinguishes a recovered retry result from
 the attempt that performed the write.
 
-Operation keys are global, not scoped by tenant or stream. Event IDs are also
-global. An exact operation-key retry must have the same stream identity,
-expected version, ordered payloads, metadata, and caller-supplied event IDs as
-the first attempt. Exact matching uses the configured serializer's output.
-The retry returns the original result before checking the stream's now-current
-version, so it remains safe after later appends. Reusing a key for a different
-request throws `EventStoreIdempotencyConflictException`.
-
-Caller-supplied event IDs provide the same protection without an operation key
-when every event in the batch has an ID. The IDs must resolve to the same
-contiguous, ordered events with matching serialized payloads and metadata.
+Event IDs are global, not scoped by tenant or stream. Every event in a retryable
+batch must have a caller-supplied ID. The IDs must resolve to the same
+contiguous, ordered events with the same logical type, schema version,
+serialized payload, and metadata.
 Partial overlap, a changed order or payload, a different stream, or reuse of one
-ID in a mixed identified/unidentified batch is a conflict. For multi-event
-batches, prefer an operation key when event IDs are not naturally assigned
-before the append.
+ID in a mixed identified/unidentified batch throws
+`EventStoreIdempotencyConflictException`. An exact retry returns the original
+result before checking the stream's now-current version, so it remains safe
+after later appends.
 
-The operation record, stream update, events, inline projections, and snapshots
-commit in the same EF Core transaction. PostgreSQL and SQL Server enforce the
-operation key with the `AppendOperations` primary key and event identity with
-the existing unique `Events.EventId` constraint. Ordinary competing writes with
-different identities continue to use the existing optimistic-concurrency rules.
+The stream update, events, inline projections, and snapshots commit in the same
+EF Core transaction. PostgreSQL, SQL Server, and SQLite use the existing unique
+`Events.EventId` constraint, so this feature adds no table or migration.
+Ordinary competing writes with different event IDs continue to use the existing
+optimistic-concurrency rules.
 
 ## Project guidelines
 

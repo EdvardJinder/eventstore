@@ -58,8 +58,8 @@ the connection alive for the full test or application scope when using
   cannot commit out of allocation order and no additional application lock is
   installed. A competing writer can receive `SQLITE_BUSY` after the configured
   busy timeout; applications should retry that transaction.
-- `EventId` is a generated GUID with a global uniqueness constraint; consumers
-  must not rely on GUID ordering.
+- `EventId` is a generated or caller-supplied GUID with a global uniqueness
+  constraint; consumers must not rely on GUID ordering.
 - Inline projections share the append transaction. Subscription and eventual
   projection delivery is at-least-once.
 - Daemons require an application-provided `IDistributedLockProvider`. Select an
