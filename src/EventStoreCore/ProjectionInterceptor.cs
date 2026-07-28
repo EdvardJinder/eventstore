@@ -301,23 +301,45 @@ internal sealed class ProjectionInterceptor<TProjection, TSnapshot> : SaveChange
 /// <summary>
 /// Projection context implementation for EF Core providers.
 /// </summary>
-/// <param name="dbContext">The EF Core DbContext.</param>
-/// <param name="services">Service provider for resolving dependencies.</param>
-/// <param name="rebuild">Optional active shadow rebuild.</param>
-internal sealed class ProjectionContext(
-    DbContext dbContext,
-    IServiceProvider services,
-    ProjectionRebuild? rebuild = null) : IProjectionContext
+internal sealed class ProjectionContext : IProjectionContext
 {
+    private readonly ProjectionRebuild? rebuild;
+
+    /// <summary>
+    /// Creates a context for normal projection execution.
+    /// </summary>
+    /// <param name="dbContext">The EF Core DbContext.</param>
+    /// <param name="services">Service provider for resolving dependencies.</param>
+    public ProjectionContext(DbContext dbContext, IServiceProvider services)
+        : this(dbContext, services, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a context for projection execution against a rebuild target.
+    /// </summary>
+    /// <param name="dbContext">The EF Core DbContext.</param>
+    /// <param name="services">Service provider for resolving dependencies.</param>
+    /// <param name="rebuild">The active shadow rebuild.</param>
+    public ProjectionContext(
+        DbContext dbContext,
+        IServiceProvider services,
+        ProjectionRebuild? rebuild)
+    {
+        DbContext = dbContext;
+        Services = services;
+        this.rebuild = rebuild;
+    }
+
     /// <summary>
     /// The EF Core DbContext associated with the projection.
     /// </summary>
-    public DbContext DbContext { get; } = dbContext;
+    public DbContext DbContext { get; }
 
     /// <summary>
     /// The service provider for resolving dependencies.
     /// </summary>
-    public IServiceProvider Services { get; } = services;
+    public IServiceProvider Services { get; }
 
     /// <summary>
     /// Provider-specific state for the projection.
@@ -325,5 +347,5 @@ internal sealed class ProjectionContext(
     public object? ProviderState => DbContext;
 
     /// <inheritdoc />
-    public ProjectionRebuild? Rebuild { get; } = rebuild;
+    public ProjectionRebuild? Rebuild => rebuild;
 }
