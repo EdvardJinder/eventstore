@@ -15,8 +15,15 @@ internal static class PackageConsumer
         typeof(EventStoreCore.Quartz.QuartzSchedulerExtensions),
         typeof(EventStoreCore.Scheduling.ISchedulerBuilder),
         typeof(EventStoreCore.SDK.IEventStoreEndpointsClient),
+        typeof(EventStoreCore.Sqlite.ModelBuilderExtensions),
         typeof(EventStoreCore.SqlServer.ModelBuilderExtensions),
         typeof(EventStoreCore.Testing.StreamBehaviorTest<>),
         typeof(EventStoreCore.TickerQ.TickerQSchedulerExtensions)
     ];
+
+    internal static void ConfigureSqlite(Microsoft.EntityFrameworkCore.ModelBuilder modelBuilder)
+    {
+        EventStoreCore.Sqlite.ModelBuilderExtensions.UseEventStore(modelBuilder);
+        EventStoreCore.Sqlite.ModelBuilderExtensions.UseEntityOutbox(modelBuilder);
+    }
 }

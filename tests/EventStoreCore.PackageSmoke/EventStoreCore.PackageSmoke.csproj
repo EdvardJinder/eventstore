@@ -21,6 +21,7 @@
     <PackageReference Include="EventStoreCore.Quartz" Version="$(PackageVersion)" />
     <PackageReference Include="EventStoreCore.Scheduling" Version="$(PackageVersion)" />
     <PackageReference Include="EventStoreCore.SDK" Version="$(PackageVersion)" />
+    <PackageReference Include="EventStoreCore.Sqlite" Version="$(PackageVersion)" />
     <PackageReference Include="EventStoreCore.SqlServer" Version="$(PackageVersion)" />
     <PackageReference Include="EventStoreCore.Testing" Version="$(PackageVersion)" />
     <PackageReference Include="EventStoreCore.TickerQ" Version="$(PackageVersion)" />

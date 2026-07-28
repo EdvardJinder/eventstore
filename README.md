@@ -5,7 +5,7 @@
 ```bash
 dotnet add package EventStoreCore
 dotnet add package EventStoreCore.Postgres
-# or EventStoreCore.SqlServer
+# or EventStoreCore.SqlServer / EventStoreCore.Sqlite
 dotnet add package EventStoreCore.Hangfire
 # or EventStoreCore.Quartz
 # or EventStoreCore.TickerQ
@@ -547,8 +547,9 @@ that require lossless catch-up should reread an overlap and deduplicate by
 `IEvent.Id`; do not treat an empty filtered page's `HeadSequence` as a strict
 commit fence while append transactions are in flight.
 
-Existing databases require an application-owned migration for the new unique
-`Events.Sequence` index and the `(TenantId, Sequence)`,
+Existing databases require an application-owned migration that makes
+`Events.Sequence` the generated primary key and adds the unique
+`(StreamId, StreamType, TenantId, Version)` index plus the `(TenantId, Sequence)`,
 `(StreamType, Sequence)`, and `(TypeName, Sequence)` read indexes.
 
 ## Stream types
@@ -585,15 +586,24 @@ multi-tenant store.
 1. Add `StreamType` (NOT NULL, default empty string) and, if it is not already present, `TenantId` (NOT NULL, default `Guid.Empty`) to both the `Streams` and `Events` tables.
 2. Backfill both columns before changing constraints.
 3. Update the primary key on `Streams` to `(Id, StreamType, TenantId)`.
-4. Update the primary key on `Events` to `(StreamId, StreamType, TenantId, Version)`.
-5. Update the foreign key relationship between `Events` and `Streams` to include both `StreamType` and `TenantId`.
-6. Update lookup and ordering indexes to include the complete identity where appropriate.
+4. Make the generated `Events.Sequence` column the event-table primary key.
+5. Add a unique index on `(StreamId, StreamType, TenantId, Version)`.
+6. Update the foreign key relationship between `Events` and `Streams` to include both `StreamType` and `TenantId`.
+7. Update lookup and ordering indexes to include the complete identity where appropriate.
 
 **Note**: Changing primary keys in existing databases requires careful migration planning. Consider the impact on your application and data before applying these changes.
 
+For a safe rollout, stop event-store writers, verify that `Sequence` values are
+non-null and unique, apply the primary-key and unique-index migration, and only
+then deploy binaries using this model. Keep the former composite columns and
+their data intact. To roll back, stop writers again, restore the composite
+`(StreamId, StreamType, TenantId, Version)` primary key before deploying the
+previous binaries, and retain a unique `Sequence` index so global ordering and
+deduplication remain protected during the transition.
+
 ## Provider setup and ownership
 
-PostgreSQL and SQL Server applications own their `DbContext`, connection,
+PostgreSQL, SQL Server, and SQLite applications own their `DbContext`, connection,
 transactions, and EF Core migrations. Configure the model with the selected
 provider package's `UseEventStore()` extension, then register the same context
 with `ExistingDbContext<TDbContext>()`. The provider packages only configure the
@@ -601,7 +611,9 @@ EventStoreCore model; they do not create or migrate a separate database.
 
 - PostgreSQL stores event and snapshot JSON in `jsonb`.
 - SQL Server stores event and snapshot JSON in `nvarchar(max)`.
-- Both providers use `(Id, StreamType, TenantId)` as stream identity and enforce
+- SQLite stores serialized values in `TEXT`; in-memory databases require an
+  open connection for their full lifetime.
+- All three providers use `(Id, StreamType, TenantId)` as stream identity and enforce
   event versions within that identity.
 - `EventId` values are generated GUIDs with a uniqueness constraint. Treat them
   as stable deduplication keys, not chronological or sequential values.
@@ -639,7 +651,17 @@ Supported modes:
 
 When an expected-version check fails, or when two writers race and the database wins the tie-breaker, EventStore throws `EventStoreConcurrencyException`.
 
-The final optimistic concurrency guard is enforced by the event table key over stream identity plus event version. This means concurrent writers to the same stream cannot both commit the same next version.
+The final optimistic concurrency guard is enforced by the unique event-table
+index over stream identity plus event version. This means concurrent writers to
+the same stream cannot both commit the same next version.
+
+## Runtime compatibility
+
+All runtime and provider packages target `net10.0`. EventStoreCore uses EF Core
+10, and the EF Core 10 relational and official provider packages ship only
+`net10.0` assets. Earlier target frameworks therefore cannot be tested against
+the dependency graph used by this release. The packages deliberately do not
+declare cosmetic `net8.0` or `net9.0` targets.
 
 ## Project guidelines
 

@@ -52,7 +52,8 @@ For a live feed, reread a suitable sequence overlap and deduplicate by stable
 
 Applications own EF Core migrations. Existing databases should add:
 
-- a unique index on `Events.Sequence`;
+- a generated primary key on `Events.Sequence`;
+- a unique index on `(StreamId, StreamType, TenantId, Version)`;
 - an index on `(TenantId, Sequence)`;
 - an index on `(StreamType, Sequence)`;
 - an index on `(TypeName, Sequence)`.

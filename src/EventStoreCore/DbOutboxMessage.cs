@@ -5,6 +5,9 @@ namespace EventStoreCore;
 /// <summary>
 /// Represents an event captured atomically from an EF entity change.
 /// </summary>
+/// <remarks>
+/// This persistence type remains public for backwards compatibility.
+/// </remarks>
 public sealed class DbOutboxMessage
 {
     /// <summary>

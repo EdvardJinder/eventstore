@@ -5,6 +5,7 @@
     <Project Path="src/EventStoreCore.SDK/EventStoreCore.SDK.csproj" />
     <Project Path="src/EventStoreCore.Endpoints/EventStoreCore.Endpoints.csproj" />
     <Project Path="src/EventStoreCore.Postgres/EventStoreCore.Postgres.csproj" />
+    <Project Path="src/EventStoreCore.Sqlite/EventStoreCore.Sqlite.csproj" />
     <Project Path="src/EventStoreCore.SqlServer/EventStoreCore.SqlServer.csproj" />
     <Project Path="src/EventStoreCore.Testing/EventStoreCore.Testing.csproj" />
     <Project Path="src/EventStoreCore.TickerQ/EventStoreCore.TickerQ.csproj" />

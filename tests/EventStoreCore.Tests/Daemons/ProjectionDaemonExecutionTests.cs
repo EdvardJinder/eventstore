@@ -132,7 +132,7 @@ public class ProjectionDaemonExecutionTests
         var registration = BuildRegistration();
         var lockProvider = new FakeLockProvider();
 
-        db.Events.Add(new DbEvent
+        db.Set<DbEvent>().Add(new DbEvent
         {
             EventId = Guid.NewGuid(),
             StreamId = Guid.NewGuid(),
@@ -180,7 +180,7 @@ public class ProjectionDaemonExecutionTests
         var streamA = Guid.NewGuid();
         var streamB = Guid.NewGuid();
 
-        db.Events.AddRange(
+        db.Set<DbEvent>().AddRange(
             CreateEvent(tenantA, streamA, 1, "Tenant A"),
             CreateEvent(tenantB, streamB, 2, "Tenant B"));
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -235,7 +235,7 @@ public class ProjectionDaemonExecutionTests
         var streamB = Guid.NewGuid();
         var registration = BuildRegistration(tenantA);
 
-        db.Events.AddRange(
+        db.Set<DbEvent>().AddRange(
             CreateEvent(tenantA, streamA, 1, "Tenant A"),
             CreateEvent(tenantB, streamB, 2, "Tenant B"));
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);

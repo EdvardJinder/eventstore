@@ -10,7 +10,7 @@ dotnet add package EventStoreCore
 
 Add the provider packages you need:
 
-- `EventStoreCore.Postgres` or `EventStoreCore.SqlServer`
+- `EventStoreCore.Postgres`, `EventStoreCore.SqlServer`, or `EventStoreCore.Sqlite`
 - `EventStoreCore.Hangfire` for Hangfire-backed delayed work
 - `EventStoreCore.Quartz` for Quartz-backed delayed work
 - `EventStoreCore.TickerQ` for TickerQ-backed delayed work
@@ -42,7 +42,7 @@ infrastructure remains application-owned.
 - Subscriptions and eventual projections are at-least-once and consumers must be
   idempotent.
 - Provider-specific storage types and migration considerations are documented by
-  the PostgreSQL and SQL Server packages.
+  the PostgreSQL, SQL Server, and SQLite packages.
 
 ## Bounded stream reads
 
@@ -86,8 +86,9 @@ appends, a lower sequence can therefore become visible after a higher sequence.
 Live consumers should overlap reads and deduplicate by event ID instead of
 treating `HeadSequence` as a strict commit fence.
 
-Add an application migration for the unique `Events.Sequence` index and the
-tenant, stream-type, and event-type sequence indexes when upgrading an existing
+Add an application migration that makes `Events.Sequence` the generated primary
+key and adds the unique stream-identity/version index plus the tenant,
+stream-type, and event-type sequence indexes when upgrading an existing
 database.
 
 ## Event metadata

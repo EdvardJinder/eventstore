@@ -1,4 +1,5 @@
 using EventStoreCore.Abstractions;
+using System.Runtime.CompilerServices;
 
 namespace EventStoreCore.Tests;
 
@@ -26,6 +27,7 @@ public sealed class PublicApiVisibilityContractTests
     [InlineData(typeof(DbSnapshot))]
     [InlineData(typeof(DbProjectionStatus))]
     [InlineData(typeof(DbSubscription))]
+    [InlineData(typeof(DbSchedulerEventApplication))]
     [InlineData(typeof(DbContextEventStore))]
     [InlineData(typeof(DbContextEventLogReader))]
     [InlineData(typeof(DbContextStream))]
@@ -46,5 +48,26 @@ public sealed class PublicApiVisibilityContractTests
         Assert.Contains(typeof(IReadOnlyStream<>), publicStreamTypes);
         Assert.Contains(typeof(IStream), publicStreamTypes);
         Assert.Contains(typeof(IStream<>), publicStreamTypes);
+    }
+
+    [Fact]
+    public void Existing_outbox_persistence_types_remain_public_for_compatibility()
+    {
+        Assert.True(typeof(DbOutboxMessage).IsPublic);
+        Assert.True(typeof(DbOutboxSubscription).IsPublic);
+    }
+
+    [Fact]
+    public void Official_relational_providers_receive_internal_persistence_access()
+    {
+        var friendAssemblies = typeof(IEventStoreBuilder).Assembly
+            .GetCustomAttributes(typeof(InternalsVisibleToAttribute), inherit: false)
+            .Cast<InternalsVisibleToAttribute>()
+            .Select(attribute => attribute.AssemblyName)
+            .ToArray();
+
+        Assert.Contains("EventStoreCore.Postgres", friendAssemblies);
+        Assert.Contains("EventStoreCore.Sqlite", friendAssemblies);
+        Assert.Contains("EventStoreCore.SqlServer", friendAssemblies);
     }
 }

@@ -1,6 +1,7 @@
 using EventStoreCore;
 using Microsoft.EntityFrameworkCore;
 using PostgresExtensions = EventStoreCore.Postgres.ModelBuilderExtensions;
+using SqliteExtensions = EventStoreCore.Sqlite.ModelBuilderExtensions;
 using SqlServerExtensions = EventStoreCore.SqlServer.ModelBuilderExtensions;
 
 namespace EventStoreCore.Tests;
@@ -31,6 +32,14 @@ public class ProviderModelConfigurationTests
         }
     }
 
+    private sealed class SqliteContext(DbContextOptions<SqliteContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            SqliteExtensions.UseEventStore(modelBuilder);
+        }
+    }
+
     private sealed class PostgresOutboxContext(DbContextOptions<PostgresOutboxContext> options) : DbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -44,6 +53,14 @@ public class ProviderModelConfigurationTests
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             SqlServerExtensions.UseEntityOutbox(modelBuilder);
+        }
+    }
+
+    private sealed class SqliteOutboxContext(DbContextOptions<SqliteOutboxContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            SqliteExtensions.UseEntityOutbox(modelBuilder);
         }
     }
 
@@ -86,6 +103,22 @@ public class ProviderModelConfigurationTests
     }
 
     [Fact]
+    public void SqliteProvider_ConfiguresTextColumns()
+    {
+        var options = new DbContextOptionsBuilder<SqliteContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var context = new SqliteContext(options);
+        var eventType = context.Model.FindEntityType(typeof(DbEvent));
+        var snapshotType = context.Model.FindEntityType(typeof(DbSnapshot));
+
+        Assert.Equal("TEXT", eventType?.FindProperty(nameof(DbEvent.Data))?.GetColumnType());
+        Assert.Equal("TEXT", eventType?.FindProperty(nameof(DbEvent.Headers))?.GetColumnType());
+        Assert.Equal("TEXT", snapshotType?.FindProperty(nameof(DbSnapshot.Data))?.GetColumnType());
+    }
+
+    [Fact]
     public void PostgresOutboxProvider_ConfiguresJsonb_without_event_store_entities()
     {
         var options = new DbContextOptionsBuilder<PostgresOutboxContext>()
@@ -112,6 +145,21 @@ public class ProviderModelConfigurationTests
 
         Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
         Assert.Equal("nvarchar(max)", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
+        Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
+    }
+
+    [Fact]
+    public void SqliteOutboxProvider_ConfiguresTextColumns_without_event_store_entities()
+    {
+        var options = new DbContextOptionsBuilder<SqliteOutboxContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var context = new SqliteOutboxContext(options);
+        var outbox = context.Model.FindEntityType(typeof(DbOutboxMessage));
+
+        Assert.Equal("TEXT", outbox?.FindProperty(nameof(DbOutboxMessage.Data))?.GetColumnType());
+        Assert.Equal("TEXT", outbox?.FindProperty(nameof(DbOutboxMessage.SourceEntityKey))?.GetColumnType());
         Assert.Null(context.Model.FindEntityType(typeof(DbEvent)));
     }
 }

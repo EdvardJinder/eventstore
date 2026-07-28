@@ -5,6 +5,9 @@ namespace EventStoreCore;
 /// <summary>
 /// Represents durable progress and retry state for an outbox subscription.
 /// </summary>
+/// <remarks>
+/// This persistence type remains public for backwards compatibility.
+/// </remarks>
 public sealed class DbOutboxSubscription
 {
     /// <summary>

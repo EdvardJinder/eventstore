@@ -489,6 +489,9 @@ EventStoreCore.SDK|T:EventStoreCore.SDK.EndpointClientExtensions
 EventStoreCore.SDK|T:EventStoreCore.SDK.IEventStoreEndpointsClient
 EventStoreCore.SDK|T:Refit.Implementation.Generated
 EventStoreCore.SDK|T:Refit.Implementation.Generated.EventStoreCoreSDKIEventStoreEndpointsClient
+EventStoreCore.Sqlite|M:EventStoreCore.Sqlite.ModelBuilderExtensions.UseEntityOutbox(Microsoft.EntityFrameworkCore.ModelBuilder)
+EventStoreCore.Sqlite|M:EventStoreCore.Sqlite.ModelBuilderExtensions.UseEventStore(Microsoft.EntityFrameworkCore.ModelBuilder)
+EventStoreCore.Sqlite|T:EventStoreCore.Sqlite.ModelBuilderExtensions
 EventStoreCore.SqlServer|M:EventStoreCore.SqlServer.ModelBuilderExtensions.UseEntityOutbox(Microsoft.EntityFrameworkCore.ModelBuilder)
 EventStoreCore.SqlServer|M:EventStoreCore.SqlServer.ModelBuilderExtensions.UseEventStore(Microsoft.EntityFrameworkCore.ModelBuilder)
 EventStoreCore.SqlServer|T:EventStoreCore.SqlServer.ModelBuilderExtensions

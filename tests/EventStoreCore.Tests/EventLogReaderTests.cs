@@ -165,11 +165,21 @@ public sealed class EventLogReaderTests
     public async Task Event_model_indexes_support_global_and_filtered_sequence_reads()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var indexes = fixture.Db.Model.FindEntityType(typeof(DbEvent))!.GetIndexes().ToArray();
+        var eventType = fixture.Db.Model.FindEntityType(typeof(DbEvent))!;
+        var indexes = eventType.GetIndexes().ToArray();
 
+        Assert.Equal(
+            [nameof(DbEvent.Sequence)],
+            eventType.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Contains(indexes, index =>
             index.IsUnique &&
-            index.Properties.Select(property => property.Name).SequenceEqual([nameof(DbEvent.Sequence)]));
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [
+                    nameof(DbEvent.StreamId),
+                    nameof(DbEvent.StreamType),
+                    nameof(DbEvent.TenantId),
+                    nameof(DbEvent.Version)
+                ]));
         Assert.Contains(indexes, index =>
             index.Properties.Select(property => property.Name).SequenceEqual(
                 [nameof(DbEvent.TenantId), nameof(DbEvent.Sequence)]));
