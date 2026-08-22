@@ -44,7 +44,8 @@ public static class EntityOutboxServiceCollectionExtensions
         services.AddDbContext<TDbContext>((sp, options) =>
         {
             options.AddInterceptors(new EntityOutboxInterceptor<TDbContext>(
-                sp.GetRequiredService<EntityOutboxCapture<TDbContext>>()));
+                sp.GetRequiredService<EntityOutboxCapture<TDbContext>>(),
+                sp.GetService<InlineEventHandlerConfiguration<TDbContext>>() is not null));
             SequenceCommitOrder.Configure(sp, options);
         });
 

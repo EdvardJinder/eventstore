@@ -16,53 +16,61 @@ internal sealed class EntityOutboxCapture<TDbContext>(
 
     internal void Capture(DbContext dbContext)
     {
+        while (CaptureNext(dbContext))
+        {
+        }
+    }
+
+    internal bool CaptureNext(DbContext dbContext)
+    {
         dbContext.ChangeTracker.DetectChanges();
 
         var state = _states.GetValue(dbContext, _ => new CaptureState());
-        var entries = dbContext.ChangeTracker.Entries()
-            .Where(entry =>
+        var entry = dbContext.ChangeTracker.Entries()
+            .FirstOrDefault(entry =>
                 (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) &&
                 registry.Registrations.ContainsKey(entry.Metadata.ClrType) &&
-                !state.Entities.Contains(entry.Entity))
-            .ToArray();
-
-        foreach (var entry in entries)
+                !state.Entities.Contains(entry.Entity));
+        if (entry is null)
         {
-            var registration = registry.Registrations[entry.Metadata.ClrType];
-            var changeKind = ToChangeKind(entry.State);
-            var events = registration.CreateEvents(entry, changeKind);
+            return false;
+        }
 
-            foreach (var @event in events)
+        var registration = registry.Registrations[entry.Metadata.ClrType];
+        var changeKind = ToChangeKind(entry.State);
+        var events = registration.CreateEvents(entry, changeKind);
+
+        foreach (var @event in events)
+        {
+            var eventType = @event.GetType();
+            if (eventType.IsValueType)
             {
-                var eventType = @event.GetType();
-                if (eventType.IsValueType)
-                {
-                    throw new InvalidOperationException(
-                        $"Entity outbox event type '{eventType}' must be a reference type.");
-                }
-
-                var message = new DbOutboxMessage
-                {
-                    EventId = Guid.NewGuid(),
-                    TenantId = registration.GetTenantId(entry.Entity),
-                    Type = eventType.AssemblyQualifiedName
-                        ?? throw new InvalidOperationException($"Event type '{eventType}' has no assembly-qualified name."),
-                    TypeName = eventTypes.ResolveName(eventType),
-                    Data = JsonSerializer.Serialize(@event, eventType, registry.SerializerOptions),
-                    Timestamp = timeProvider.GetUtcNow(),
-                    SourceEntityType = registration.EntityType.AssemblyQualifiedName
-                        ?? registration.EntityType.FullName
-                        ?? registration.EntityType.Name,
-                    SourceEntityKey = SerializeKey(entry, registry.SerializerOptions),
-                    ChangeKind = changeKind
-                };
-
-                dbContext.Set<DbOutboxMessage>().Add(message);
-                state.Events.Add(new CapturedOutboxEvent(message, eventType, @event));
+                throw new InvalidOperationException(
+                    $"Entity outbox event type '{eventType}' must be a reference type.");
             }
 
-            state.Entities.Add(entry.Entity);
+            var message = new DbOutboxMessage
+            {
+                EventId = Guid.NewGuid(),
+                TenantId = registration.GetTenantId(entry.Entity),
+                Type = eventType.AssemblyQualifiedName
+                    ?? throw new InvalidOperationException($"Event type '{eventType}' has no assembly-qualified name."),
+                TypeName = eventTypes.ResolveName(eventType),
+                Data = JsonSerializer.Serialize(@event, eventType, registry.SerializerOptions),
+                Timestamp = timeProvider.GetUtcNow(),
+                SourceEntityType = registration.EntityType.AssemblyQualifiedName
+                    ?? registration.EntityType.FullName
+                    ?? registration.EntityType.Name,
+                SourceEntityKey = SerializeKey(entry, registry.SerializerOptions),
+                ChangeKind = changeKind
+            };
+
+            dbContext.Set<DbOutboxMessage>().Add(message);
+            state.Events.Add(new CapturedOutboxEvent(message, eventType, @event));
         }
+
+        state.Entities.Add(entry.Entity);
+        return true;
     }
 
     internal IReadOnlyList<CapturedOutboxEvent> GetEvents(DbContext dbContext) =>

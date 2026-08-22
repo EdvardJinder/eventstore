@@ -4,14 +4,15 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace EventStoreCore;
 
 internal sealed class EntityOutboxInterceptor<TDbContext>(
-    EntityOutboxCapture<TDbContext> capture) : SaveChangesInterceptor
+    EntityOutboxCapture<TDbContext> capture,
+    bool deferCapture) : SaveChangesInterceptor
     where TDbContext : DbContext
 {
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
         InterceptionResult<int> result)
     {
-        if (eventData.Context is DbContext dbContext)
+        if (!deferCapture && eventData.Context is DbContext dbContext)
         {
             capture.Capture(dbContext);
         }
@@ -23,7 +24,7 @@ internal sealed class EntityOutboxInterceptor<TDbContext>(
         InterceptionResult<int> result,
         CancellationToken cancellationToken = default)
     {
-        if (eventData.Context is DbContext dbContext)
+        if (!deferCapture && eventData.Context is DbContext dbContext)
         {
             capture.Capture(dbContext);
         }

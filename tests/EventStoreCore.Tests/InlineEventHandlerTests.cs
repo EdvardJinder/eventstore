@@ -74,6 +74,62 @@ public sealed class InlineEventHandlerTests
     }
 
     [Fact]
+    public async Task Entity_capture_observes_mutations_from_an_earlier_entity_handler()
+    {
+        await using var fixture = await InlineFixture.CreateAsync(handlers =>
+        {
+            handlers.Add<MutatePendingShipmentHandler, OrderAdded>(options =>
+                options.Sources = InlineEventSource.EntityOutbox);
+            handlers.Add<PendingShipmentHandler, ShipmentAdded>(options =>
+                options.Sources = InlineEventSource.EntityOutbox);
+        });
+        await using var scope = fixture.Provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InlineDbContext>();
+        var orderId = Guid.NewGuid();
+        var shipmentId = Guid.NewGuid();
+        db.Orders.Add(new Order { Id = orderId, Status = "new" });
+        db.Shipments.Add(new Shipment
+        {
+            Id = shipmentId,
+            OrderId = orderId,
+            Status = "pending"
+        });
+
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var shipmentHandler = scope.ServiceProvider.GetRequiredService<PendingShipmentHandler>();
+        Assert.Equal("ready", shipmentHandler.Status);
+        var reader = scope.ServiceProvider.GetRequiredService<IOutboxReader>();
+        var events = await reader.ReadAsync(0, ct: TestContext.Current.CancellationToken);
+        var shipmentEvent = Assert.IsAssignableFrom<IOutboxEvent<ShipmentAdded>>(
+            events.Single(@event => @event.EventType == typeof(ShipmentAdded)));
+        Assert.Equal("ready", shipmentEvent.Data.Status);
+    }
+
+    [Fact]
+    public void Pre_registered_inline_handlers_must_have_scoped_lifetime()
+    {
+        var singletonServices = new ServiceCollection();
+        singletonServices.AddSingleton<CountingHandler>();
+        var singletonException = Assert.Throws<InvalidOperationException>(() =>
+            singletonServices.AddInlineEventHandlers<InlineDbContext>(handlers =>
+                handlers.Add<CountingHandler, SharedEvent>()));
+        Assert.Contains("scoped lifetime", singletonException.Message, StringComparison.Ordinal);
+
+        var transientServices = new ServiceCollection();
+        transientServices.AddTransient<CountingHandler>();
+        var transientException = Assert.Throws<InvalidOperationException>(() =>
+            transientServices.AddInlineEventHandlers<InlineDbContext>(handlers =>
+                handlers.Add<CountingHandler, SharedEvent>()));
+        Assert.Contains("scoped lifetime", transientException.Message, StringComparison.Ordinal);
+
+        var scopedServices = new ServiceCollection();
+        scopedServices.AddScoped<CountingHandler>();
+        scopedServices.AddInlineEventHandlers<InlineDbContext>(handlers =>
+            handlers.Add<CountingHandler, SharedEvent>());
+    }
+
+    [Fact]
     public async Task Handler_failure_rolls_back_originating_event_and_tracked_side_effects()
     {
         await using var fixture = await InlineFixture.CreateAsync(handlers =>
@@ -253,6 +309,27 @@ public sealed class InlineEventHandlerTests
         }
     }
 
+    private sealed class MutatePendingShipmentHandler(InlineDbContext context)
+        : IInlineEventHandler<OrderAdded>
+    {
+        public Task Handle(IEventEnvelope<OrderAdded> @event, CancellationToken ct)
+        {
+            context.Shipments.Local.Single(shipment => shipment.OrderId == @event.Data.OrderId).Status = "ready";
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PendingShipmentHandler : IInlineEventHandler<ShipmentAdded>
+    {
+        public string? Status { get; private set; }
+
+        public Task Handle(IEventEnvelope<ShipmentAdded> @event, CancellationToken ct)
+        {
+            Status = @event.Data.Status;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FailingHandler(InlineDbContext context) : IInlineEventHandler<SharedEvent>
     {
         public Task Handle(IEventEnvelope<SharedEvent> @event, CancellationToken ct)
@@ -299,7 +376,7 @@ public sealed class InlineEventHandlerTests
 
     private sealed record OrderAdded(Guid OrderId);
 
-    private sealed record ShipmentAdded(Guid ShipmentId, Guid OrderId);
+    private sealed record ShipmentAdded(Guid ShipmentId, Guid OrderId, string Status);
 
     private sealed class Order
     {
@@ -313,6 +390,8 @@ public sealed class InlineEventHandlerTests
         public Guid Id { get; set; }
 
         public Guid OrderId { get; set; }
+
+        public string Status { get; set; } = string.Empty;
     }
 
     private sealed class Reaction
@@ -367,7 +446,10 @@ public sealed class InlineEventHandlerTests
                 outbox.For<Order>().On(change =>
                     change.Added(entity => new OrderAdded(entity.Entity.Id)));
                 outbox.For<Shipment>().On(change =>
-                    change.Added(entity => new ShipmentAdded(entity.Entity.Id, entity.Entity.OrderId)));
+                    change.Added(entity => new ShipmentAdded(
+                        entity.Entity.Id,
+                        entity.Entity.OrderId,
+                        entity.Entity.Status)));
             });
             services.AddInlineEventHandlers<InlineDbContext>(configureHandlers);
 

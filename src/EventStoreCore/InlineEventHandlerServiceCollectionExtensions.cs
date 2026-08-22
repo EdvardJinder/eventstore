@@ -1,7 +1,6 @@
 using EventStoreCore.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EventStoreCore;
 
@@ -77,7 +76,20 @@ internal sealed class InlineEventHandlerBuilder(IServiceCollection services) : I
                 $"'{typeof(TEvent).FullName}' with an overlapping source selection.");
         }
 
-        services.TryAddScoped<THandler>();
+        var existingDescriptors = services
+            .Where(descriptor => descriptor.ServiceType == typeof(THandler))
+            .ToArray();
+        if (existingDescriptors.Any(descriptor => descriptor.Lifetime != ServiceLifetime.Scoped))
+        {
+            throw new InvalidOperationException(
+                $"Inline handler '{typeof(THandler).FullName}' must be registered with scoped lifetime.");
+        }
+
+        if (existingDescriptors.Length == 0)
+        {
+            services.AddScoped<THandler>();
+        }
+
         _registrations.Add(new InlineEventHandlerRegistration<THandler, TEvent>(
             options.Order,
             options.Sources,

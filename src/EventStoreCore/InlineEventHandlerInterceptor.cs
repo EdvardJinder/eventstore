@@ -71,10 +71,14 @@ internal sealed class InlineEventHandlerInterceptor<TDbContext>(
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                outboxCapture?.Capture(dbContext);
                 EnsureNoStreamAppends(dbContext, initialStreamEventIds);
 
                 var wave = GetWave(dbContext, handled);
+                if (wave.Count == 0 && outboxCapture?.CaptureNext(dbContext) == true)
+                {
+                    wave = GetWave(dbContext, handled);
+                }
+
                 if (wave.Count == 0)
                 {
                     break;
