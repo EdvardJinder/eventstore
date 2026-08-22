@@ -9,12 +9,12 @@ namespace EventStoreCore.Abstractions;
 /// identifiers, versioning, timestamps, and tenant context for multi-tenant scenarios. The interface is designed to
 /// support event sourcing patterns, allowing consumers to track, process, and reconstruct state from event streams.
 /// All properties are read-only and provide essential information for event handling and auditing.</remarks>
-public interface IEvent
+public interface IEvent : IEventEnvelope
 {
     /// <summary>
     ///     Unique stable identifier for the event. The identifier is not an ordering value.
     /// </summary>
-    Guid Id { get; }
+    new Guid Id { get; }
 
     /// <summary>
     ///     The version of the stream this event reflects. The place in the stream.
@@ -25,7 +25,7 @@ public interface IEvent
     /// <summary>
     ///     The actual event data body
     /// </summary>
-    object Data { get; }
+    new object Data { get; }
 
     /// <summary>
     ///     Stream's Id
@@ -35,17 +35,27 @@ public interface IEvent
     /// <summary>
     ///     The UTC time that this event was originally captured
     /// </summary>
-    DateTimeOffset Timestamp { get; }
+    new DateTimeOffset Timestamp { get; }
 
     /// <summary>
     ///     If using multi-tenancy by tenant id
     /// </summary>
-    Guid TenantId { get; }
+    new Guid TenantId { get; }
 
     /// <summary>
     ///     The .Net type of the event body
     /// </summary>
-    Type EventType { get; }
+    new Type EventType { get; }
+
+    Guid IEventEnvelope.Id => Id;
+
+    object IEventEnvelope.Data => Data;
+
+    Type IEventEnvelope.EventType => EventType;
+
+    DateTimeOffset IEventEnvelope.Timestamp => Timestamp;
+
+    Guid IEventEnvelope.TenantId => TenantId;
 
     /// <summary>
     ///     The logical event type name stored independently of the CLR type name.
@@ -84,10 +94,12 @@ public interface IEvent
 /// Defines a strongly-typed event wrapper.
 /// </summary>
 /// <typeparam name="T">The event payload type.</typeparam>
-public interface IEvent<out T> : IEvent where T : class
+public interface IEvent<out T> : IEvent, IEventEnvelope<T> where T : class
 {
     /// <summary>
     /// The event payload.
     /// </summary>
     new T Data { get; }
+
+    object IEventEnvelope.Data => Data;
 }

@@ -12,6 +12,10 @@ Most applications should install `EventStoreCore` plus a persistence provider.
 Reference this package directly when a domain or integration assembly needs only
 contracts and should not depend on EF Core or daemon implementations.
 
+`IEventEnvelope<TEvent>` is the common envelope implemented by stream events
+and entity-outbox events. `IInlineEventHandler<TEvent>` defines module-local
+reactions that are dispatched by the Core EF integration during `SaveChanges`.
+
 The package contains interfaces and DTOs only. It does not register services,
 configure persistence, or start background workers.
 

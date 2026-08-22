@@ -24,8 +24,13 @@ internal sealed class TypedEvent<TEvent>(IEvent source) : IEvent<TEvent>
     public long Version => source.Version;
     public TEvent Data => (TEvent)source.Data;
     object IEvent.Data => Data;
+    object IEventEnvelope.Data => Data;
     public Guid StreamId => source.StreamId;
     public DateTimeOffset Timestamp => source.Timestamp;
     public Guid TenantId => source.TenantId;
     public Type EventType => source.EventType;
+    public string TypeName => source.TypeName;
+    public string StreamType => source.StreamType;
+    public long Sequence => source.Sequence;
+    public EventMetadata Metadata => source.Metadata;
 }

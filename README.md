@@ -217,6 +217,57 @@ redeliver the event and handlers must remain idempotent.
 
 Add migrations for the `OutboxMessages` and `OutboxSubscriptions` tables after enabling the feature.
 
+## Inline domain event handlers
+
+Inline handlers are for module-local reactions that must commit atomically with
+an event. They can handle events appended to EventStoreCore streams, events
+captured from ordinary EF entities, or both:
+
+```csharp
+services.AddInlineEventHandlers<AppDbContext>(handlers =>
+{
+    handlers.Add<ReserveInventory, OrderPlaced>(options =>
+    {
+        options.Order = 10;
+        options.Sources = InlineEventSource.Stream;
+    });
+});
+
+public sealed class ReserveInventory(AppDbContext dbContext)
+    : IInlineEventHandler<OrderPlaced>
+{
+    public Task Handle(IEventEnvelope<OrderPlaced> @event, CancellationToken ct)
+    {
+        dbContext.InventoryReservations.Add(
+            new InventoryReservation(@event.Data.OrderId));
+        return Task.CompletedTask;
+    }
+}
+```
+
+Handlers are scoped and receive the same `DbContext` instance whose
+`SaveChanges` triggered dispatch. They run sequentially by `Order`, then by
+registration order. Exceptions and cancellation abort the outer save. Both
+`SaveChanges` and `SaveChangesAsync` are supported, though asynchronous saves
+are preferred.
+
+`IEventEnvelope<T>` exposes the identity, payload, timestamp, and tenant shared
+by both sources. The concrete envelope remains `IEvent<T>` for a stream event or
+`IOutboxEvent<T>` for an entity event, so handlers can inspect source-specific
+metadata when needed. Database-generated sequence values are still zero before
+the save commits.
+
+Entity events remain in the outbox even when handled inline. If a handler
+changes another outbox-enabled entity, its events are captured and handled in a
+later breadth-first dispatch wave. The default limit is 1,000 source envelopes
+per save and can be changed with `handlers.MaxDispatchCount`.
+
+Keep inline work inside the tracked state of the same context. Handlers must not
+call `SaveChanges`, append another stream, execute direct SQL, publish messages,
+make network calls, or use a separate context. Use `ISubscription<T>` or
+`IOutboxSubscription<T>` for durable post-commit work and all external or
+cross-module side effects.
+
 ## Inline projection contract
 
 Inline projections run inside the same `DbContext` scope and `SaveChanges` transaction that appends events. If an inline projection throws, the append is rolled back with it.
