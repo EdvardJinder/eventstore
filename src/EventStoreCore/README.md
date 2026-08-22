@@ -24,6 +24,7 @@ infrastructure remains application-owned.
 ## Highlights
 
 - Inline and eventual projections
+- Transactional inline event handlers for stream and EF entity events
 - Subscription daemons with checkpointing
 - Stable global event-log paging across streams
 - Atomic domain-event capture from ordinary EF entities
@@ -42,10 +43,25 @@ infrastructure remains application-owned.
   compact `AppendResult`; conflicting reuse throws
   `EventStoreIdempotencyConflictException`.
 - Inline projections participate in the append transaction.
+- Inline event handlers can add tracked state to the originating `SaveChanges`;
+  failures abort that save.
 - Subscriptions and eventual projections are at-least-once and consumers must be
   idempotent.
 - Provider-specific storage types and migration considerations are documented by
   the PostgreSQL, SQL Server, and SQLite packages.
+
+## Inline event handlers
+
+Use `AddInlineEventHandlers<TDbContext>` for local domain reactions that must be
+atomic with the outer save. Handlers implement `IInlineEventHandler<TEvent>`,
+are resolved from the committing context's scope, and may handle stream events,
+entity-outbox events, or both. Entity events remain durably written to the
+outbox, including events captured from entities changed by an earlier handler
+in the same save.
+
+Inline handlers may only mutate tracked state in that context. Nested saves,
+stream appends, direct SQL, remote I/O, and separate contexts are outside the
+contract. Use stream or outbox subscriptions for durable post-commit work.
 
 ## Idempotent writes
 

@@ -6,7 +6,7 @@ EventStoreCore is still pre-1.0. Public API changes may be made between beta rel
 
 The supported contracts are deliberately concentrated in these areas:
 
-- `EventStoreCore.Abstractions`: events, typed and untyped streams, event stores, global event-log reads, projections, subscriptions, entity-outbox subscriptions, checkpoint scopes, optimistic-concurrency expectations, and their management DTOs.
+- `EventStoreCore.Abstractions`: events and common envelopes, typed and untyped streams, event stores, global event-log reads, projections, inline event handlers, subscriptions, entity-outbox subscriptions, checkpoint scopes, optimistic-concurrency expectations, and their management DTOs.
 - `EventStoreCore`: dependency-injection and EF Core builder interfaces and extension methods, projection and subscription options, snapshot configuration, event type registration, projection context helpers, and public operational exceptions.
 - `EventStoreCore.Postgres`, `EventStoreCore.SqlServer`, and `EventStoreCore.Sqlite`: provider-specific `ModelBuilder.UseEventStore` and `ModelBuilder.UseEntityOutbox` extensions.
 - `EventStoreCore.CloudEvents`, `EventStoreCore.EventGrid`, and `EventStoreCore.MassTransit`: transport registration, transformation options, and transport subscription contracts.
@@ -27,6 +27,11 @@ Every shipped project generates XML documentation and enables the .NET SDK packa
 ## Pre-1.0 compatibility notes
 
 The following changes are intentional for the next beta:
+
+- `IEvent<T>` and `IOutboxEvent<T>` now share `IEventEnvelope<T>`, and
+  `IInlineEventHandler<T>` plus the Core inline-handler builder add
+  same-`DbContext` transactional reactions without changing subscription
+  delivery semantics.
 
 - `IEventStore.AppendAsync(AppendOperation)` adds a backwards-compatible
   default contract for compact append results. EventStoreCore's EF

@@ -33,6 +33,7 @@ public static class EntityOutboxServiceCollectionExtensions
         var registry = builder.Build();
 
         services.AddSingleton(registry);
+        services.TryAddSingleton<EntityOutboxCapture<TDbContext>>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(sp => new EventTypeRegistry(
             sp.GetServices<EventTypeRegistration>(),
@@ -43,9 +44,8 @@ public static class EntityOutboxServiceCollectionExtensions
         services.AddDbContext<TDbContext>((sp, options) =>
         {
             options.AddInterceptors(new EntityOutboxInterceptor<TDbContext>(
-                sp.GetRequiredService<EntityOutboxRegistry<TDbContext>>(),
-                sp.GetRequiredService<EventTypeRegistry>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<EntityOutboxCapture<TDbContext>>(),
+                sp.GetService<InlineEventHandlerConfiguration<TDbContext>>() is not null));
             SequenceCommitOrder.Configure(sp, options);
         });
 
